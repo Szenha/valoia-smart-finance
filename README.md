@@ -10,6 +10,7 @@ Calcum e uma aplicacao pessoal de controle financeiro para uso familiar. O proje
 - Tailwind CSS v4 + shadcn/ui
 - Supabase Auth/Postgres/RLS
 - Anthropic SDK para extracao de PDF e classificacao assistida
+- OpenAI apenas para transcricao de audio do registro por voz
 
 ## Configuracao
 
@@ -25,7 +26,11 @@ bun install
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+OPENAI_TRANSCRIPTION_MODEL=
 ```
+
+`OPENAI_API_KEY` e usada exclusivamente para transformar audio gravado em texto no registro por voz. O texto transcrito continua sendo interpretado e classificado pelo pipeline existente via Anthropic. `OPENAI_TRANSCRIPTION_MODEL` e opcional; quando ausente, o app usa `gpt-4o-mini-transcribe`.
 
 ## Desenvolvimento local
 
@@ -53,7 +58,7 @@ Para um projeto remoto/de teste, vincule o projeto pela Supabase CLI e aplique a
 - `/reports`: despesas por categoria, por conta/cartao, maiores despesas, recorrencias e comparacao mensal.
 - `/settings`: gestao de categorias e contas/cartoes.
 
-Os totais e relatorios sao calculados por SQL/RPC no Supabase. A IA via Anthropic e usada apenas para extracao/interpretação de texto/PDF/voz e sugestao/classificacao de categoria.
+Os totais e relatorios sao calculados por SQL/RPC no Supabase. A IA via Anthropic e usada apenas para extracao/interpretação de texto/PDF e sugestao/classificacao de categoria. A OpenAI e usada somente para transcrever audio em texto antes desse pipeline.
 
 ## Qualidade
 

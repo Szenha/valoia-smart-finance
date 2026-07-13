@@ -16,10 +16,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { transcribeAudioFn, type TranscriptionResult } from "@/lib/ai/transcribe-audio";
+import { extractVoiceTextFn } from "@/lib/ai/voice-entry";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
-import { supabase } from "@/lib/supabase/client";
-import { extractVoiceTextFn, transcribeVoiceAudioFn } from "@/lib/ai/voice-entry";
 import type { AccountRow, CategoryRow } from "@/lib/finance/types";
+import { supabase } from "@/lib/supabase/client";
 
 const schema = z.object({
   transaction_type: z.enum(["expense", "income", "transfer"]),
@@ -40,6 +41,12 @@ type Props = {
   accounts: AccountRow[];
 };
 
+type PendingAudio = {
+  audioBase64: string;
+  mimeType: string;
+  durationMs: number;
+};
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -57,8 +64,10 @@ export function QuickAddForm({ orgId, categories, accounts }: Props) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
   const [recording, setRecording] = useState(false);
+  const [pendingAudio, setPendingAudio] = useState<PendingAudio | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recordingStartedAtRef = useRef<number | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -160,6 +169,49 @@ export function QuickAddForm({ orgId, categories, accounts }: Props) {
     }
   }
 
+  async function logTranscriptionUsage(transcription: TranscriptionResult) {
+    const { error } = await supabase.from("ai_usage_logs").insert({
+      organization_id: orgId,
+      provider: "openai",
+      operation: "voice_transcription",
+      model: transcription.model,
+      duration_seconds: transcription.duration_seconds,
+      estimated_cost_usd: transcription.estimated_cost_usd,
+      metadata: {
+        source: "quick_add_voice",
+      },
+    });
+    if (error) {
+      setStatus(`Transcrição feita, mas o log de custo não foi salvo: ${error.message}`);
+    }
+  }
+
+  async function transcribeAndInterpretAudio(audio: PendingAudio) {
+    setStatus("Transcrevendo áudio…");
+    try {
+      const transcription = await transcribeAudioFn({ data: audio });
+      await logTranscriptionUsage(transcription);
+      form.setValue("original_text", transcription.text);
+
+      setStatus("Interpretando transcrição…");
+      const draft = await extractVoiceTextFn({ data: { text: transcription.text } });
+      form.setValue("description", draft.description);
+      form.setValue("amount", draft.amount);
+      form.setValue("transaction_type", draft.transaction_type);
+      form.setValue("posted_at", draft.date);
+      setPendingAudio(null);
+      await suggestCategory();
+      setStatus("Transcrição interpretada. Confira antes de salvar.");
+    } catch (err) {
+      setPendingAudio(audio);
+      setStatus(
+        `Não consegui transcrever o áudio. Ele ficou pendente para nova tentativa: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
   async function toggleRecording() {
     if (recording) {
       recorderRef.current?.stop();
@@ -176,28 +228,26 @@ export function QuickAddForm({ orgId, categories, accounts }: Props) {
       recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        setStatus("Transcrevendo áudio…");
         try {
           const audioBase64 = await fileToBase64(blob);
-          const draft = await transcribeVoiceAudioFn({
-            data: { audioBase64, mimeType: blob.type || "audio/webm" },
+          const durationMs = recordingStartedAtRef.current
+            ? Date.now() - recordingStartedAtRef.current
+            : 0;
+          await transcribeAndInterpretAudio({
+            audioBase64,
+            mimeType: blob.type || "audio/webm",
+            durationMs,
           });
-          form.setValue("original_text", draft.original_text);
-          form.setValue("description", draft.description);
-          form.setValue("amount", draft.amount);
-          form.setValue("transaction_type", draft.transaction_type);
-          form.setValue("posted_at", draft.date);
-          await suggestCategory();
-          setStatus("Transcrição interpretada. Confira antes de salvar.");
         } catch (err) {
           setStatus(
-            `Não consegui transcrever o áudio. Ele não foi salvo como transação: ${
+            `Não consegui preparar o áudio para transcrição. Ele não foi salvo como transação: ${
               err instanceof Error ? err.message : String(err)
             }`,
           );
         }
       };
       recorderRef.current = recorder;
+      recordingStartedAtRef.current = Date.now();
       recorder.start();
       setRecording(true);
       setStatus("Gravando…");
@@ -236,6 +286,16 @@ export function QuickAddForm({ orgId, categories, accounts }: Props) {
               <Sparkles className="mr-2 h-4 w-4" />
               Interpretar texto
             </Button>
+            {pendingAudio ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="ml-2 mt-2"
+                onClick={() => transcribeAndInterpretAudio(pendingAudio)}
+              >
+                Tentar transcrição de novo
+              </Button>
+            ) : null}
           </div>
 
           <div className="md:col-span-1">

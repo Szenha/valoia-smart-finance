@@ -15,11 +15,6 @@ type VoiceTextInput = {
   text: string;
 };
 
-type VoiceAudioInput = {
-  audioBase64: string;
-  mimeType: string;
-};
-
 const TODAY = new Date().toISOString().slice(0, 10);
 
 const TEXT_SYSTEM_PROMPT = `Você transforma uma frase curta em um lançamento financeiro estruturado.
@@ -83,42 +78,4 @@ export const extractVoiceTextFn = createServerFn({ method: "POST" })
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("");
     return parseDraft(rawText, text);
-  });
-
-export const transcribeVoiceAudioFn = createServerFn({ method: "POST" })
-  .validator((data: VoiceAudioInput) => data)
-  .handler(async ({ data }): Promise<VoiceTransactionDraft> => {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada.");
-    if (!data.audioBase64) throw new Error("Áudio vazio.");
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1600,
-      system: TEXT_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Transcreva este áudio curto em português e extraia o lançamento financeiro. Responda no JSON solicitado.",
-            },
-            {
-              type: "input_audio",
-              source: {
-                type: "base64",
-                media_type: data.mimeType,
-                data: data.audioBase64,
-              },
-            },
-          ] as unknown as Anthropic.MessageParam["content"],
-        },
-      ],
-    });
-    const rawText = message.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("");
-    return parseDraft(rawText, "[audio]");
   });
