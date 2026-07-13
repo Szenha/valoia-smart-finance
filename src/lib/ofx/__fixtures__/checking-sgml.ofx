@@ -1,0 +1,55 @@
+OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+SECURITY:NONE
+ENCODING:UTF-8
+CHARSET:UTF-8
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+
+<OFX>
+  <SIGNONMSGSRSV1>
+    <SONRS>
+      <DTSERVER>20240131120000[-3:BRT]
+      <FI>
+        <ORG>Banco Exemplo
+        <FID>001
+      </FI>
+    </SONRS>
+  </SIGNONMSGSRSV1>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STMTRS>
+        <CURDEF>BRL
+        <BANKACCTFROM>
+          <BANKID>001
+          <ACCTID>12345-6
+          <ACCTTYPE>CHECKING
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20240101
+          <DTEND>20240131
+          <STMTTRN>
+            <TRNTYPE>DEBIT
+            <DTPOSTED>19020101
+            <TRNAMT>-12,34
+            <NAME>Padaria São João
+            <MEMO>Café da manhã
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>OTHER
+            <DTPOSTED>20240102
+            <TRNAMT>1000.00
+            <FITID>BALANCE1
+            <MEMO>Saldo do dia
+          </STMTTRN>
+        </BANKTRANLIST>
+        <LEDGERBAL>
+          <BALAMT>987,66
+          <DTASOF>20240131
+        </LEDGERBAL>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

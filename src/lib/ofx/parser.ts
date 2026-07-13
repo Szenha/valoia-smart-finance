@@ -198,9 +198,7 @@ function tokenizeSgml(body: string): SgmlToken[] {
 
 function parseXmlBody(body: string): OfxNode {
   // Remove processing instructions e comentários.
-  const clean = body
-    .replace(/<\?[^?]*\?>/g, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
+  const clean = body.replace(/<\?[^?]*\?>/g, "").replace(/<!--[\s\S]*?-->/g, "");
   return parseSgmlBody(clean);
 }
 
@@ -212,9 +210,7 @@ function decodeEntities(s: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) =>
-      String.fromCodePoint(parseInt(n, 16)),
-    );
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) => String.fromCodePoint(parseInt(n, 16)));
 }
 
 // ---------- Acesso à árvore ----------
@@ -250,6 +246,28 @@ function text(node: OfxNode | undefined, tag: string): string | undefined {
   if (!node) return undefined;
   const c = child(node, tag);
   return c?.text;
+}
+
+// ---------- Registros de saldo que o BB inclui como STMTTRN ----------
+// "Saldo Anterior" / "Saldo do dia" são linhas informativas, não transações reais.
+const BALANCE_LINE_PATTERN = /^\s*saldo\s+(anterior|do\s+dia|atual|final|disponível)/i;
+
+// ---------- FITID sintético determinístico ----------
+// Usado quando o banco omite o FITID (ex: Banco do Brasil).
+// FNV-1a 32-bit sobre data+valor+descrição+posição → prefixo "SYNTH".
+function syntheticFitId(
+  postedAt: Date,
+  amount: number,
+  description: string,
+  index: number,
+): string {
+  const seed = `${postedAt.toISOString()}|${amount.toFixed(2)}|${description}|${index}`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `SYNTH${h.toString(16).toUpperCase().padStart(8, "0")}`;
 }
 
 // ---------- Conversões ----------
@@ -309,9 +327,7 @@ function buildDocument(root: OfxNode): OfxDocument {
   const signon = child(ofx, "SIGNONMSGSRSV1");
   const sonrs = signon ? child(signon, "SONRS") : undefined;
   const fi = sonrs ? child(sonrs, "FI") : undefined;
-  const institution = fi
-    ? { org: text(fi, "ORG"), fid: text(fi, "FID") }
-    : undefined;
+  const institution = fi ? { org: text(fi, "ORG"), fid: text(fi, "FID") } : undefined;
   const serverDate = parseDate(text(sonrs, "DTSERVER"));
 
   const statements: OfxStatement[] = [];
@@ -327,9 +343,7 @@ function buildDocument(root: OfxNode): OfxDocument {
   }
 
   if (statements.length === 0) {
-    throw new OfxParseError(
-      "Nenhum extrato encontrado (STMTRS, CCSTMTRS ou INVSTMTRS).",
-    );
+    throw new OfxParseError("Nenhum extrato encontrado (STMTRS, CCSTMTRS ou INVSTMTRS).");
   }
 
   return { institution, serverDate, statements };
@@ -359,11 +373,17 @@ function buildBankStatement(
   const tranList = child(stmt, "BANKTRANLIST");
   const periodStart = parseDate(text(tranList, "DTSTART"));
   const periodEnd = parseDate(text(tranList, "DTEND"));
+  const fallbackDate = periodStart ?? periodEnd;
 
   const transactions: OfxTransaction[] = [];
   if (tranList) {
-    for (const t of children(tranList, "STMTTRN")) {
-      transactions.push(buildTransaction(t, currency));
+    const txNodes = children(tranList, "STMTTRN");
+    for (let idx = 0; idx < txNodes.length; idx++) {
+      const tx = buildTransaction(txNodes[idx], currency, idx, fallbackDate);
+      // Skip informational balance rows that BB (and others) include as STMTTRN
+      if (BALANCE_LINE_PATTERN.test(tx.description) || BALANCE_LINE_PATTERN.test(tx.memo ?? ""))
+        continue;
+      transactions.push(tx);
     }
   }
 
@@ -401,6 +421,7 @@ function buildInvStatement(stmt: OfxNode): OfxStatement {
   const tranList = child(stmt, "INVTRANLIST");
   const periodStart = parseDate(text(tranList, "DTSTART"));
   const periodEnd = parseDate(text(tranList, "DTEND"));
+  const fallbackDate = periodStart ?? periodEnd;
 
   // Aplicações têm várias variantes (BUYMF, SELLMF, INCOME, INVBANKTRAN...).
   // Para a Fase 1, normalizamos para transações lineares:
@@ -408,30 +429,38 @@ function buildInvStatement(stmt: OfxNode): OfxStatement {
   //   - Demais tipos: tentamos extrair INVTRAN + TOTAL como valor
   const transactions: OfxTransaction[] = [];
   if (tranList) {
+    let txIdx = 0;
     for (const c of tranList.children) {
       if (c.tag === "DTSTART" || c.tag === "DTEND") continue;
       if (c.tag === "INVBANKTRAN") {
         const inner = child(c, "STMTTRN");
-        if (inner) transactions.push(buildTransaction(inner, currency));
+        if (inner) transactions.push(buildTransaction(inner, currency, txIdx, fallbackDate));
+        txIdx++;
         continue;
       }
       const invTran = child(c, "INVTRAN");
       if (!invTran) continue;
       const total = parseAmount(text(c, "TOTAL"));
-      const fitId = text(invTran, "FITID") ?? "";
-      const postedAt = parseDate(text(invTran, "DTTRADE")) ?? new Date(0);
+      const postedAt = parseDate(text(invTran, "DTTRADE")) ?? fallbackDate ?? new Date();
       const memo = text(invTran, "MEMO");
+      const description = [c.tag, memo].filter(Boolean).join(" — ");
+      const rawFitId = text(invTran, "FITID");
+      const fitIdGenerated = !rawFitId;
+      const amount = Number.isFinite(total) ? total : 0;
+      const fitId = rawFitId ?? syntheticFitId(postedAt, amount, description, txIdx);
       transactions.push({
         type: c.tag,
         postedAt,
         userDate: parseDate(text(invTran, "DTSETTLE")),
-        amount: Number.isFinite(total) ? total : 0,
+        amount,
         fitId,
+        ...(fitIdGenerated && { fitIdGenerated: true }),
         name: c.tag,
         memo,
-        description: [c.tag, memo].filter(Boolean).join(" — "),
+        description,
         currency,
       });
+      txIdx++;
     }
   }
 
@@ -443,32 +472,43 @@ function buildInvStatement(stmt: OfxNode): OfxStatement {
   };
 }
 
-function buildTransaction(t: OfxNode, fallbackCurrency: string): OfxTransaction {
+function buildTransaction(
+  t: OfxNode,
+  fallbackCurrency: string,
+  index: number,
+  fallbackDate?: Date,
+): OfxTransaction {
   const payee = child(t, "PAYEE");
   const name = text(t, "NAME") ?? (payee ? text(payee, "NAME") : undefined);
   const memo = text(t, "MEMO");
   const currencyNode = child(t, "CURRENCY") ?? child(t, "ORIGCURRENCY");
-  const currency =
-    (currencyNode ? text(currencyNode, "CURSYM") : undefined) ?? fallbackCurrency;
-  const postedAt = parseDate(text(t, "DTPOSTED"));
+  const currency = (currencyNode ? text(currencyNode, "CURSYM") : undefined) ?? fallbackCurrency;
+
+  const parsedDate = parseDate(text(t, "DTPOSTED"));
+  // Treat missing dates AND clearly wrong dates (year < 1990, e.g. "1902" sentinel
+  // that Banco do Brasil emits for transactions with no date) as invalid.
+  const dateInvalid = !parsedDate || parsedDate.getFullYear() < 1990;
+  const postedAt = dateInvalid ? fallbackDate : parsedDate;
   if (!postedAt) {
     throw new OfxParseError("DTPOSTED ausente ou inválido em STMTTRN.");
   }
+
   const amount = parseAmount(text(t, "TRNAMT"));
   if (!Number.isFinite(amount)) {
     throw new OfxParseError("TRNAMT ausente ou inválido em STMTTRN.");
   }
-  const fitId = text(t, "FITID");
-  if (!fitId) {
-    throw new OfxParseError("FITID ausente em STMTTRN.");
-  }
   const description = [name, memo].filter(Boolean).join(" — ");
+  const rawFitId = text(t, "FITID");
+  const fitIdGenerated = !rawFitId;
+  const fitId = rawFitId ?? syntheticFitId(postedAt, amount, description, index);
   return {
     type: (text(t, "TRNTYPE") ?? "OTHER").toUpperCase(),
     postedAt,
     userDate: parseDate(text(t, "DTUSER")),
     amount,
     fitId,
+    ...(fitIdGenerated && { fitIdGenerated: true }),
+    ...(dateInvalid && fallbackDate && { dateInvalid: true }),
     checkNumber: text(t, "CHECKNUM") ?? text(t, "REFNUM"),
     name,
     memo,

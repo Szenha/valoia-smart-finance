@@ -1,0 +1,35 @@
+OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+SECURITY:NONE
+ENCODING:UTF-8
+CHARSET:UTF-8
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+
+<OFX>
+  <INVSTMTMSGSRSV1>
+    <INVSTMTTRNRS>
+      <INVSTMTRS>
+        <CURDEF>BRL
+        <INVACCTFROM>
+          <BROKERID>XPTO
+          <ACCTID>INV-123
+        </INVACCTFROM>
+        <INVTRANLIST>
+          <DTSTART>20240101
+          <DTEND>20240131
+          <BUYMF>
+            <INVTRAN>
+              <FITID>INV-001
+              <DTTRADE>20240105
+              <MEMO>Tesouro Selic
+            </INVTRAN>
+            <TOTAL>-1000.00
+          </BUYMF>
+        </INVTRANLIST>
+      </INVSTMTRS>
+    </INVSTMTTRNRS>
+  </INVSTMTMSGSRSV1>
+</OFX>

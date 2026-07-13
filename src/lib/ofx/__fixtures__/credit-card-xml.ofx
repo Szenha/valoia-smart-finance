@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?OFX OFXHEADER="200" VERSION="203" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>
+<OFX>
+  <CREDITCARDMSGSRSV1>
+    <CCSTMTTRNRS>
+      <CCSTMTRS>
+        <CURDEF>BRL</CURDEF>
+        <CCACCTFROM>
+          <ACCTID>9999888877776666</ACCTID>
+        </CCACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20240201</DTSTART>
+          <DTEND>20240229</DTEND>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20240210103000[-3:BRT]</DTPOSTED>
+            <TRNAMT>-123.45</TRNAMT>
+            <FITID>CC-001</FITID>
+            <NAME>Mercado Central</NAME>
+          </STMTTRN>
+        </BANKTRANLIST>
+      </CCSTMTRS>
+    </CCSTMTTRNRS>
+  </CREDITCARDMSGSRSV1>
+</OFX>

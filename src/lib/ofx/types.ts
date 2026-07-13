@@ -37,6 +37,10 @@ export interface OfxTransaction {
   amount: number;
   /** Identificador único da transação no extrato (FITID). */
   fitId: string;
+  /** true quando FITID estava ausente no OFX e foi gerado sinteticamente. */
+  fitIdGenerated?: boolean;
+  /** true quando DTPOSTED estava ausente/inválida e foi substituída pela data do período do extrato. */
+  dateInvalid?: boolean;
   /** Número do cheque / documento, quando houver (CHECKNUM / REFNUM). */
   checkNumber?: string;
   /** Nome do beneficiário (NAME ou PAYEE.NAME). */
@@ -85,7 +89,10 @@ export interface OfxDocument {
 }
 
 export class OfxParseError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
     super(message);
     this.name = "OfxParseError";
   }
