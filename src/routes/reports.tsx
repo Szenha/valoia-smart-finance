@@ -1,8 +1,9 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppNav } from "@/components/finance/AppNav";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -100,9 +101,7 @@ function ReportsRoute() {
           <h1 className="text-2xl font-semibold tracking-tight">Relatórios</h1>
           <p className="text-sm text-muted-foreground">Visão consolidada do ano</p>
         </div>
-        <Button asChild variant="outline">
-          <Link to="/">Voltar</Link>
-        </Button>
+        <AppNav />
       </header>
       <Card>
         <CardHeader>

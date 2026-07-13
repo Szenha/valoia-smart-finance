@@ -1,8 +1,9 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppNav } from "@/components/finance/AppNav";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -85,9 +86,7 @@ function DashboardRoute() {
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Resumo do mês atual</p>
         </div>
-        <Button asChild variant="outline">
-          <Link to="/">Voltar</Link>
-        </Button>
+        <AppNav />
       </header>
       <section className="grid gap-4 md:grid-cols-4">
         <Card>

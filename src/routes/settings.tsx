@@ -1,8 +1,9 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppNav } from "@/components/finance/AppNav";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -102,9 +103,7 @@ function SettingsRoute() {
           <h1 className="text-2xl font-semibold tracking-tight">Categorias e contas</h1>
           <p className="text-sm text-muted-foreground">Cadastros usados nos lançamentos</p>
         </div>
-        <Button asChild variant="outline">
-          <Link to="/">Voltar</Link>
-        </Button>
+        <AppNav />
       </header>
       <section className="grid gap-4 lg:grid-cols-2">
         <Card>

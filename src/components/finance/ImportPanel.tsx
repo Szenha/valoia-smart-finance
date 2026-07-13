@@ -3,20 +3,22 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Props = {
+  title?: string;
   ofxBusy: boolean;
   ofxMessage: string;
   ofxError: boolean;
   pdfBusy: boolean;
   pdfMessage: string;
   pdfError: boolean;
-  classifying: boolean;
-  classifyStatus: string;
+  classifying?: boolean;
+  classifyStatus?: string;
   onOfxFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onPdfFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onClassify: () => void;
+  onClassify?: () => void;
 };
 
 export function ImportPanel({
+  title = "Importar extrato",
   ofxBusy,
   ofxMessage,
   ofxError,
@@ -32,7 +34,7 @@ export function ImportPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Importar e classificar</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-3">
         <Button asChild disabled={ofxBusy}>
@@ -59,10 +61,12 @@ export function ImportPanel({
             />
           </label>
         </Button>
-        <Button variant="outline" onClick={onClassify} disabled={classifying}>
-          {classifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Classificar pendentes
-        </Button>
+        {onClassify ? (
+          <Button variant="outline" onClick={onClassify} disabled={classifying}>
+            {classifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Classificar pendentes
+          </Button>
+        ) : null}
         {ofxMessage && (
           <span className={ofxError ? "text-sm text-red-700" : "text-sm text-emerald-700"}>
             {ofxMessage}

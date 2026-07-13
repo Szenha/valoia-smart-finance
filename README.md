@@ -53,7 +53,8 @@ Para um projeto remoto/de teste, vincule o projeto pela Supabase CLI e aplique a
 
 ## Fluxos principais
 
-- `/`: lancamentos, importacao OFX/PDF, registro manual, texto ditado/gravacao de voz e lista de transacoes.
+- `/`: lancamentos do dia a dia, registro manual, texto ditado/gravacao de voz e lista de transacoes.
+- `/conciliacao`: importacao OFX/PDF, itens de extrato e conciliacao contra lancamentos manuais.
 - `/dashboard`: resumo do mes, despesas por categoria, comparacao com o mes anterior e pendencias de revisao.
 - `/reports`: despesas por categoria, por conta/cartao, maiores despesas, recorrencias e comparacao mensal.
 - `/settings`: gestao de categorias e contas/cartoes.

@@ -5,7 +5,7 @@ export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
   const { data, error } = await supabase
     .from("transactions")
     .select(
-      "id, description, amount, posted_at, type, account_id, account_kind, currency, category_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text",
+      "id, description, amount, posted_at, type, account_id, account_kind, currency, category_id, statement_import_id, reconciled_statement_item_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text",
     )
     .eq("organization_id", orgId)
     .order("posted_at", { ascending: false })
