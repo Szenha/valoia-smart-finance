@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="arc-grad" x1="69" y1="0" x2="83" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#1E6CF5"/>
+      <stop offset="100%" stop-color="#00CDB8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- C arc: gap 30°–120° from 12 o'clock → opening at upper-right (1–4 o'clock) -->
+  <path d="M 69 17 A 38 38 0 1 0 83 69"
+        stroke="url(#arc-grad)" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- 3 ascending bars (white — use calcum-icon-dark.svg for light backgrounds) -->
+  <rect x="23" y="49" width="10" height="22" rx="3" fill="white"/>
+  <rect x="36" y="38" width="10" height="33" rx="3" fill="white"/>
+  <rect x="49" y="27" width="10" height="44" rx="3" fill="white"/>
+
+  <!-- 2 gradient dots -->
+  <circle cx="66" cy="43" r="5.5" fill="#1E6CF5"/>
+  <circle cx="66" cy="59" r="5.5" fill="#00CDB8"/>
+</svg>

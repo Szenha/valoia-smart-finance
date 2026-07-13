@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 90" fill="none">
+  <defs>
+    <linearGradient id="arc-grad-w" x1="69" y1="0" x2="83" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#1E6CF5"/>
+      <stop offset="100%" stop-color="#00CDB8"/>
+    </linearGradient>
+    <linearGradient id="dot-grad-w" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#1E6CF5"/>
+      <stop offset="100%" stop-color="#00CDB8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ── ICON (100×90, centred at 50,45) ── -->
+  <!-- C arc: gap from ~30° to ~120° clockwise from 12 o'clock -->
+  <!-- Start (30° from 12): (50+38·sin30, 45−38·cos30) = (69, 12) -->
+  <!-- End  (120° from 12): (50+38·sin120, 45−38·cos120) = (83, 64) -->
+  <path d="M 69 12 A 38 38 0 1 0 83 64"
+        stroke="url(#arc-grad-w)" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- 3 ascending bars — white (for dark backgrounds) -->
+  <rect x="23" y="44" width="10" height="22" rx="3" fill="white"/>
+  <rect x="36" y="33" width="10" height="33" rx="3" fill="white"/>
+  <rect x="49" y="22" width="10" height="44" rx="3" fill="white"/>
+
+  <!-- 2 gradient dots -->
+  <circle cx="66" cy="38" r="5.5" fill="#1E6CF5"/>
+  <circle cx="66" cy="54" r="5.5" fill="#00CDB8"/>
+
+  <!-- ── WORDMARK ── -->
+  <!-- "Calcum" in white, Nunito-style rounded weight 700 -->
+  <text x="106" y="60"
+        font-family="Nunito, 'Poppins', 'Comfortaa', system-ui, sans-serif"
+        font-weight="700"
+        font-size="46"
+        letter-spacing="-1"
+        fill="white">Calcum</text>
+
+  <!-- Tagline -->
+  <text x="108" y="78"
+        font-family="Inter, system-ui, sans-serif"
+        font-weight="500"
+        font-size="9"
+        letter-spacing="2.5"
+        fill="rgba(255,255,255,0.45)">SEUS DADOS. SUAS DECISÕES. <tspan fill="#00CDB8">MELHORES RESULTADOS.</tspan></text>
+</svg>
