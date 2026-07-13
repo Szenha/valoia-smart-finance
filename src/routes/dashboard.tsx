@@ -1,9 +1,9 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AppNav } from "@/components/finance/AppNav";
+import { AppShell } from "@/components/finance/AppShell";
+import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -80,14 +80,8 @@ function DashboardRoute() {
   const delta = summary ? summary.expenses - summary.previous_expenses : 0;
 
   return (
-    <main className="mx-auto flex max-w-7xl flex-col gap-5 p-5">
-      <header className="flex items-center justify-between border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Resumo do mês atual</p>
-        </div>
-        <AppNav />
-      </header>
+    <AppShell activeSection="analytics" title="Dashboard" subtitle="Resumo do mês atual">
+      <AnalyticsTabs value="dashboard" />
       <section className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
@@ -166,6 +160,6 @@ function DashboardRoute() {
           </CardContent>
         </Card>
       </section>
-    </main>
+    </AppShell>
   );
 }

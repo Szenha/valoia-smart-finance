@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { AppNav } from "@/components/finance/AppNav";
+import { AppShell } from "@/components/finance/AppShell";
 import { ImportPanel } from "@/components/finance/ImportPanel";
 import { ReconciliationBoard } from "@/components/finance/ReconciliationBoard";
 import { Button } from "@/components/ui/button";
@@ -376,18 +376,13 @@ function ReconciliationRoute() {
   }
 
   return (
-    <main className="mx-auto flex max-w-7xl flex-col gap-5 p-5">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Extratos e conciliação</h1>
-          <p className="text-sm text-muted-foreground">
-            Importe OFX/PDF e compare contra os lançamentos do dia a dia
-          </p>
-          <p className="text-sm text-muted-foreground">{userEmail}</p>
-        </div>
-        <AppNav onSignOut={handleSignOut} />
-      </header>
-
+    <AppShell
+      activeSection="conciliacao"
+      title="Extratos e conciliação"
+      subtitle="Importe OFX/PDF e compare contra os lançamentos do dia a dia"
+      userEmail={userEmail}
+      onSignOut={handleSignOut}
+    >
       <ImportPanel
         title="Importar para conciliação"
         ofxBusy={ofxStatus === "parsing" || ofxStatus === "saving"}
@@ -448,6 +443,6 @@ function ReconciliationRoute() {
             : String(actionMutation.error)}
         </p>
       ) : null}
-    </main>
+    </AppShell>
   );
 }

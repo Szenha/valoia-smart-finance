@@ -1,9 +1,9 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AppNav } from "@/components/finance/AppNav";
+import { AppShell } from "@/components/finance/AppShell";
+import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -95,14 +95,8 @@ function ReportsRoute() {
   });
 
   return (
-    <main className="mx-auto flex max-w-7xl flex-col gap-5 p-5">
-      <header className="flex items-center justify-between border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Relatórios</h1>
-          <p className="text-sm text-muted-foreground">Visão consolidada do ano</p>
-        </div>
-        <AppNav />
-      </header>
+    <AppShell activeSection="analytics" title="Relatórios" subtitle="Visão consolidada do ano">
+      <AnalyticsTabs value="reports" />
       <Card>
         <CardHeader>
           <CardTitle>Comparação mês a mês</CardTitle>
@@ -142,7 +136,7 @@ function ReportsRoute() {
           labelKey="pattern"
         />
       </section>
-    </main>
+    </AppShell>
   );
 }
 

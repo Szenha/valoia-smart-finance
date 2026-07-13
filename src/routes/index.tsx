@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { AppNav } from "@/components/finance/AppNav";
+import { AppShell } from "@/components/finance/AppShell";
 import { QuickAddForm } from "@/components/finance/QuickAddForm";
 import { TransactionList } from "@/components/finance/TransactionList";
 import { ensureDefaultCategories, learnFromConfirmation } from "@/lib/classification/pipeline";
@@ -87,24 +87,19 @@ function Index() {
   const transactions = transactionsQuery.data ?? [];
 
   return (
-    <main className="mx-auto flex max-w-7xl flex-col gap-5 p-5">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Lançamentos</h1>
-          <p className="text-sm text-muted-foreground">
-            Registro do dia a dia por texto, voz ou formulário
-          </p>
-          <p className="text-sm text-muted-foreground">{userEmail}</p>
-        </div>
-        <AppNav onSignOut={handleSignOut} />
-      </header>
-
+    <AppShell
+      activeSection="day"
+      title="Dia a dia"
+      subtitle="Registro por voz, texto ou formulário"
+      userEmail={userEmail}
+      onSignOut={handleSignOut}
+    >
       <QuickAddForm orgId={orgId} categories={categories} accounts={accounts} />
       <TransactionList
         transactions={transactions}
         categories={categories}
         onCategoryChange={handleCategoryChange}
       />
-    </main>
+    </AppShell>
   );
 }

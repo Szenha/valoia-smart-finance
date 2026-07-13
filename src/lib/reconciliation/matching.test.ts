@@ -36,6 +36,7 @@ function txn(overrides: Partial<TxnRow>): TxnRow {
     account_kind: "checking",
     currency: "BRL",
     category_id: null,
+    created_by: null,
     statement_import_id: null,
     reconciled_statement_item_id: null,
     installment_number: null,

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -21,6 +23,27 @@ type Props = {
   categories: CategoryRow[];
   onCategoryChange: (txn: TxnRow, categoryId: string) => void;
 };
+
+const CATEGORY_COLORS = [
+  "bg-emerald-500",
+  "bg-sky-500",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-violet-500",
+  "bg-cyan-500",
+  "bg-lime-500",
+  "bg-orange-500",
+];
+
+function colorForCategory(category: CategoryRow | undefined, index: number) {
+  if (category?.color) return "";
+  return CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+}
+
+function creatorLabel(createdBy?: string | null) {
+  if (!createdBy) return "Sem autor";
+  return `Criado por ${createdBy.slice(0, 8)}`;
+}
 
 export function TransactionList({ transactions, categories, onCategoryChange }: Props) {
   const [selectedAccount, setSelectedAccount] = useState("all");
@@ -70,82 +93,93 @@ export function TransactionList({ transactions, categories, onCategoryChange }: 
           <strong className="text-red-700">Saídas {formatCurrency(expenses)}</strong>
           <strong>Saldo {formatCurrency(income - expenses)}</strong>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left">
-                <th className="p-2">Data</th>
-                <th className="p-2">Descrição</th>
-                <th className="p-2">Tipo</th>
-                <th className="p-2 text-right">Valor</th>
-                <th className="p-2">Conta</th>
-                <th className="p-2">Categoria</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayed.map((transaction) => {
-                const category = categories.find((c) => c.id === transaction.category_id);
-                const isEditing = editingCategoryFor === transaction.id;
-                return (
-                  <tr
-                    key={transaction.id}
-                    className={transaction.needs_review ? "border-b bg-amber-50" : "border-b"}
-                  >
-                    <td className="p-2">
-                      {new Date(transaction.posted_at).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="max-w-[360px] truncate p-2">{transaction.description || "-"}</td>
-                    <td className="p-2 text-muted-foreground">{transaction.type}</td>
-                    <td
-                      className={
-                        transaction.amount < 0
-                          ? "p-2 text-right text-red-700"
-                          : "p-2 text-right text-emerald-700"
-                      }
-                    >
-                      {formatCurrency(transaction.amount, transaction.currency)}
-                    </td>
-                    <td className="p-2 text-muted-foreground">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {displayed.map((transaction) => {
+            const category = categories.find((c) => c.id === transaction.category_id);
+            const categoryIndex = Math.max(
+              categories.findIndex((c) => c.id === transaction.category_id),
+              0,
+            );
+            const isEditing = editingCategoryFor === transaction.id;
+            const amountClass = transaction.amount < 0 ? "text-red-700" : "text-emerald-700";
+            return (
+              <div
+                key={transaction.id}
+                className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{transaction.description || "-"}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
                       {accountKindLabel[String(transaction.account_kind)] ??
                         transaction.account_kind}
-                    </td>
-                    <td className="p-2">
-                      {isEditing ? (
-                        <Select
-                          defaultValue={transaction.category_id ?? "none"}
-                          onValueChange={(value) => {
-                            setEditingCategoryFor(null);
-                            if (value !== "none") onCategoryChange(transaction, value);
-                          }}
-                        >
-                          <SelectTrigger className="w-[180px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sem categoria</SelectItem>
-                            {categories.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditingCategoryFor(transaction.id)}
-                        >
-                          {transaction.needs_review ? "⚠ " : ""}
-                          {category?.name ?? "Sem categoria"}
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </p>
+                  </div>
+                  <strong className={`shrink-0 text-lg ${amountClass}`}>
+                    {formatCurrency(transaction.amount, transaction.currency)}
+                  </strong>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {isEditing ? (
+                    <Select
+                      defaultValue={transaction.category_id ?? "none"}
+                      onValueChange={(value) => {
+                        setEditingCategoryFor(null);
+                        if (value !== "none") onCategoryChange(transaction, value);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sem categoria</SelectItem>
+                        {categories.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-2 px-2"
+                      onClick={() => setEditingCategoryFor(transaction.id)}
+                    >
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${colorForCategory(
+                          category,
+                          categoryIndex,
+                        )}`}
+                        style={category?.color ? { backgroundColor: category.color } : undefined}
+                      />
+                      {category?.name ?? "Sem categoria"}
+                    </Button>
+                  )}
+                  <Badge variant={transaction.needs_review ? "secondary" : "outline"}>
+                    {transaction.needs_review ? (
+                      <AlertCircle className="mr-1 h-3 w-3" />
+                    ) : (
+                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                    )}
+                    {transaction.needs_review ? "Revisar" : "OK"}
+                  </Badge>
+                  {transaction.installment_plan_id ? (
+                    <Badge variant="outline">
+                      {transaction.installment_number
+                        ? `${transaction.installment_number} parcela`
+                        : "Parcelado"}
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {creatorLabel(transaction.created_by)}
+                </p>
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>

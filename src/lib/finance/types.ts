@@ -28,6 +28,7 @@ export type TxnRow = {
   account_kind: AccountKind | string;
   currency: string;
   category_id: string | null;
+  created_by?: string | null;
   statement_import_id?: string | null;
   reconciled_statement_item_id?: string | null;
   installment_number: number | null;
