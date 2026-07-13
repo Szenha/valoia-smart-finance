@@ -1,6 +1,6 @@
 # Calcum Smart Finance
 
-Calcum e uma aplicacao pessoal de controle financeiro para uso familiar. O projeto importa extratos OFX e faturas PDF, grava transacoes no Supabase, usa Supabase Auth/RLS para isolamento por organizacao e classifica despesas com um pipeline de memoria, similaridade trigram e IA via Anthropic.
+Calcum e uma aplicacao pessoal de controle financeiro para uso familiar. O projeto importa extratos OFX e faturas PDF, permite lancamentos manuais e por voz/texto, grava transacoes no Supabase, usa Supabase Auth/RLS para isolamento por organizacao e classifica despesas com um pipeline de memoria, similaridade trigram e IA via Anthropic.
 
 ## Stack
 
@@ -45,6 +45,15 @@ supabase db reset --local
 ```
 
 Para um projeto remoto/de teste, vincule o projeto pela Supabase CLI e aplique as migrations conforme o fluxo operacional do Supabase.
+
+## Fluxos principais
+
+- `/`: lancamentos, importacao OFX/PDF, registro manual, texto ditado/gravacao de voz e lista de transacoes.
+- `/dashboard`: resumo do mes, despesas por categoria, comparacao com o mes anterior e pendencias de revisao.
+- `/reports`: despesas por categoria, por conta/cartao, maiores despesas, recorrencias e comparacao mensal.
+- `/settings`: gestao de categorias e contas/cartoes.
+
+Os totais e relatorios sao calculados por SQL/RPC no Supabase. A IA via Anthropic e usada apenas para extracao/interpretação de texto/PDF/voz e sugestao/classificacao de categoria.
 
 ## Qualidade
 
