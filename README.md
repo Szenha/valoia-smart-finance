@@ -61,6 +61,10 @@ Para um projeto remoto/de teste, vincule o projeto pela Supabase CLI e aplique a
 
 Os totais e relatorios sao calculados por SQL/RPC no Supabase. A IA via Anthropic e usada apenas para extracao/interpretação de texto/PDF e sugestao/classificacao de categoria. A OpenAI e usada somente para transcrever audio em texto antes desse pipeline.
 
+## Fechamento de periodo
+
+A conciliacao permite fechar uma fatura de cartao ou um mes de conta quando todos os itens do extrato foram tratados. Transacoes de periodo fechado ficam marcadas como consolidadas e bloqueadas para edicao direta na tela de Dia a dia. Nesta versao familiar, qualquer membro do household pode reabrir um periodo fechado; o app registra quem reabriu e quando, sem implementar permissoes granulares.
+
 ## Qualidade
 
 Lint:

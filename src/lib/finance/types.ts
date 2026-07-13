@@ -37,6 +37,8 @@ export type TxnRow = {
   classification_confidence: number | null;
   needs_review: boolean;
   original_text?: string | null;
+  consolidation_status?: "aberto" | "consolidado" | string | null;
+  period_closure_id?: string | null;
 };
 
 export const accountKindLabel: Record<string, string> = {

@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { ImportPanel } from "@/components/finance/ImportPanel";
 import { ReconciliationBoard } from "@/components/finance/ReconciliationBoard";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   extractBatchFn,
   splitTextIntoBatches,
@@ -17,7 +19,11 @@ import {
   fetchStatementItems,
 } from "@/lib/reconciliation/data";
 import { suggestStatementMatches } from "@/lib/reconciliation/matching";
-import type { StatementImportRow, StatementItemRow } from "@/lib/reconciliation/types";
+import type {
+  PeriodClosureRow,
+  StatementImportRow,
+  StatementItemRow,
+} from "@/lib/reconciliation/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 
@@ -35,6 +41,26 @@ export const Route = createFileRoute("/conciliacao")({
 
 function signedPdfAmount(transaction: AiTransaction) {
   return transaction.amount > 0 ? -transaction.amount : Math.abs(transaction.amount);
+}
+
+function monthStartFromDate(dateLike: string) {
+  const date = new Date(dateLike);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
+function nextMonthStart(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+}
+
+function periodLabel(period: string) {
+  return new Date(`${period}T00:00:00.000Z`).toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function ReconciliationRoute() {
@@ -83,6 +109,11 @@ function ReconciliationRoute() {
   });
 
   const items = useMemo(() => itemsQuery.data ?? [], [itemsQuery.data]);
+  const activeImport = imports.find((statementImport) => statementImport.id === activeImportId);
+  const competencePeriod = items[0] ? monthStartFromDate(items[0].posted_at) : null;
+  const scopeType = activeImport?.account_kind === "credit_card" ? "card_invoice" : "account_month";
+  const reconciliationComplete =
+    items.length > 0 && items.every((item) => item.status !== "pending");
 
   const manualTransactionsQuery = useQuery({
     queryKey: ["manual-transactions-for-reconciliation", orgId, activeImportId, items.length],
@@ -94,6 +125,32 @@ function ReconciliationRoute() {
     () => suggestStatementMatches(items, manualTransactionsQuery.data ?? []),
     [items, manualTransactionsQuery.data],
   );
+
+  const closureQuery = useQuery({
+    queryKey: [
+      "period-closure",
+      orgId,
+      activeImport?.account_id,
+      activeImport?.account_kind,
+      competencePeriod,
+    ],
+    enabled: !!orgId && !!activeImport && !!competencePeriod,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("period_closures")
+        .select(
+          "id, scope_type, account_id, account_kind, competence_period, status, closed_by, closed_at, reopened_by, reopened_at",
+        )
+        .eq("organization_id", orgId!)
+        .eq("scope_type", scopeType)
+        .eq("account_id", activeImport!.account_id)
+        .eq("account_kind", activeImport!.account_kind)
+        .eq("competence_period", competencePeriod!)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data as PeriodClosureRow | null;
+    },
+  });
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -367,6 +424,73 @@ function ReconciliationRoute() {
     },
   });
 
+  const closureMutation = useMutation({
+    mutationFn: async (action: "close" | "reopen") => {
+      if (!orgId || !activeImport || !competencePeriod) return;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      if (action === "close" && !reconciliationComplete) {
+        throw new Error("Resolva todos os itens do extrato antes de fechar o período.");
+      }
+
+      const { data: closure, error: closureErr } = await supabase
+        .from("period_closures")
+        .upsert(
+          {
+            organization_id: orgId,
+            scope_type: scopeType,
+            account_id: activeImport.account_id,
+            account_kind: activeImport.account_kind,
+            competence_period: competencePeriod,
+            status: action === "close" ? "fechado" : "aberto",
+            closed_by: action === "close" ? user.id : (closureQuery.data?.closed_by ?? null),
+            closed_at:
+              action === "close"
+                ? new Date().toISOString()
+                : (closureQuery.data?.closed_at ?? null),
+            reopened_by: action === "reopen" ? user.id : null,
+            reopened_at: action === "reopen" ? new Date().toISOString() : null,
+          },
+          {
+            onConflict: "organization_id,scope_type,account_id,account_kind,competence_period",
+          },
+        )
+        .select("id")
+        .single();
+      if (closureErr) throw new Error(closureErr.message);
+
+      const start = `${competencePeriod}T00:00:00.000Z`;
+      const end = `${nextMonthStart(competencePeriod)}T00:00:00.000Z`;
+      const { error: txErr } = await supabase
+        .from("transactions")
+        .update(
+          action === "close"
+            ? {
+                consolidation_status: "consolidado",
+                period_closure_id: closure.id,
+              }
+            : {
+                consolidation_status: "aberto",
+                period_closure_id: null,
+              },
+        )
+        .eq("organization_id", orgId)
+        .eq("account_id", activeImport.account_id)
+        .eq("account_kind", activeImport.account_kind)
+        .gte("posted_at", start)
+        .lt("posted_at", end);
+      if (txErr) throw new Error(txErr.message);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["period-closure", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+      await refreshReconciliation(activeImportId ?? undefined);
+    },
+  });
+
   if (!orgId) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -436,6 +560,52 @@ function ReconciliationRoute() {
           onReview={(item) => actionMutation.mutate({ type: "review", item })}
         />
       </section>
+      {activeImport && competencePeriod ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Fechamento do período</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-3 text-sm">
+            <Badge variant={closureQuery.data?.status === "fechado" ? "default" : "outline"}>
+              {closureQuery.data?.status === "fechado" ? "Fechado" : "Aberto"}
+            </Badge>
+            <span className="text-muted-foreground">
+              {activeImport.account_kind === "credit_card" ? "Fatura" : "Mês"} de{" "}
+              {periodLabel(competencePeriod)}
+            </span>
+            <span className="text-muted-foreground">
+              {reconciliationComplete
+                ? "Todos os itens do extrato foram tratados."
+                : "Ainda existem itens pendentes."}
+            </span>
+            {closureQuery.data?.status === "fechado" ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={closureMutation.isPending}
+                onClick={() => closureMutation.mutate("reopen")}
+              >
+                Reabrir período
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled={!reconciliationComplete || closureMutation.isPending}
+                onClick={() => closureMutation.mutate("close")}
+              >
+                Fechar período
+              </Button>
+            )}
+            {closureMutation.error ? (
+              <span className="text-red-700">
+                {closureMutation.error instanceof Error
+                  ? closureMutation.error.message
+                  : String(closureMutation.error)}
+              </span>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
       {actionMutation.error ? (
         <p className="text-sm text-red-700">
           {actionMutation.error instanceof Error

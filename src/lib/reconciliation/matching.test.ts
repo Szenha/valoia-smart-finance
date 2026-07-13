@@ -45,6 +45,8 @@ function txn(overrides: Partial<TxnRow>): TxnRow {
     classification_confidence: null,
     needs_review: false,
     original_text: null,
+    consolidation_status: "aberto",
+    period_closure_id: null,
     ...overrides,
   };
 }

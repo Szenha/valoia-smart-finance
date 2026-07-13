@@ -40,7 +40,7 @@ export async function fetchManualTransactionsForPeriod(
   const { data, error } = await supabase
     .from("transactions")
     .select(
-      "id, description, amount, posted_at, type, account_id, account_kind, currency, category_id, created_by, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, statement_import_id, reconciled_statement_item_id",
+      "id, description, amount, posted_at, type, account_id, account_kind, currency, category_id, created_by, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, statement_import_id, reconciled_statement_item_id, consolidation_status, period_closure_id",
     )
     .eq("organization_id", orgId)
     .is("statement_import_id", null)

@@ -11,6 +11,19 @@ export type StatementImportRow = {
   created_at: string;
 };
 
+export type PeriodClosureRow = {
+  id: string;
+  scope_type: "card_invoice" | "account_month";
+  account_id: string;
+  account_kind: AccountKind | string;
+  competence_period: string;
+  status: "aberto" | "fechado";
+  closed_by: string | null;
+  closed_at: string | null;
+  reopened_by: string | null;
+  reopened_at: string | null;
+};
+
 export type StatementItemStatus = "pending" | "matched" | "accepted" | "review";
 
 export type StatementItemRow = {

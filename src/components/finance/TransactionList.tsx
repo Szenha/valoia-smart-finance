@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,6 +101,7 @@ export function TransactionList({ transactions, categories, onCategoryChange }: 
               0,
             );
             const isEditing = editingCategoryFor === transaction.id;
+            const consolidated = transaction.consolidation_status === "consolidado";
             const amountClass = transaction.amount < 0 ? "text-red-700" : "text-emerald-700";
             return (
               <div
@@ -146,6 +147,7 @@ export function TransactionList({ transactions, categories, onCategoryChange }: 
                       variant="ghost"
                       size="sm"
                       className="h-7 gap-2 px-2"
+                      disabled={consolidated}
                       onClick={() => setEditingCategoryFor(transaction.id)}
                     >
                       <span
@@ -173,9 +175,16 @@ export function TransactionList({ transactions, categories, onCategoryChange }: 
                         : "Parcelado"}
                     </Badge>
                   ) : null}
+                  {consolidated ? (
+                    <Badge variant="secondary">
+                      <Lock className="mr-1 h-3 w-3" />
+                      Consolidado
+                    </Badge>
+                  ) : null}
                 </div>
                 <p className="mt-3 text-xs text-muted-foreground">
                   {creatorLabel(transaction.created_by)}
+                  {consolidated ? " · período fechado; reabra a conciliação para editar" : ""}
                 </p>
               </div>
             );
