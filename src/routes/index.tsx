@@ -5,7 +5,7 @@ import { AppShell } from "@/components/finance/AppShell";
 import { QuickAddForm } from "@/components/finance/QuickAddForm";
 import { TransactionList } from "@/components/finance/TransactionList";
 import { ensureDefaultCategories, learnFromConfirmation } from "@/lib/classification/pipeline";
-import { fetchAccounts, fetchTransactions } from "@/lib/finance/data";
+import { fetchAccounts, fetchHouseholdMembers, fetchTransactions } from "@/lib/finance/data";
 import type { AccountRow, CategoryRow, TxnRow } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -26,6 +26,7 @@ function Index() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
@@ -37,6 +38,7 @@ function Index() {
         navigate({ to: "/login" });
         return;
       }
+      setUserId(user.id);
       setUserEmail(user.email ?? "");
       const org = await getOrCreateOrganization();
       setOrgId(org);
@@ -61,6 +63,12 @@ function Index() {
     queryKey: ["accounts", orgId],
     enabled: !!orgId,
     queryFn: () => fetchAccounts(orgId!),
+  });
+
+  const membersQuery = useQuery({
+    queryKey: ["household-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchHouseholdMembers(orgId!),
   });
 
   async function handleSignOut() {
@@ -94,10 +102,12 @@ function Index() {
       userEmail={userEmail}
       onSignOut={handleSignOut}
     >
-      <QuickAddForm orgId={orgId} categories={categories} accounts={accounts} />
+      <QuickAddForm orgId={orgId} userId={userId} categories={categories} accounts={accounts} />
       <TransactionList
         transactions={transactions}
         categories={categories}
+        members={membersQuery.data ?? []}
+        currentUserId={userId}
         onCategoryChange={handleCategoryChange}
       />
     </AppShell>

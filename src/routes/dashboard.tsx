@@ -4,6 +4,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
+import { fetchHouseholdMembers } from "@/lib/finance/data";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -31,6 +32,20 @@ function monthBounds() {
 function DashboardRoute() {
   const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
   const orgId = orgQuery.data;
+  const currentUserQuery = useQuery({
+    queryKey: ["current-user"],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      return user;
+    },
+  });
+  const membersQuery = useQuery({
+    queryKey: ["household-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchHouseholdMembers(orgId!),
+  });
   const bounds = monthBounds();
   const summaryQuery = useQuery({
     queryKey: ["dashboard-summary", orgId],
@@ -75,9 +90,24 @@ function DashboardRoute() {
       return data ?? [];
     },
   });
+  const spendingByCreatorQuery = useQuery({
+    queryKey: ["dashboard-spending-by-creator", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("monthly_spending_by_creator", {
+        p_org_id: orgId!,
+      });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as { created_by: string | null; total: number; tx_count: number }[];
+    },
+  });
 
   const summary = summaryQuery.data;
   const delta = summary ? summary.expenses - summary.previous_expenses : 0;
+  const creatorTotal = (spendingByCreatorQuery.data ?? []).reduce(
+    (sum, row) => sum + Number(row.total),
+    0,
+  );
 
   return (
     <AppShell activeSection="analytics" title="Dashboard" subtitle="Resumo do mês atual">
@@ -157,6 +187,40 @@ function DashboardRoute() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Gastos por pessoa</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {(spendingByCreatorQuery.data ?? []).map((row) => {
+              const member = (membersQuery.data ?? []).find((m) => m.user_id === row.created_by);
+              const label =
+                row.created_by === currentUserQuery.data?.id
+                  ? "Eu"
+                  : member
+                    ? `Outro membro ${member.user_id.slice(0, 6)}`
+                    : "Sem autor";
+              const percent = creatorTotal > 0 ? (Number(row.total) / creatorTotal) * 100 : 0;
+              return (
+                <div key={row.created_by ?? "none"} className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>{label}</span>
+                    <strong>{formatCurrency(Number(row.total))}</strong>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-100">
+                    <div
+                      className="h-2 rounded-full bg-emerald-600"
+                      style={{ width: `${Math.min(percent, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            {(spendingByCreatorQuery.data ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sem gastos no mês.</p>
+            ) : null}
           </CardContent>
         </Card>
       </section>

@@ -37,6 +37,7 @@ type FormValues = z.infer<typeof schema>;
 
 type Props = {
   orgId: string;
+  userId: string | null;
   categories: CategoryRow[];
   accounts: AccountRow[];
 };
@@ -60,7 +61,7 @@ function fileToBase64(blob: Blob): Promise<string> {
   });
 }
 
-export function QuickAddForm({ orgId, categories, accounts }: Props) {
+export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
   const [recording, setRecording] = useState(false);
@@ -103,6 +104,7 @@ export function QuickAddForm({ orgId, categories, accounts }: Props) {
         account_id: values.account_id,
         account_kind: values.account_kind,
         currency: "BRL",
+        created_by: userId,
         category_id: values.category_id || null,
         original_text: values.original_text || null,
         classification_method: values.category_id ? "manual" : null,

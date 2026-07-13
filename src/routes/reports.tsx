@@ -1,9 +1,18 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { fetchHouseholdMembers } from "@/lib/finance/data";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -25,56 +34,76 @@ function currentYearBounds() {
 }
 
 function ReportsRoute() {
+  const [creatorFilter, setCreatorFilter] = useState("all");
   const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
   const orgId = orgQuery.data;
+  const currentUserQuery = useQuery({
+    queryKey: ["current-user"],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      return user;
+    },
+  });
+  const membersQuery = useQuery({
+    queryKey: ["household-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchHouseholdMembers(orgId!),
+  });
   const bounds = currentYearBounds();
+  const createdBy = creatorFilter === "all" ? null : creatorFilter;
   const categoryQuery = useQuery({
-    queryKey: ["reports-category", orgId],
+    queryKey: ["reports-category", orgId, creatorFilter],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("expenses_by_category", {
+      const { data, error } = await supabase.rpc("expenses_by_category_for_user", {
         p_org_id: orgId!,
         p_start: bounds.start,
         p_end: bounds.end,
+        p_created_by: createdBy,
       });
       if (error) throw new Error(error.message);
       return data ?? [];
     },
   });
   const accountQuery = useQuery({
-    queryKey: ["reports-account", orgId],
+    queryKey: ["reports-account", orgId, creatorFilter],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("expenses_by_account", {
+      const { data, error } = await supabase.rpc("expenses_by_account_for_user", {
         p_org_id: orgId!,
         p_start: bounds.start,
         p_end: bounds.end,
+        p_created_by: createdBy,
       });
       if (error) throw new Error(error.message);
       return data ?? [];
     },
   });
   const largestQuery = useQuery({
-    queryKey: ["reports-largest", orgId],
+    queryKey: ["reports-largest", orgId, creatorFilter],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("largest_expenses", {
+      const { data, error } = await supabase.rpc("largest_expenses_for_user", {
         p_org_id: orgId!,
         p_start: bounds.start,
         p_end: bounds.end,
         p_limit: 10,
+        p_created_by: createdBy,
       });
       if (error) throw new Error(error.message);
       return data ?? [];
     },
   });
   const monthlyQuery = useQuery({
-    queryKey: ["reports-monthly", orgId],
+    queryKey: ["reports-monthly", orgId, creatorFilter],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("monthly_comparison", {
+      const { data, error } = await supabase.rpc("monthly_comparison_for_user", {
         p_org_id: orgId!,
         p_months: 6,
+        p_created_by: createdBy,
       });
       if (error) throw new Error(error.message);
       return data ?? [];
@@ -110,6 +139,23 @@ function ReportsRoute() {
   return (
     <AppShell activeSection="analytics" title="Relatórios" subtitle="Visão consolidada do ano">
       <AnalyticsTabs value="reports" />
+      <div className="flex justify-end">
+        <Select value={creatorFilter} onValueChange={setCreatorFilter}>
+          <SelectTrigger className="w-[220px] bg-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            {(membersQuery.data ?? []).map((member) => (
+              <SelectItem key={member.user_id} value={member.user_id}>
+                {member.user_id === currentUserQuery.data?.id
+                  ? "Eu"
+                  : `Outro membro ${member.user_id.slice(0, 6)}`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Comparação mês a mês</CardTitle>

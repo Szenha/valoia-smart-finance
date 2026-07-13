@@ -379,6 +379,10 @@ function ReconciliationRoute() {
         if (itemErr) throw new Error(itemErr.message);
       }
       if (action.type === "accept") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("Usuário não autenticado.");
         const { data: tx, error: txErr } = await supabase
           .from("transactions")
           .insert({
@@ -393,6 +397,7 @@ function ReconciliationRoute() {
             account_id: action.item.account_id,
             account_kind: action.item.account_kind,
             currency: action.item.currency,
+            created_by: user.id,
             category_id: null,
             needs_review: true,
             extraction_confidence: action.item.extraction_confidence,

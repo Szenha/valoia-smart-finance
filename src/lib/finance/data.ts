@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import type { AccountRow, CategoryRow, TxnRow } from "./types";
+import type { AccountRow, CategoryRow, HouseholdMemberRow, TxnRow } from "./types";
 
 export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
   const { data, error } = await supabase
@@ -33,6 +33,16 @@ export async function fetchAccounts(orgId: string): Promise<AccountRow[]> {
     .order("name");
   if (error) throw new Error(error.message);
   return (data ?? []) as AccountRow[];
+}
+
+export async function fetchHouseholdMembers(orgId: string): Promise<HouseholdMemberRow[]> {
+  const { data, error } = await supabase
+    .from("organization_members")
+    .select("user_id, role")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as HouseholdMemberRow[];
 }
 
 export async function ensureAccountFromTransaction(

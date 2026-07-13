@@ -41,6 +41,11 @@ export type TxnRow = {
   period_closure_id?: string | null;
 };
 
+export type HouseholdMemberRow = {
+  user_id: string;
+  role: string;
+};
+
 export const accountKindLabel: Record<string, string> = {
   checking: "Conta corrente",
   credit_card: "Cartão de crédito",

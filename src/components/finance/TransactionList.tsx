@@ -15,12 +15,15 @@ import {
   accountLabel,
   formatCurrency,
   type CategoryRow,
+  type HouseholdMemberRow,
   type TxnRow,
 } from "@/lib/finance/types";
 
 type Props = {
   transactions: TxnRow[];
   categories: CategoryRow[];
+  members: HouseholdMemberRow[];
+  currentUserId: string | null;
   onCategoryChange: (txn: TxnRow, categoryId: string) => void;
 };
 
@@ -45,8 +48,20 @@ function creatorLabel(createdBy?: string | null) {
   return `Criado por ${createdBy.slice(0, 8)}`;
 }
 
-export function TransactionList({ transactions, categories, onCategoryChange }: Props) {
+function memberLabel(memberId: string, currentUserId: string | null) {
+  if (memberId === currentUserId) return "Eu";
+  return `Outro membro ${memberId.slice(0, 6)}`;
+}
+
+export function TransactionList({
+  transactions,
+  categories,
+  members,
+  currentUserId,
+  onCategoryChange,
+}: Props) {
   const [selectedAccount, setSelectedAccount] = useState("all");
+  const [selectedCreator, setSelectedCreator] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
   const accounts = Array.from(
     new Map(
@@ -58,8 +73,14 @@ export function TransactionList({ transactions, categories, onCategoryChange }: 
   );
   const displayed =
     selectedAccount === "all"
-      ? transactions
-      : transactions.filter((transaction) => transaction.account_id === selectedAccount);
+      ? transactions.filter(
+          (transaction) => selectedCreator === "all" || transaction.created_by === selectedCreator,
+        )
+      : transactions.filter(
+          (transaction) =>
+            transaction.account_id === selectedAccount &&
+            (selectedCreator === "all" || transaction.created_by === selectedCreator),
+        );
   const income = displayed.reduce((sum, t) => (t.amount > 0 ? sum + t.amount : sum), 0);
   const expenses = displayed.reduce((sum, t) => (t.amount < 0 ? sum + Math.abs(t.amount) : sum), 0);
 
@@ -70,22 +91,37 @@ export function TransactionList({ transactions, categories, onCategoryChange }: 
           <CardTitle>Transações</CardTitle>
           <p className="text-sm text-muted-foreground">{displayed.length} lançamento(s)</p>
         </div>
-        <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-          <SelectTrigger className="w-[260px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as contas</SelectItem>
-            {accounts.map((account) => (
-              <SelectItem
-                key={`${account.accountId}|${account.accountKind}`}
-                value={account.accountId}
-              >
-                {accountLabel(account.accountId, account.accountKind)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap gap-2">
+          <Select value={selectedCreator} onValueChange={setSelectedCreator}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              {members.map((member) => (
+                <SelectItem key={member.user_id} value={member.user_id}>
+                  {memberLabel(member.user_id, currentUserId)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+            <SelectTrigger className="w-[260px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as contas</SelectItem>
+              {accounts.map((account) => (
+                <SelectItem
+                  key={`${account.accountId}|${account.accountKind}`}
+                  value={account.accountId}
+                >
+                  {accountLabel(account.accountId, account.accountKind)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="mb-4 flex flex-wrap gap-6 border-b pb-4 text-sm">
