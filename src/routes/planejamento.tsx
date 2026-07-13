@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +13,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { categoryOptions } from "@/lib/finance/categories";
 import { fetchCategories } from "@/lib/finance/data";
-import { formatCurrency } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 
@@ -29,25 +37,36 @@ export const Route = createFileRoute("/planejamento")({
   component: PlanningRoute,
 });
 
+type BudgetScope = "macro_income" | "macro_expense" | "category";
+
 type BudgetRow = {
   id: string;
-  category_id: string;
+  scope_type: BudgetScope;
+  scope_category_key: string;
+  category_id: string | null;
   period_month: string;
+  budget_year: number;
+  budget_month: number;
   planned_amount: number;
+  default_amount: number;
+  is_manual_adjustment: boolean;
 };
 
-function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
+type MatrixRow = {
+  key: string;
+  scopeType: BudgetScope;
+  categoryId: string | null;
+  label: string;
+  rowsByMonth: Map<number, BudgetRow>;
+};
 
-function monthToDate(month: string) {
-  return `${month}-01`;
-}
+const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 function PlanningRoute() {
   const queryClient = useQueryClient();
-  const [periodMonth, setPeriodMonth] = useState(currentMonth());
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [scopeType, setScopeType] = useState<BudgetScope>("macro_expense");
   const [categoryId, setCategoryId] = useState("");
   const [plannedAmount, setPlannedAmount] = useState("");
   const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
@@ -58,82 +77,141 @@ function PlanningRoute() {
     queryFn: () => fetchCategories(orgId!),
   });
   const budgetsQuery = useQuery({
-    queryKey: ["budgets", orgId, periodMonth],
+    queryKey: ["budgets", orgId, year],
     enabled: !!orgId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("budgets")
-        .select("id, category_id, period_month, planned_amount")
+        .select(
+          "id, scope_type, scope_category_key, category_id, period_month, budget_year, budget_month, planned_amount, default_amount, is_manual_adjustment",
+        )
         .eq("organization_id", orgId!)
-        .eq("period_month", monthToDate(periodMonth))
-        .order("created_at", { ascending: false });
+        .eq("budget_year", year)
+        .order("scope_type")
+        .order("budget_month");
       if (error) throw new Error(error.message);
       return (data ?? []) as BudgetRow[];
     },
   });
 
-  const saveBudget = useMutation({
+  const categories = categoriesQuery.data ?? [];
+  const categoryItems = categoryOptions(categories);
+  const matrixRows = useMemo(
+    () => buildMatrixRows(budgetsQuery.data ?? [], categoryItems),
+    [budgetsQuery.data, categoryItems],
+  );
+
+  const generateAnnualBudget = useMutation({
     mutationFn: async () => {
-      if (!orgId || !categoryId) return;
+      if (!orgId) return;
+      if (scopeType === "category" && !categoryId) {
+        throw new Error("Escolha a categoria ou subcategoria.");
+      }
       const amount = Number(plannedAmount);
       if (!Number.isFinite(amount) || amount < 0) throw new Error("Informe um valor válido.");
-      const { error } = await supabase.from("budgets").upsert(
-        {
+      const selectedCategoryId = scopeType === "category" ? categoryId : null;
+      const scopeCategoryKey = selectedCategoryId ?? ZERO_UUID;
+      const rows = Array.from({ length: 12 }, (_, index) => {
+        const month = index + 1;
+        return {
           organization_id: orgId,
-          category_id: categoryId,
-          period_month: monthToDate(periodMonth),
+          scope_type: scopeType,
+          scope_category_key: scopeCategoryKey,
+          category_id: selectedCategoryId,
+          budget_year: year,
+          budget_month: month,
+          period_month: `${year}-${String(month).padStart(2, "0")}-01`,
           planned_amount: amount,
-        },
-        { onConflict: "organization_id,category_id,period_month" },
-      );
+          default_amount: amount,
+          is_manual_adjustment: false,
+        };
+      });
+      const { error } = await supabase.from("budgets").upsert(rows, {
+        onConflict: "organization_id,scope_type,scope_category_key,budget_year,budget_month",
+      });
       if (error) throw new Error(error.message);
     },
     onSuccess: async () => {
       setPlannedAmount("");
-      await queryClient.invalidateQueries({ queryKey: ["budgets", orgId, periodMonth] });
+      await queryClient.invalidateQueries({ queryKey: ["budgets", orgId, year] });
     },
   });
 
-  const categories = categoriesQuery.data ?? [];
-  const budgets = budgetsQuery.data ?? [];
+  const updateBudgetCell = useMutation({
+    mutationFn: async ({ row, value }: { row: BudgetRow; value: number }) => {
+      if (!orgId) return;
+      const { error } = await supabase
+        .from("budgets")
+        .update({
+          planned_amount: value,
+          is_manual_adjustment: value !== Number(row.default_amount),
+        })
+        .eq("id", row.id)
+        .eq("organization_id", orgId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["budgets", orgId, year] });
+    },
+  });
 
   return (
     <AppShell
       activeSection="planejamento"
       title="Planejamento"
-      subtitle="Orçado vs realizado por categoria"
+      subtitle="Matriz anual por escopo, categoria ou subcategoria"
     >
-      <section className="grid gap-4 lg:grid-cols-[420px_1fr]">
+      <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Planejar mês</CardTitle>
+            <CardTitle>Gerar planejamento anual</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Mês</Label>
+              <Label>Ano</Label>
               <Input
-                type="month"
-                value={periodMonth}
-                onChange={(event) => setPeriodMonth(event.target.value)}
+                type="number"
+                min="2000"
+                max="2100"
+                value={year}
+                onChange={(event) => setYear(Number(event.target.value))}
               />
             </div>
             <div>
-              <Label>Categoria</Label>
-              <Select value={categoryId} onValueChange={setCategoryId}>
+              <Label>Escopo</Label>
+              <Select
+                value={scopeType}
+                onValueChange={(value) => setScopeType(value as BudgetScope)}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Escolha uma categoria" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="macro_expense">Despesa total do mês</SelectItem>
+                  <SelectItem value="macro_income">Receita total do mês</SelectItem>
+                  <SelectItem value="category">Categoria ou subcategoria</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {scopeType === "category" ? (
+              <div>
+                <Label>Categoria</Label>
+                <Select value={categoryId} onValueChange={setCategoryId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha uma categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categoryItems.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.path}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <div>
-              <Label>Valor planejado</Label>
+              <Label>Valor mensal padrão</Label>
               <Input
                 type="number"
                 min="0"
@@ -145,46 +223,136 @@ function PlanningRoute() {
             <Button
               type="button"
               className="w-full"
-              disabled={!categoryId || !plannedAmount || saveBudget.isPending}
-              onClick={() => saveBudget.mutate()}
+              disabled={!plannedAmount || generateAnnualBudget.isPending}
+              onClick={() => generateAnnualBudget.mutate()}
             >
-              Salvar planejamento
+              Gerar 12 meses
             </Button>
-            {saveBudget.error ? (
+            {generateAnnualBudget.error ? (
               <p className="text-sm text-red-700">
-                {saveBudget.error instanceof Error
-                  ? saveBudget.error.message
-                  : String(saveBudget.error)}
+                {generateAnnualBudget.error instanceof Error
+                  ? generateAnnualBudget.error.message
+                  : String(generateAnnualBudget.error)}
               </p>
             ) : null}
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
-            <CardTitle>Orçamentos de {periodMonth}</CardTitle>
+            <CardTitle>Matriz de {year}</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            {budgets.map((budget) => {
-              const category = categories.find((c) => c.id === budget.category_id);
-              return (
-                <div
-                  key={budget.id}
-                  className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-                >
-                  <p className="font-medium">{category?.name ?? "Categoria"}</p>
-                  <p className="text-sm text-muted-foreground">{category?.type ?? "tipo"}</p>
-                  <strong>{formatCurrency(Number(budget.planned_amount))}</strong>
-                </div>
-              );
-            })}
-            {budgets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nenhum orçamento cadastrado neste mês.
-              </p>
-            ) : null}
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[220px]">Escopo</TableHead>
+                  {MONTHS.map((month) => (
+                    <TableHead key={month} className="min-w-[96px] text-right">
+                      {month}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {matrixRows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className="font-medium">{row.label}</TableCell>
+                    {MONTHS.map((_, index) => {
+                      const month = index + 1;
+                      const budget = row.rowsByMonth.get(month);
+                      const adjusted =
+                        budget?.is_manual_adjustment ||
+                        Number(budget?.planned_amount ?? 0) !== Number(budget?.default_amount ?? 0);
+                      return (
+                        <TableCell
+                          key={month}
+                          className={adjusted ? "bg-amber-50 text-right" : "text-right"}
+                        >
+                          {budget ? (
+                            <div>
+                              <Input
+                                key={`${budget.id}-${budget.planned_amount}`}
+                                className="h-8 text-right"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                defaultValue={Number(budget.planned_amount).toFixed(2)}
+                                onBlur={(event) => {
+                                  const value = Number(event.target.value);
+                                  if (
+                                    Number.isFinite(value) &&
+                                    value !== Number(budget.planned_amount)
+                                  ) {
+                                    updateBudgetCell.mutate({ row: budget, value });
+                                  }
+                                }}
+                              />
+                              {adjusted ? (
+                                <span className="mt-1 block text-[10px] text-amber-700">
+                                  ajustado
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+                {matrixRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={13} className="py-8 text-center text-muted-foreground">
+                      Nenhum planejamento gerado para este ano.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Células em destaque indicam meses ajustados manualmente em relação ao valor padrão do
+              escopo.
+            </p>
           </CardContent>
         </Card>
       </section>
     </AppShell>
   );
+}
+
+function buildMatrixRows(
+  budgets: BudgetRow[],
+  categories: { id: string; path: string }[],
+): MatrixRow[] {
+  const categoryPaths = new Map(categories.map((category) => [category.id, category.path]));
+  const rows = new Map<string, MatrixRow>();
+
+  for (const budget of budgets) {
+    const key = `${budget.scope_type}:${budget.scope_category_key}`;
+    const row =
+      rows.get(key) ??
+      ({
+        key,
+        scopeType: budget.scope_type,
+        categoryId: budget.category_id,
+        label: scopeLabel(budget.scope_type, budget.category_id, categoryPaths),
+        rowsByMonth: new Map<number, BudgetRow>(),
+      } satisfies MatrixRow);
+    row.rowsByMonth.set(budget.budget_month, budget);
+    rows.set(key, row);
+  }
+
+  return Array.from(rows.values()).sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+}
+
+function scopeLabel(
+  scopeType: BudgetScope,
+  categoryId: string | null,
+  categoryPaths: Map<string, string>,
+) {
+  if (scopeType === "macro_income") return "Receita total";
+  if (scopeType === "macro_expense") return "Despesa total";
+  return categoryId ? (categoryPaths.get(categoryId) ?? "Categoria") : "Categoria";
 }

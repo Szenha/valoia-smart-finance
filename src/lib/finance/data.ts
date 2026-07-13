@@ -17,7 +17,7 @@ export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
 export async function fetchCategories(orgId: string): Promise<CategoryRow[]> {
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, type, color, icon")
+    .select("id, name, type, parent_id, color, icon")
     .eq("organization_id", orgId)
     .order("name");
   if (error) throw new Error(error.message);

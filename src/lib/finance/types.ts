@@ -4,6 +4,7 @@ export type CategoryRow = {
   id: string;
   name: string;
   type: "income" | "expense" | "transfer" | string;
+  parent_id?: string | null;
   color?: string | null;
   icon?: string | null;
   archived?: boolean | null;

@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { transcribeAudioFn, type TranscriptionResult } from "@/lib/ai/transcribe-audio";
 import { extractVoiceTextFn } from "@/lib/ai/voice-entry";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
+import { categoryOptions, categoryPath } from "@/lib/finance/categories";
 import type { AccountRow, CategoryRow } from "@/lib/finance/types";
 import { supabase } from "@/lib/supabase/client";
 
@@ -69,6 +70,7 @@ export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
+  const categoryItems = categoryOptions(categories);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -140,12 +142,11 @@ export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
         values.description,
         values.amount,
         values.account_kind,
-        categories,
+        categoryItems,
       );
       if (suggestion.category_id) {
         form.setValue("category_id", suggestion.category_id);
-        const label = categories.find((c) => c.id === suggestion.category_id)?.name;
-        setStatus(`Categoria sugerida: ${label ?? "categoria encontrada"}.`);
+        setStatus(`Categoria sugerida: ${categoryPath(categories, suggestion.category_id)}.`);
       } else {
         setStatus("Nenhuma categoria sugerida.");
       }
@@ -341,9 +342,9 @@ export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Sem categoria</SelectItem>
-                {categories.map((category) => (
+                {categoryItems.map((category) => (
                   <SelectItem key={category.id} value={category.id}>
-                    {category.name}
+                    {category.path}
                   </SelectItem>
                 ))}
               </SelectContent>

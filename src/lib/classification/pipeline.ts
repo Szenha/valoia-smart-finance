@@ -3,6 +3,7 @@
 // Layer 3 (AI) delegates to the classifyWithAIFn server function.
 
 import { supabase } from "@/lib/supabase/client";
+import { categoryOptions } from "@/lib/finance/categories";
 import {
   classifyWithAIFn,
   normalizeDescription,
@@ -37,7 +38,7 @@ const DEFAULT_CATEGORIES: { name: string; type: "income" | "expense" | "transfer
 export async function ensureDefaultCategories(orgId: string): Promise<CategoryRow[]> {
   const { data: existing } = await supabase
     .from("categories")
-    .select("id, name, type")
+    .select("id, name, type, parent_id")
     .eq("organization_id", orgId);
 
   if (existing && existing.length > 0) return existing as CategoryRow[];
@@ -45,7 +46,7 @@ export async function ensureDefaultCategories(orgId: string): Promise<CategoryRo
   const { data: inserted } = await supabase
     .from("categories")
     .insert(DEFAULT_CATEGORIES.map((c) => ({ ...c, organization_id: orgId })))
-    .select("id, name, type");
+    .select("id, name, type, parent_id");
 
   return (inserted ?? []) as CategoryRow[];
 }
@@ -148,6 +149,7 @@ export async function runClassificationPipeline(
 
   // ── Layer 3: AI in chunks of 30 ────────────────────────────────────────
   if (forAI.length > 0 && categories.length > 0) {
+    const aiCategories = categoryOptions(categories);
     const CHUNK = 30;
     for (let i = 0; i < forAI.length; i += CHUNK) {
       const chunk = forAI.slice(i, i + CHUNK);
@@ -164,7 +166,7 @@ export async function runClassificationPipeline(
               account_kind: t.account_kind,
               normalized: normalizedById.get(t.id)!,
             })),
-            categories,
+            categories: aiCategories,
           },
         });
         results.push(...aiResults);

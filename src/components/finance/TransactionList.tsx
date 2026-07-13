@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { categoryOptions, categoryPath } from "@/lib/finance/categories";
 import {
   accountKindLabel,
   accountLabel,
@@ -63,6 +64,7 @@ export function TransactionList({
   const [selectedAccount, setSelectedAccount] = useState("all");
   const [selectedCreator, setSelectedCreator] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
+  const categoryItems = categoryOptions(categories);
   const accounts = Array.from(
     new Map(
       transactions.map((t) => [
@@ -171,9 +173,9 @@ export function TransactionList({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Sem categoria</SelectItem>
-                        {categories.map((c) => (
+                        {categoryItems.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.name}
+                            {c.path}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -193,7 +195,7 @@ export function TransactionList({
                         )}`}
                         style={category?.color ? { backgroundColor: category.color } : undefined}
                       />
-                      {category?.name ?? "Sem categoria"}
+                      {categoryPath(categories, transaction.category_id)}
                     </Button>
                   )}
                   <Badge variant={transaction.needs_review ? "secondary" : "outline"}>

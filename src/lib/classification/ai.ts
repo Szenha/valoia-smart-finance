@@ -3,7 +3,13 @@ import Anthropic from "@anthropic-ai/sdk";
 
 // ── Types (shared with pipeline.ts) ───────────────────────────────────────
 
-export type CategoryRow = { id: string; name: string; type: string };
+export type CategoryRow = {
+  id: string;
+  name: string;
+  type: string;
+  parent_id?: string | null;
+  path?: string;
+};
 
 export type ClassificationResult = {
   id: string;
@@ -53,7 +59,7 @@ export const classifyWithAIFn = createServerFn({ method: "POST" })
     const client = new Anthropic({ apiKey });
 
     const categoryList = data.categories
-      .map((c, i) => `${i}. "${c.name}" (${CATEGORY_TYPE_LABEL[c.type] ?? c.type})`)
+      .map((c, i) => `${i}. "${c.path ?? c.name}" (${CATEGORY_TYPE_LABEL[c.type] ?? c.type})`)
       .join("\n");
 
     const txnList = data.transactions
@@ -80,12 +86,12 @@ Transações para classificar:
 ${txnList}
 
 Responda APENAS com um array JSON. Para cada transação, escolha a categoria mais adequada da lista acima:
-[{"idx": 0, "category_name": "Supermercado", "confidence": 0.95}, ...]
+[{"idx": 0, "category_name": "Moradia > Condomínio", "confidence": 0.95}, ...]
 
 Regras:
 - confidence entre 0 e 1 (1 = certeza total)
 - confidence < 0.7 se a categoria não for clara
-- category_name deve ser exatamente o nome de uma das categorias listadas
+- category_name deve ser exatamente o caminho de uma das categorias listadas
 - Se nenhuma categoria se encaixar, retorne category_name: null
 - Não inclua texto fora do JSON`,
         },
@@ -120,7 +126,7 @@ Regras:
         };
       }
       const cat = data.categories.find(
-        (c) => c.name.toLowerCase() === ai.category_name!.toLowerCase(),
+        (c) => (c.path ?? c.name).toLowerCase() === ai.category_name!.toLowerCase(),
       );
       return {
         id: txn.id,
