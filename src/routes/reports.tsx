@@ -93,6 +93,19 @@ function ReportsRoute() {
       return data ?? [];
     },
   });
+  const budgetQuery = useQuery({
+    queryKey: ["reports-budget-vs-actual", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("budget_vs_actual", {
+        p_org_id: orgId!,
+        p_start: bounds.start,
+        p_end: bounds.end,
+      });
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+  });
 
   return (
     <AppShell activeSection="analytics" title="Relatórios" subtitle="Visão consolidada do ano">
@@ -115,6 +128,7 @@ function ReportsRoute() {
         </CardContent>
       </Card>
       <section className="grid gap-4 lg:grid-cols-2">
+        <BudgetComparison rows={budgetQuery.data ?? []} />
         <ReportTable
           title="Despesas por categoria"
           rows={categoryQuery.data ?? []}
@@ -141,6 +155,54 @@ function ReportsRoute() {
 }
 
 type ReportRow = Record<string, string | number | null>;
+
+function BudgetComparison({ rows }: { rows: ReportRow[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Planejado vs realizado</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {rows.map((row, index) => {
+            const planned = Number(row.planned_amount ?? 0);
+            const actual = Number(row.actual_amount ?? 0);
+            const difference = Number(row.difference_amount ?? 0);
+            const over = planned > 0 && actual > planned;
+            return (
+              <div
+                key={index}
+                className={
+                  over
+                    ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm"
+                    : "rounded-lg border border-slate-200 bg-white p-3 text-sm"
+                }
+              >
+                <div className="flex justify-between gap-3">
+                  <span className="font-medium">{row.category_name ?? "Categoria"}</span>
+                  <strong className={over ? "text-red-700" : "text-emerald-700"}>
+                    {formatCurrency(difference)}
+                  </strong>
+                </div>
+                <p className="text-muted-foreground">
+                  Planejado {formatCurrency(planned)} · Realizado {formatCurrency(actual)}
+                  {row.difference_percent !== null && row.difference_percent !== undefined
+                    ? ` · ${Number(row.difference_percent).toFixed(1)}%`
+                    : ""}
+                </p>
+              </div>
+            );
+          })}
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhum planejamento ou realizado encontrado no período.
+            </p>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function ReportTable({
   title,

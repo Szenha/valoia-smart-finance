@@ -55,6 +55,7 @@ Para um projeto remoto/de teste, vincule o projeto pela Supabase CLI e aplique a
 
 - `/`: lancamentos do dia a dia, registro manual, texto ditado/gravacao de voz e lista de transacoes.
 - `/conciliacao`: importacao OFX/PDF, itens de extrato e conciliacao contra lancamentos manuais.
+- `/planejamento`: orcamento familiar mensal por categoria.
 - `/dashboard`: resumo do mes, despesas por categoria, comparacao com o mes anterior e pendencias de revisao.
 - `/reports`: despesas por categoria, por conta/cartao, maiores despesas, recorrencias e comparacao mensal.
 - `/settings`: gestao de categorias e contas/cartoes.
@@ -64,6 +65,10 @@ Os totais e relatorios sao calculados por SQL/RPC no Supabase. A IA via Anthropi
 ## Fechamento de periodo
 
 A conciliacao permite fechar uma fatura de cartao ou um mes de conta quando todos os itens do extrato foram tratados. Transacoes de periodo fechado ficam marcadas como consolidadas e bloqueadas para edicao direta na tela de Dia a dia. Nesta versao familiar, qualquer membro do household pode reabrir um periodo fechado; o app registra quem reabriu e quando, sem implementar permissoes granulares.
+
+## Planejamento
+
+O planejamento usa a tabela `budgets` para registrar valor mensal planejado por categoria. A visao de Planejado vs Realizado em Relatorios e calculada pela RPC `budget_vs_actual`, sem uso de IA.
 
 ## Qualidade
 
