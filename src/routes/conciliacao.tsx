@@ -35,7 +35,7 @@ export const Route = createFileRoute("/conciliacao")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
-  head: () => ({ meta: [{ title: "Calcum — Extratos e conciliação" }] }),
+  head: () => ({ meta: [{ title: "Valoia — Extratos e conciliação" }] }),
   component: ReconciliationRoute,
 });
 

@@ -17,6 +17,10 @@ export async function suggestCategoryForDescription(
   const normalized = normalizeDescription(description);
   if (!normalized) return { category_id: null, method: null, confidence: null };
 
+  // Only leaves may receive a classification — a category with subcategories
+  // is an aggregate and must never be assigned directly.
+  const leafIds = new Set(categories.map((category) => category.id));
+
   const { data: exact } = await supabase
     .from("classification_memory")
     .select("category_id, confidence")
@@ -24,7 +28,7 @@ export async function suggestCategoryForDescription(
     .eq("pattern", normalized)
     .maybeSingle();
 
-  if (exact) {
+  if (exact && leafIds.has(exact.category_id as string)) {
     return {
       category_id: exact.category_id as string,
       method: "memoria_exata",
@@ -37,7 +41,9 @@ export async function suggestCategoryForDescription(
     p_pattern: normalized,
     p_min_similarity: 0.6,
   });
-  const best = (similar as { category_id: string; sim: number }[] | null)?.[0];
+  const best = (similar as { category_id: string; sim: number }[] | null)?.find((row) =>
+    leafIds.has(row.category_id),
+  );
   if (best) {
     return {
       category_id: best.category_id,

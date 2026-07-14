@@ -21,8 +21,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { categoryOptions } from "@/lib/finance/categories";
+import { buildCategoryTree, leafCategoryOptions } from "@/lib/finance/categories";
 import { fetchCategories } from "@/lib/finance/data";
+import { formatCurrency, type CategoryRow } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/planejamento")({
 });
 
 type BudgetScope = "macro_income" | "macro_expense" | "category";
+type Granularity = "macro" | "category" | "subcategory";
 
 type BudgetRow = {
   id: string;
@@ -52,12 +54,12 @@ type BudgetRow = {
   is_manual_adjustment: boolean;
 };
 
-type MatrixRow = {
+type PlanningRow = {
   key: string;
   scopeType: BudgetScope;
   categoryId: string | null;
   label: string;
-  rowsByMonth: Map<number, BudgetRow>;
+  depth: number;
 };
 
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
@@ -66,9 +68,10 @@ const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "
 function PlanningRoute() {
   const queryClient = useQueryClient();
   const [year, setYear] = useState(new Date().getFullYear());
-  const [scopeType, setScopeType] = useState<BudgetScope>("macro_expense");
-  const [categoryId, setCategoryId] = useState("");
-  const [plannedAmount, setPlannedAmount] = useState("");
+  const [granularity, setGranularity] = useState<Granularity>("category");
+  const [baseMonth, setBaseMonth] = useState(new Date().getMonth() + 1);
+  const [editingCell, setEditingCell] = useState<{ key: string; value: string } | null>(null);
+
   const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
   const orgId = orgQuery.data;
   const categoriesQuery = useQuery({
@@ -94,79 +97,123 @@ function PlanningRoute() {
     },
   });
 
-  const categories = categoriesQuery.data ?? [];
-  const categoryItems = categoryOptions(categories);
-  const matrixRows = useMemo(
-    () => buildMatrixRows(budgetsQuery.data ?? [], categoryItems),
-    [budgetsQuery.data, categoryItems],
-  );
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const rows = useMemo(() => buildPlanningRows(granularity, categories), [granularity, categories]);
+  const budgetByKey = useMemo(() => {
+    const map = new Map<string, BudgetRow>();
+    for (const budget of budgetsQuery.data ?? []) {
+      map.set(`${budget.scope_type}:${budget.scope_category_key}:${budget.budget_month}`, budget);
+    }
+    return map;
+  }, [budgetsQuery.data]);
 
-  const generateAnnualBudget = useMutation({
-    mutationFn: async () => {
+  function amountFor(row: PlanningRow, month: number) {
+    return Number(budgetByKey.get(`${row.key}:${month}`)?.planned_amount ?? 0);
+  }
+
+  const saveCell = useMutation({
+    mutationFn: async ({
+      row,
+      month,
+      amount,
+    }: {
+      row: PlanningRow;
+      month: number;
+      amount: number;
+    }) => {
       if (!orgId) return;
-      if (scopeType === "category" && !categoryId) {
-        throw new Error("Escolha a categoria ou subcategoria.");
+      if (amount <= 0) {
+        const { error } = await supabase
+          .from("budgets")
+          .delete()
+          .eq("organization_id", orgId)
+          .eq("scope_type", row.scopeType)
+          .eq("scope_category_key", scopeCategoryKey(row.categoryId))
+          .eq("budget_year", year)
+          .eq("budget_month", month);
+        if (error) throw new Error(error.message);
+        return;
       }
-      const amount = Number(plannedAmount);
-      if (!Number.isFinite(amount) || amount < 0) throw new Error("Informe um valor válido.");
-      const selectedCategoryId = scopeType === "category" ? categoryId : null;
-      const scopeCategoryKey = selectedCategoryId ?? ZERO_UUID;
-      const rows = Array.from({ length: 12 }, (_, index) => {
-        const month = index + 1;
-        return {
+      const { error } = await supabase.from("budgets").upsert(
+        {
           organization_id: orgId,
-          scope_type: scopeType,
-          scope_category_key: scopeCategoryKey,
-          category_id: selectedCategoryId,
+          scope_type: row.scopeType,
+          scope_category_key: scopeCategoryKey(row.categoryId),
+          category_id: row.categoryId,
           budget_year: year,
           budget_month: month,
           period_month: `${year}-${String(month).padStart(2, "0")}-01`,
           planned_amount: amount,
           default_amount: amount,
           is_manual_adjustment: false,
-        };
-      });
-      const { error } = await supabase.from("budgets").upsert(rows, {
+        },
+        { onConflict: "organization_id,scope_type,scope_category_key,budget_year,budget_month" },
+      );
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["budgets", orgId, year] });
+    },
+  });
+
+  const replicateBaseMonth = useMutation({
+    mutationFn: async () => {
+      if (!orgId) return;
+      const filledRows = rows
+        .map((row) => ({ row, amount: amountFor(row, baseMonth) }))
+        .filter(({ amount }) => amount > 0);
+      if (filledRows.length === 0) return;
+      const payload = filledRows.flatMap(({ row, amount }) =>
+        MONTHS.map((_, index) => ({
+          organization_id: orgId,
+          scope_type: row.scopeType,
+          scope_category_key: scopeCategoryKey(row.categoryId),
+          category_id: row.categoryId,
+          budget_year: year,
+          budget_month: index + 1,
+          period_month: `${year}-${String(index + 1).padStart(2, "0")}-01`,
+          planned_amount: amount,
+          default_amount: amount,
+          is_manual_adjustment: false,
+        })),
+      );
+      const { error } = await supabase.from("budgets").upsert(payload, {
         onConflict: "organization_id,scope_type,scope_category_key,budget_year,budget_month",
       });
       if (error) throw new Error(error.message);
     },
     onSuccess: async () => {
-      setPlannedAmount("");
       await queryClient.invalidateQueries({ queryKey: ["budgets", orgId, year] });
     },
   });
 
-  const updateBudgetCell = useMutation({
-    mutationFn: async ({ row, value }: { row: BudgetRow; value: number }) => {
-      if (!orgId) return;
-      const { error } = await supabase
-        .from("budgets")
-        .update({
-          planned_amount: value,
-          is_manual_adjustment: value !== Number(row.default_amount),
-        })
-        .eq("id", row.id)
-        .eq("organization_id", orgId);
-      if (error) throw new Error(error.message);
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["budgets", orgId, year] });
-    },
-  });
+  function startEditCell(row: PlanningRow, month: number) {
+    const amount = amountFor(row, month);
+    setEditingCell({
+      key: `${row.key}:${month}`,
+      value: amount > 0 ? String(amount).replace(".", ",") : "",
+    });
+  }
+
+  function commitEditCell(row: PlanningRow, month: number, rawValue: string) {
+    setEditingCell(null);
+    const amount = parseAmount(rawValue);
+    if (amount === amountFor(row, month)) return;
+    saveCell.mutate({ row, month, amount });
+  }
 
   return (
     <AppShell
       activeSection="planejamento"
       title="Planejamento"
-      subtitle="Matriz anual por escopo, categoria ou subcategoria"
+      subtitle="Matriz anual construída sobre a mesma árvore de categorias de Cadastros"
     >
-      <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Gerar planejamento anual</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Configuração do planejamento</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-[110px_200px_160px_1fr]">
             <div>
               <Label>Ano</Label>
               <Input
@@ -178,181 +225,190 @@ function PlanningRoute() {
               />
             </div>
             <div>
-              <Label>Escopo</Label>
+              <Label>Granularidade</Label>
               <Select
-                value={scopeType}
-                onValueChange={(value) => setScopeType(value as BudgetScope)}
+                value={granularity}
+                onValueChange={(value) => setGranularity(value as Granularity)}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="macro_expense">Despesa total do mês</SelectItem>
-                  <SelectItem value="macro_income">Receita total do mês</SelectItem>
-                  <SelectItem value="category">Categoria ou subcategoria</SelectItem>
+                  <SelectItem value="macro">Despesa/receita total</SelectItem>
+                  <SelectItem value="category">Categoria</SelectItem>
+                  <SelectItem value="subcategory">Subcategoria</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {scopeType === "category" ? (
-              <div>
-                <Label>Categoria</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Escolha uma categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categoryItems.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.path}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
             <div>
-              <Label>Valor mensal padrão</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={plannedAmount}
-                onChange={(event) => setPlannedAmount(event.target.value)}
-              />
+              <Label>Mês base p/ replicar</Label>
+              <Select
+                value={String(baseMonth)}
+                onValueChange={(value) => setBaseMonth(Number(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MONTHS.map((month, index) => (
+                    <SelectItem key={month} value={String(index + 1)}>
+                      {month}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <Button
-              type="button"
-              className="w-full"
-              disabled={!plannedAmount || generateAnnualBudget.isPending}
-              onClick={() => generateAnnualBudget.mutate()}
-            >
-              Gerar 12 meses
-            </Button>
-            {generateAnnualBudget.error ? (
-              <p className="text-sm text-red-700">
-                {generateAnnualBudget.error instanceof Error
-                  ? generateAnnualBudget.error.message
-                  : String(generateAnnualBudget.error)}
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={replicateBaseMonth.isPending}
+                onClick={() => replicateBaseMonth.mutate()}
+              >
+                Replicar mês base para os 12 meses
+              </Button>
+            </div>
+          </div>
+          {replicateBaseMonth.error || saveCell.error ? (
+            <p className="mt-3 text-sm text-red-700">
+              {(replicateBaseMonth.error ?? saveCell.error) instanceof Error
+                ? (replicateBaseMonth.error ?? saveCell.error)!.message
+                : String(replicateBaseMonth.error ?? saveCell.error)}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Matriz de {year}</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader>
+          <CardTitle>Matriz de {year}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border border-slate-200">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[220px]">Escopo</TableHead>
+                  <TableHead className="sticky left-0 z-10 min-w-[220px] bg-white">
+                    {granularity === "macro"
+                      ? "Escopo"
+                      : granularity === "category"
+                        ? "Categoria"
+                        : "Subcategoria"}
+                  </TableHead>
                   {MONTHS.map((month) => (
-                    <TableHead key={month} className="min-w-[96px] text-right">
+                    <TableHead key={month} className="min-w-[150px] text-right">
                       {month}
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {matrixRows.map((row) => (
+                {rows.map((row) => (
                   <TableRow key={row.key}>
-                    <TableCell className="font-medium">{row.label}</TableCell>
+                    <TableCell
+                      className="sticky left-0 z-10 bg-white font-medium"
+                      style={{ paddingLeft: `${row.depth * 16 + 16}px` }}
+                    >
+                      {row.label}
+                    </TableCell>
                     {MONTHS.map((_, index) => {
                       const month = index + 1;
-                      const budget = row.rowsByMonth.get(month);
-                      const adjusted =
-                        budget?.is_manual_adjustment ||
-                        Number(budget?.planned_amount ?? 0) !== Number(budget?.default_amount ?? 0);
+                      const cellKey = `${row.key}:${month}`;
+                      const isEditing = editingCell?.key === cellKey;
+                      const amount = amountFor(row, month);
                       return (
-                        <TableCell
-                          key={month}
-                          className={adjusted ? "bg-amber-50 text-right" : "text-right"}
-                        >
-                          {budget ? (
-                            <div>
-                              <Input
-                                key={`${budget.id}-${budget.planned_amount}`}
-                                className="h-8 text-right"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                defaultValue={Number(budget.planned_amount).toFixed(2)}
-                                onBlur={(event) => {
-                                  const value = Number(event.target.value);
-                                  if (
-                                    Number.isFinite(value) &&
-                                    value !== Number(budget.planned_amount)
-                                  ) {
-                                    updateBudgetCell.mutate({ row: budget, value });
-                                  }
-                                }}
-                              />
-                              {adjusted ? (
-                                <span className="mt-1 block text-[10px] text-amber-700">
-                                  ajustado
-                                </span>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
+                        <TableCell key={month} className="text-right">
+                          <Input
+                            id={`cell-${cellKey}`}
+                            type="text"
+                            inputMode="decimal"
+                            className="h-9 min-w-[150px] text-right tabular-nums"
+                            placeholder="R$ 0,00"
+                            value={
+                              isEditing
+                                ? editingCell.value
+                                : amount > 0
+                                  ? formatCurrency(amount)
+                                  : ""
+                            }
+                            onFocus={() => startEditCell(row, month)}
+                            onChange={(event) =>
+                              setEditingCell((current) =>
+                                current ? { ...current, value: event.target.value } : current,
+                              )
+                            }
+                            onBlur={(event) => commitEditCell(row, month, event.target.value)}
+                          />
                         </TableCell>
                       );
                     })}
                   </TableRow>
                 ))}
-                {matrixRows.length === 0 ? (
+                {rows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={13} className="py-8 text-center text-muted-foreground">
-                      Nenhum planejamento gerado para este ano.
+                      {granularity === "macro"
+                        ? "Nenhum escopo macro disponível."
+                        : "Cadastre categorias em Cadastros > Categorias antes de planejar."}
                     </TableCell>
                   </TableRow>
                 ) : null}
               </TableBody>
             </Table>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Células em destaque indicam meses ajustados manualmente em relação ao valor padrão do
-              escopo.
-            </p>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </CardContent>
+      </Card>
     </AppShell>
   );
 }
 
-function buildMatrixRows(
-  budgets: BudgetRow[],
-  categories: { id: string; path: string }[],
-): MatrixRow[] {
-  const categoryPaths = new Map(categories.map((category) => [category.id, category.path]));
-  const rows = new Map<string, MatrixRow>();
-
-  for (const budget of budgets) {
-    const key = `${budget.scope_type}:${budget.scope_category_key}`;
-    const row =
-      rows.get(key) ??
-      ({
-        key,
-        scopeType: budget.scope_type,
-        categoryId: budget.category_id,
-        label: scopeLabel(budget.scope_type, budget.category_id, categoryPaths),
-        rowsByMonth: new Map<number, BudgetRow>(),
-      } satisfies MatrixRow);
-    row.rowsByMonth.set(budget.budget_month, budget);
-    rows.set(key, row);
+function buildPlanningRows(granularity: Granularity, categories: CategoryRow[]): PlanningRow[] {
+  if (granularity === "macro") {
+    return [
+      {
+        key: `macro_expense:${ZERO_UUID}`,
+        scopeType: "macro_expense",
+        categoryId: null,
+        label: "Despesa total",
+        depth: 0,
+      },
+      {
+        key: `macro_income:${ZERO_UUID}`,
+        scopeType: "macro_income",
+        categoryId: null,
+        label: "Receita total",
+        depth: 0,
+      },
+    ];
   }
 
-  return Array.from(rows.values()).sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  if (granularity === "category") {
+    return buildCategoryTree(categories).map((category) => ({
+      key: `category:${category.id}`,
+      scopeType: "category" as const,
+      categoryId: category.id,
+      label: category.name,
+      depth: 0,
+    }));
+  }
+
+  return leafCategoryOptions(categories).map((category) => ({
+    key: `category:${category.id}`,
+    scopeType: "category" as const,
+    categoryId: category.id,
+    label: category.path,
+    depth: category.depth,
+  }));
 }
 
-function scopeLabel(
-  scopeType: BudgetScope,
-  categoryId: string | null,
-  categoryPaths: Map<string, string>,
-) {
-  if (scopeType === "macro_income") return "Receita total";
-  if (scopeType === "macro_expense") return "Despesa total";
-  return categoryId ? (categoryPaths.get(categoryId) ?? "Categoria") : "Categoria";
+function scopeCategoryKey(categoryId: string | null) {
+  return categoryId ?? ZERO_UUID;
+}
+
+function parseAmount(value: string | undefined) {
+  const raw = value ?? "";
+  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }

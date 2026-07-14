@@ -46,6 +46,19 @@ export function categoryOptions(categories: CategoryRow[]): CategoryOption[] {
   return ordered;
 }
 
+/**
+ * Categories eligible to receive a transaction: leaves only. A category that
+ * has subcategories underneath it is an aggregate and must never be picked
+ * directly — the most specific descendant should be chosen instead.
+ */
+export function leafCategoryOptions(categories: CategoryRow[]): CategoryOption[] {
+  return categoryOptions(categories).filter((category) => category.children.length === 0);
+}
+
+export function rootCategoryOptions(categories: CategoryRow[]): CategoryOption[] {
+  return categoryOptions(categories).filter((category) => category.depth === 0);
+}
+
 export function categoryPath(categories: CategoryRow[], categoryId: string | null | undefined) {
   if (!categoryId) return "Sem categoria";
   return (

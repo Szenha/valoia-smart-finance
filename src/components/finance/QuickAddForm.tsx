@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { transcribeAudioFn, type TranscriptionResult } from "@/lib/ai/transcribe-audio";
 import { extractVoiceTextFn } from "@/lib/ai/voice-entry";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
-import { categoryOptions, categoryPath } from "@/lib/finance/categories";
+import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import type { AccountRow, CategoryRow } from "@/lib/finance/types";
 import { supabase } from "@/lib/supabase/client";
 
@@ -70,7 +70,7 @@ export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
-  const categoryItems = categoryOptions(categories);
+  const categoryItems = leafCategoryOptions(categories);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),

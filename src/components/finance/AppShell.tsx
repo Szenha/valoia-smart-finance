@@ -1,6 +1,8 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import {
   BarChart3,
+  ChevronsLeft,
+  ChevronsRight,
   ClipboardCheck,
   Gauge,
   LayoutDashboard,
@@ -11,9 +13,12 @@ import {
   Tags,
   WalletCards,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ValoiaLogo } from "@/components/brand/valoia-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+const SIDEBAR_COLLAPSED_KEY = "calcum:sidebar-collapsed";
 
 type Section = "day" | "cadastros" | "conciliacao" | "planejamento" | "analytics";
 
@@ -38,12 +43,12 @@ const navItems: NavItem[] = [
   { label: "Dia a dia", to: "/", icon: ListChecks, section: "day" },
   {
     label: "Cadastros",
-    to: "/settings",
+    to: "/cadastros/categorias",
     icon: Settings2,
     section: "cadastros",
     children: [
-      { label: "Contas e cartões", to: "/settings", icon: WalletCards },
-      { label: "Categorias", to: "/settings", icon: Tags },
+      { label: "Categorias", to: "/cadastros/categorias", icon: Tags },
+      { label: "Contas e cartões", to: "/cadastros/contas-e-cartoes", icon: WalletCards },
     ],
   },
   {
@@ -73,17 +78,48 @@ export function AppShell({
   onSignOut,
   children,
 }: AppShellProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-200 bg-white px-4 py-5 lg:flex lg:flex-col">
-        <div className="px-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-600 text-lg font-semibold text-white">
-            C
-          </div>
-          <h1 className="mt-4 text-xl font-semibold tracking-tight">Calcum</h1>
-          <p className="text-sm text-slate-500">Finanças da casa</p>
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-slate-200 bg-white py-5 transition-[width] duration-200 lg:flex",
+          collapsed ? "w-[76px] px-2" : "w-72 px-4",
+        )}
+      >
+        <div className={cn("px-2", collapsed && "flex justify-center px-0")}>
+          {collapsed ? (
+            <ValoiaLogo variant="icon" className="h-10 w-10 rounded-lg" />
+          ) : (
+            <ValoiaLogo variant="full-on-light" className="w-full" />
+          )}
         </div>
-        <nav className="mt-8 flex flex-1 flex-col gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn("mt-3 h-8 w-8 text-slate-500", collapsed ? "self-center" : "self-end")}
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+        >
+          {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+        </Button>
+        <nav className="mt-4 flex flex-1 flex-col gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = item.section === activeSection;
@@ -92,26 +128,32 @@ export function AppShell({
                 <Button
                   asChild
                   variant="ghost"
+                  title={collapsed ? item.label : undefined}
                   className={cn(
-                    "h-11 w-full justify-start gap-3 rounded-md px-3 text-slate-600",
+                    "h-11 w-full gap-3 rounded-md px-3 text-slate-600",
+                    collapsed ? "justify-center px-0" : "justify-start",
                     active && "bg-emerald-50 text-emerald-800 hover:bg-emerald-50",
                   )}
                 >
-                  <Link to={item.to}>
-                    <Icon className="h-4 w-4" />
-                    {item.label}
+                  <Link to={item.to} aria-label={collapsed ? item.label : undefined}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {!collapsed ? item.label : null}
                   </Link>
                 </Button>
-                {active && item.children ? (
+                {active && item.children && !collapsed ? (
                   <div className="ml-5 mt-1 space-y-1 border-l border-slate-200 pl-3">
                     {item.children.map((child) => {
                       const ChildIcon = child.icon;
+                      const childActive = location.pathname === child.to;
                       return (
                         <Button
                           key={child.label}
                           asChild
                           variant="ghost"
-                          className="h-8 w-full justify-start gap-2 px-2 text-xs text-slate-500"
+                          className={cn(
+                            "h-8 w-full justify-start gap-2 px-2 text-xs text-slate-500",
+                            childActive && "bg-emerald-50 text-emerald-800 hover:bg-emerald-50",
+                          )}
                         >
                           <Link to={child.to}>
                             <ChildIcon className="h-3.5 w-3.5" />
@@ -127,14 +169,22 @@ export function AppShell({
           })}
         </nav>
         {onSignOut ? (
-          <Button variant="outline" className="justify-start gap-2" onClick={onSignOut}>
-            <LogOut className="h-4 w-4" />
-            Sair
+          <Button
+            type="button"
+            variant="outline"
+            title={collapsed ? "Sair" : undefined}
+            className={cn("gap-2", collapsed ? "justify-center px-0" : "justify-start")}
+            onClick={onSignOut}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!collapsed ? "Sair" : null}
           </Button>
         ) : null}
       </aside>
 
-      <div className="lg:pl-72">
+      <div
+        className={cn("transition-[padding] duration-200", collapsed ? "lg:pl-[76px]" : "lg:pl-72")}
+      >
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur md:px-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>

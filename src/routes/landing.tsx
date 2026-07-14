@@ -1,12 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { CalcumLogo } from "@/components/brand/calcum-logo";
+import { ValoiaLogo } from "@/components/brand/valoia-logo";
 
 export const Route = createFileRoute("/landing")({
   component: LandingPage,
   head: () => ({
     meta: [
-      { title: "Calcum — Inteligência Financeira Pessoal" },
+      { title: "Valoia — Inteligência Financeira Pessoal" },
       {
         name: "description",
         content:
@@ -35,12 +35,12 @@ const CSS = `
   .reveal.in         { opacity:1; transform:translateY(0); }
   .float             { animation: float 3.8s ease-in-out infinite; }
   .glow              { animation: glow 4s ease-in-out infinite; }
-  .calcum-logo-header { width: 136px; flex: 0 0 auto; }
-  .calcum-logo-footer { width: 144px; }
-  .calcum-logo-mark   { width: 26px; }
+  .valoia-logo-header { width: 136px; flex: 0 0 auto; border-radius: 8px; overflow: hidden; }
+  .valoia-logo-footer { width: 144px; border-radius: 8px; overflow: hidden; }
+  .valoia-logo-mark   { width: 22px; border-radius: 6px; overflow: hidden; }
   @media (max-width: 720px) {
-    .calcum-logo-header { width: 116px; }
-    .calcum-logo-footer { width: 128px; }
+    .valoia-logo-header { width: 116px; }
+    .valoia-logo-footer { width: 128px; }
   }
 `;
 
@@ -125,7 +125,7 @@ function Header() {
         transition: "all .25s",
       }}
     >
-      <CalcumLogo className="calcum-logo-header" />
+      <ValoiaLogo variant="full" className="valoia-logo-header" />
       <nav style={{ flex: 1, display: "flex", justifyContent: "center", gap: 36 }}>
         {["Como funciona", "Benefícios", "Insights", "Segurança"].map((n) => (
           <a
@@ -224,7 +224,7 @@ function DashMockup() {
               gap: 16,
             }}
           >
-            <CalcumLogo variant="icon" className="calcum-logo-mark" />
+            <ValoiaLogo variant="icon" className="valoia-logo-mark" />
             {[0.7, 0.9, 0.6, 0.5, 0.5].map((o, i) => (
               <div
                 key={i}
@@ -608,7 +608,7 @@ function DashMockup() {
             }}
           >
             <div style={{ fontSize: 6.5, color: "#93c5fd", fontWeight: 700, marginBottom: 2 }}>
-              ✦ Insight Calcum
+              ✦ Insight Valoia
             </div>
             <div style={{ fontSize: 6.5, lineHeight: 1.35, color: "rgba(255,255,255,.55)" }}>
               Sua reserva está 64% concluída.
@@ -878,7 +878,7 @@ const STEPS = [
   {
     n: "02",
     icon: "⚙",
-    title: "O Calcum interpreta tudo",
+    title: "O Valoia interpreta tudo",
     desc: "IA categoriza e organiza cada transação. Parcelamentos identificados e acompanhados automaticamente.",
   },
   {
@@ -992,7 +992,7 @@ const BENEFITS = [
   {
     icon: "📥",
     title: "Extratos OFX organizados",
-    desc: "Importe de qualquer banco. O Calcum lê e organiza tudo em segundos, sem digitação.",
+    desc: "Importe de qualquer banco. O Valoia lê e organiza tudo em segundos, sem digitação.",
   },
   {
     icon: "📊",
@@ -1116,7 +1116,7 @@ function InstitutionalQuote() {
             marginBottom: 24,
           }}
         >
-          O Calcum não apenas organiza suas finanças.
+          O Valoia não apenas organiza suas finanças.
           <br />
           <GT>Ele ajuda você a entendê-las.</GT>
         </p>
@@ -1129,7 +1129,7 @@ function InstitutionalQuote() {
             margin: "0 auto",
           }}
         >
-          O Calcum transforma dados financeiros dispersos em uma visão clara sobre hábitos, metas,
+          O Valoia transforma dados financeiros dispersos em uma visão clara sobre hábitos, metas,
           tendências e oportunidades de evolução.
         </p>
       </RevealDiv>
@@ -1246,7 +1246,7 @@ function InsightsSection() {
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 12 }}>
                 <div style={{ width: 5, height: 5, borderRadius: "50%", background: ins.color }} />
                 <span style={{ fontSize: 10.5, color: "rgba(255,255,255,.28)" }}>
-                  Gerado pelo Calcum
+                  Gerado pelo Valoia
                 </span>
               </div>
             </RevealDiv>
@@ -1267,7 +1267,7 @@ const SEC = [
   {
     icon: "⬆",
     title: "Importação segura",
-    desc: "Você importa manualmente seus extratos. O Calcum não acessa sua conta bancária.",
+    desc: "Você importa manualmente seus extratos. O Valoia não acessa sua conta bancária.",
   },
   {
     icon: "🛡",
@@ -1321,7 +1321,7 @@ function SecuritySection() {
                 marginBottom: 28,
               }}
             >
-              Segurança não é um recurso — é a base de tudo. Projetamos o Calcum com privacidade em
+              Segurança não é um recurso — é a base de tudo. Projetamos o Valoia com privacidade em
               cada camada.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1477,7 +1477,7 @@ function Footer() {
           }}
         >
           <div>
-            <CalcumLogo className="calcum-logo-footer" />
+            <ValoiaLogo variant="full" className="valoia-logo-footer" />
             <p
               style={{
                 marginTop: 10,
@@ -1518,7 +1518,7 @@ function Footer() {
           }}
         >
           <p style={{ fontSize: 12.5, color: "rgba(255,255,255,.2)" }}>
-            © 2025 Calcum. Todos os direitos reservados.
+            © 2025 Valoia. Todos os direitos reservados.
           </p>
           <p style={{ fontSize: 12.5, color: "rgba(255,255,255,.2)" }}>Feito no Brasil 🇧🇷</p>
         </div>

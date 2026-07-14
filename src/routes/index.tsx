@@ -18,7 +18,7 @@ export const Route = createFileRoute("/")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
-  head: () => ({ meta: [{ title: "Calcum — Lançamentos" }] }),
+  head: () => ({ meta: [{ title: "Valoia — Lançamentos" }] }),
   component: Index,
 });
 

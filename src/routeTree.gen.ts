@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PlanejamentoRouteImport } from './routes/planejamento'
 import { Route as LoginRouteImport } from './routes/login'
@@ -17,12 +16,9 @@ import { Route as LandingRouteImport } from './routes/landing'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConciliacaoRouteImport } from './routes/conciliacao'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CadastrosContasECartoesRouteImport } from './routes/cadastros/contas-e-cartoes'
+import { Route as CadastrosCategoriasRouteImport } from './routes/cadastros/categorias'
 
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ReportsRoute = ReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -58,6 +54,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CadastrosContasECartoesRoute = CadastrosContasECartoesRouteImport.update({
+  id: '/cadastros/contas-e-cartoes',
+  path: '/cadastros/contas-e-cartoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CadastrosCategoriasRoute = CadastrosCategoriasRouteImport.update({
+  id: '/cadastros/categorias',
+  path: '/cadastros/categorias',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -67,7 +73,8 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/planejamento': typeof PlanejamentoRoute
   '/reports': typeof ReportsRoute
-  '/settings': typeof SettingsRoute
+  '/cadastros/categorias': typeof CadastrosCategoriasRoute
+  '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,7 +84,8 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/planejamento': typeof PlanejamentoRoute
   '/reports': typeof ReportsRoute
-  '/settings': typeof SettingsRoute
+  '/cadastros/categorias': typeof CadastrosCategoriasRoute
+  '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,7 +96,8 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/planejamento': typeof PlanejamentoRoute
   '/reports': typeof ReportsRoute
-  '/settings': typeof SettingsRoute
+  '/cadastros/categorias': typeof CadastrosCategoriasRoute
+  '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,7 +109,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/planejamento'
     | '/reports'
-    | '/settings'
+    | '/cadastros/categorias'
+    | '/cadastros/contas-e-cartoes'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -110,7 +120,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/planejamento'
     | '/reports'
-    | '/settings'
+    | '/cadastros/categorias'
+    | '/cadastros/contas-e-cartoes'
   id:
     | '__root__'
     | '/'
@@ -120,7 +131,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/planejamento'
     | '/reports'
-    | '/settings'
+    | '/cadastros/categorias'
+    | '/cadastros/contas-e-cartoes'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -131,18 +143,12 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PlanejamentoRoute: typeof PlanejamentoRoute
   ReportsRoute: typeof ReportsRoute
-  SettingsRoute: typeof SettingsRoute
+  CadastrosCategoriasRoute: typeof CadastrosCategoriasRoute
+  CadastrosContasECartoesRoute: typeof CadastrosContasECartoesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/reports': {
       id: '/reports'
       path: '/reports'
@@ -192,6 +198,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cadastros/contas-e-cartoes': {
+      id: '/cadastros/contas-e-cartoes'
+      path: '/cadastros/contas-e-cartoes'
+      fullPath: '/cadastros/contas-e-cartoes'
+      preLoaderRoute: typeof CadastrosContasECartoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cadastros/categorias': {
+      id: '/cadastros/categorias'
+      path: '/cadastros/categorias'
+      fullPath: '/cadastros/categorias'
+      preLoaderRoute: typeof CadastrosCategoriasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -203,7 +223,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PlanejamentoRoute: PlanejamentoRoute,
   ReportsRoute: ReportsRoute,
-  SettingsRoute: SettingsRoute,
+  CadastrosCategoriasRoute: CadastrosCategoriasRoute,
+  CadastrosContasECartoesRoute: CadastrosContasECartoesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

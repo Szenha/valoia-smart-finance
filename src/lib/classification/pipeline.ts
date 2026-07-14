@@ -3,7 +3,7 @@
 // Layer 3 (AI) delegates to the classifyWithAIFn server function.
 
 import { supabase } from "@/lib/supabase/client";
-import { categoryOptions } from "@/lib/finance/categories";
+import { leafCategoryOptions } from "@/lib/finance/categories";
 import {
   classifyWithAIFn,
   normalizeDescription,
@@ -78,6 +78,10 @@ export async function runClassificationPipeline(
 
   setStatus?.(`Classificando ${txns.length} transação(ões)…`);
 
+  // Only leaves may receive a classification — a category with subcategories
+  // is an aggregate and must never be assigned directly.
+  const leafIds = new Set(leafCategoryOptions(categories).map((category) => category.id));
+
   // 2. Load full memory for this org (used for Layer 1 in-memory lookup)
   const { data: memory } = await supabase
     .from("classification_memory")
@@ -100,7 +104,7 @@ export async function runClassificationPipeline(
     const norm = normalizeDescription(txn.description);
     normalizedById.set(txn.id, norm);
     const hit = memoryMap.get(norm);
-    if (hit) {
+    if (hit && leafIds.has(hit.category_id)) {
       results.push({
         id: txn.id,
         category_id: hit.category_id,
@@ -127,7 +131,10 @@ export async function runClassificationPipeline(
           p_pattern: normalized,
           p_min_similarity: 0.6,
         });
-        const best = (data as { category_id: string; sim: number }[] | null)?.[0] ?? null;
+        const best =
+          (data as { category_id: string; sim: number }[] | null)?.find((row) =>
+            leafIds.has(row.category_id),
+          ) ?? null;
         return { txn, best };
       }),
     );
@@ -149,7 +156,7 @@ export async function runClassificationPipeline(
 
   // ── Layer 3: AI in chunks of 30 ────────────────────────────────────────
   if (forAI.length > 0 && categories.length > 0) {
-    const aiCategories = categoryOptions(categories);
+    const aiCategories = leafCategoryOptions(categories);
     const CHUNK = 30;
     for (let i = 0; i < forAI.length; i += CHUNK) {
       const chunk = forAI.slice(i, i + CHUNK);

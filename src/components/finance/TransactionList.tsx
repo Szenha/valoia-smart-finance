@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { categoryOptions, categoryPath } from "@/lib/finance/categories";
+import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import {
   accountKindLabel,
   accountLabel,
@@ -64,7 +64,7 @@ export function TransactionList({
   const [selectedAccount, setSelectedAccount] = useState("all");
   const [selectedCreator, setSelectedCreator] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
-  const categoryItems = categoryOptions(categories);
+  const categoryItems = leafCategoryOptions(categories);
   const accounts = Array.from(
     new Map(
       transactions.map((t) => [
