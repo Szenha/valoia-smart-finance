@@ -285,7 +285,8 @@ function PlanningRoute() {
           <CardTitle>Matriz de {year}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-lg border border-slate-200">
+          <div className="relative rounded-lg border border-slate-200">
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-8 bg-gradient-to-l from-white to-transparent" />
             <Table>
               <TableHeader>
                 <TableRow>

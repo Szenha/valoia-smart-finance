@@ -1,0 +1,13 @@
+{
+  "name": "Valoia",
+  "short_name": "Valoia",
+  "description": "Inteligência para sua vida financeira.",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "theme_color": "#010917",
+  "background_color": "#010917",
+  "display": "standalone",
+  "start_url": "/"
+}

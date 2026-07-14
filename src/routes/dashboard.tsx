@@ -158,7 +158,7 @@ function DashboardRoute() {
                   data={categoryQuery.data ?? []}
                   dataKey="total"
                   nameKey="category_name"
-                  outerRadius={110}
+                  outerRadius={85}
                   label
                 >
                   {(categoryQuery.data ?? []).map((_, index) => (

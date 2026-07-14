@@ -91,6 +91,8 @@ function Login() {
         justifyContent: "center",
         position: "relative",
         overflow: "hidden",
+        padding: "0 16px",
+        boxSizing: "border-box",
       }}
     >
       {/* Browser autofill (saved credentials) paints its own background,

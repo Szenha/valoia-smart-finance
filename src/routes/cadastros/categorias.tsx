@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AppShell } from "@/components/finance/AppShell";
+import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -229,8 +230,9 @@ function CategoriasRoute() {
       title="Categorias"
       subtitle="Categorias e subcategorias usadas nos lançamentos"
     >
+      <CadastrosTabs value="categorias" />
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Categorias</CardTitle>
           <Button type="button" onClick={openCreateDialog}>
             <Plus className="mr-2 h-4 w-4" />

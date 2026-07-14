@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
+import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -79,6 +80,7 @@ function ContasECartoesRoute() {
       title="Contas e cartões"
       subtitle="Contas e cartões usados nos lançamentos"
     >
+      <CadastrosTabs value="contas" />
       <Card>
         <CardHeader>
           <CardTitle>Contas e cartões</CardTitle>

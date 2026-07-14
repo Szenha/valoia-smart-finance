@@ -1,4 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   ChevronsLeft,
@@ -8,6 +9,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Mic,
   PiggyBank,
   Settings2,
   Tags,
@@ -16,7 +18,12 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { ValoiaLogo } from "@/components/brand/valoia-logo";
 import { Button } from "@/components/ui/button";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import { fetchAccounts, fetchCategories } from "@/lib/finance/data";
+import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { QuickAddForm } from "./QuickAddForm";
 
 const SIDEBAR_COLLAPSED_KEY = "calcum:sidebar-collapsed";
 
@@ -39,6 +46,8 @@ type NavItem = {
   children?: { label: string; to: string; icon: typeof ListChecks }[];
 };
 
+// Single source of nav items — both the desktop sidebar and the mobile
+// bottom bar render from this same array, split only by CSS breakpoint.
 const navItems: NavItem[] = [
   { label: "Dia a dia", to: "/", icon: ListChecks, section: "day" },
   {
@@ -79,6 +88,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [voiceSheetOpen, setVoiceSheetOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -93,6 +103,31 @@ export function AppShell({
       return next;
     });
   }
+
+  // Data for the mobile "quick add by voice" FAB sheet. Every route already
+  // queries these under the same keys, so this just reuses the cache — it
+  // doesn't add network requests once a page has populated it.
+  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
+  const orgId = orgQuery.data;
+  const currentUserQuery = useQuery({
+    queryKey: ["current-user"],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      return user;
+    },
+  });
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCategories(orgId!),
+  });
+  const accountsQuery = useQuery({
+    queryKey: ["accounts", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchAccounts(orgId!),
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
@@ -186,35 +221,80 @@ export function AppShell({
         className={cn("transition-[padding] duration-200", collapsed ? "lg:pl-[76px]" : "lg:pl-72")}
       >
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur md:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-              {subtitle ? <p className="text-sm text-slate-500">{subtitle}</p> : null}
-              {userEmail ? <p className="text-xs text-slate-400">{userEmail}</p> : null}
-            </div>
-            <div className="flex gap-2 lg:hidden">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = item.section === activeSection;
-                return (
-                  <Button
-                    key={item.label}
-                    asChild
-                    variant={active ? "default" : "outline"}
-                    size="icon"
-                    className="h-9 w-9"
-                  >
-                    <Link to={item.to} aria-label={item.label}>
-                      <Icon className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                );
-              })}
-            </div>
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+            {subtitle ? <p className="text-sm text-slate-500">{subtitle}</p> : null}
+            {userEmail ? <p className="text-xs text-slate-400">{userEmail}</p> : null}
           </div>
         </header>
-        <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 md:px-8">{children}</main>
+        <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6 md:px-8 lg:pb-6">
+          {children}
+        </main>
       </div>
+
+      {/* Mobile bottom navigation — same navItems as the desktop sidebar. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden"
+        aria-label="Navegação principal"
+      >
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const active = item.section === activeSection;
+          return (
+            <Link
+              key={item.label}
+              to={item.to}
+              className={cn(
+                "flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-slate-500",
+                active && "text-emerald-700",
+              )}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="truncate px-0.5">{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Voice quick-add FAB — mobile only. On desktop the quick-add form is
+          already pinned at the top of "Dia a dia" in full, so a floating
+          duplicate would just add clutter; on mobile that form is buried at
+          the top of a page the user may not be on, which is the gap this
+          closes. */}
+      <Button
+        type="button"
+        size="icon"
+        className="fixed right-4 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:hidden [bottom:calc(4rem+env(safe-area-inset-bottom)+1rem)]"
+        aria-label="Registrar por voz"
+        onClick={() => setVoiceSheetOpen(true)}
+      >
+        <Mic className="h-6 w-6" />
+      </Button>
+
+      <Drawer open={voiceSheetOpen} onOpenChange={setVoiceSheetOpen}>
+        <DrawerContent className="max-h-[85vh]">
+          <DrawerHeader className="text-left">
+            <DrawerTitle>Lançamento rápido</DrawerTitle>
+          </DrawerHeader>
+          <div className="overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            {voiceSheetOpen ? (
+              orgId ? (
+                <QuickAddForm
+                  bare
+                  autoFocusInput
+                  orgId={orgId}
+                  userId={currentUserQuery.data?.id ?? null}
+                  categories={categoriesQuery.data ?? []}
+                  accounts={accountsQuery.data ?? []}
+                  onSaved={() => setVoiceSheetOpen(false)}
+                />
+              ) : (
+                <p className="py-6 text-center text-sm text-muted-foreground">Carregando…</p>
+              )
+            ) : null}
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

@@ -41,6 +41,12 @@ type Props = {
   userId: string | null;
   categories: CategoryRow[];
   accounts: AccountRow[];
+  /** Focus the voice/text field on mount — used when opened from the mobile FAB sheet. */
+  autoFocusInput?: boolean;
+  /** Called after a successful save — used by the FAB sheet to close itself. */
+  onSaved?: () => void;
+  /** Skip the outer Card chrome when embedded in another container (e.g. a Drawer). */
+  bare?: boolean;
 };
 
 type PendingAudio = {
@@ -62,7 +68,15 @@ function fileToBase64(blob: Blob): Promise<string> {
   });
 }
 
-export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
+export function QuickAddForm({
+  orgId,
+  userId,
+  categories,
+  accounts,
+  autoFocusInput,
+  onSaved,
+  bare,
+}: Props) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
   const [recording, setRecording] = useState(false);
@@ -128,6 +142,7 @@ export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
       });
       setStatus("Lançamento salvo.");
       await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+      onSaved?.();
     },
     onError: (err) => setStatus(err instanceof Error ? err.message : String(err)),
   });
@@ -259,130 +274,132 @@ export function QuickAddForm({ orgId, userId, categories, accounts }: Props) {
     }
   }
 
+  const formContent = (
+    <form
+      onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}
+      className="grid gap-4 md:grid-cols-6"
+    >
+      <div className="md:col-span-6">
+        <Label>Texto ditado ou anotação</Label>
+        <div className="mt-1 flex gap-2">
+          <Textarea
+            placeholder="Ex: gastei 42 reais no mercado hoje no cartão"
+            autoFocus={autoFocusInput}
+            {...form.register("original_text")}
+          />
+          <Button type="button" variant="outline" size="icon" onClick={toggleRecording}>
+            {recording ? <MicOff /> : <Mic />}
+          </Button>
+        </div>
+        <Button type="button" variant="secondary" className="mt-2" onClick={interpretNativeText}>
+          <Sparkles className="mr-2 h-4 w-4" />
+          Interpretar texto
+        </Button>
+        {pendingAudio ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="ml-2 mt-2"
+            onClick={() => transcribeAndInterpretAudio(pendingAudio)}
+          >
+            Tentar transcrição de novo
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="md:col-span-1">
+        <Label>Tipo</Label>
+        <Select
+          value={form.watch("transaction_type")}
+          onValueChange={(value) =>
+            form.setValue("transaction_type", value as FormValues["transaction_type"])
+          }
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="expense">Despesa</SelectItem>
+            <SelectItem value="income">Receita</SelectItem>
+            <SelectItem value="transfer">Transferência</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="md:col-span-1">
+        <Label>Valor</Label>
+        <Input type="number" step="0.01" {...form.register("amount")} />
+      </div>
+      <div className="md:col-span-2">
+        <Label>Descrição</Label>
+        <Input {...form.register("description")} onBlur={suggestCategory} />
+      </div>
+      <div className="md:col-span-1">
+        <Label>Data</Label>
+        <Input type="date" {...form.register("posted_at")} />
+      </div>
+      <div className="md:col-span-1">
+        <Label>Categoria</Label>
+        <Select
+          value={form.watch("category_id") || "none"}
+          onValueChange={(value) => form.setValue("category_id", value === "none" ? "" : value)}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Sem categoria</SelectItem>
+            {categoryItems.map((category) => (
+              <SelectItem key={category.id} value={category.id}>
+                {category.path}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="md:col-span-2">
+        <Label>Conta/cartão</Label>
+        <Select
+          value={`${form.watch("account_id")}|${form.watch("account_kind")}`}
+          onValueChange={(value) => {
+            const [accountId, accountKind] = value.split("|");
+            form.setValue("account_id", accountId);
+            form.setValue("account_kind", accountKind as FormValues["account_kind"]);
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {accounts.map((account) => (
+              <SelectItem key={account.id} value={`${account.account_key}|${account.kind}`}>
+                {account.name}
+              </SelectItem>
+            ))}
+            {accounts.length === 0 && (
+              <SelectItem value="manual-cash|checking">Dinheiro</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-end gap-2 md:col-span-4">
+        <Button type="submit" disabled={saveMutation.isPending}>
+          Salvar lançamento
+        </Button>
+        {status && <p className="text-sm text-muted-foreground">{status}</p>}
+      </div>
+    </form>
+  );
+
+  if (bare) {
+    return formContent;
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Lançamento rápido</CardTitle>
       </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}
-          className="grid gap-4 md:grid-cols-6"
-        >
-          <div className="md:col-span-6">
-            <Label>Texto ditado ou anotação</Label>
-            <div className="mt-1 flex gap-2">
-              <Textarea
-                placeholder="Ex: gastei 42 reais no mercado hoje no cartão"
-                {...form.register("original_text")}
-              />
-              <Button type="button" variant="outline" size="icon" onClick={toggleRecording}>
-                {recording ? <MicOff /> : <Mic />}
-              </Button>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-2"
-              onClick={interpretNativeText}
-            >
-              <Sparkles className="mr-2 h-4 w-4" />
-              Interpretar texto
-            </Button>
-            {pendingAudio ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="ml-2 mt-2"
-                onClick={() => transcribeAndInterpretAudio(pendingAudio)}
-              >
-                Tentar transcrição de novo
-              </Button>
-            ) : null}
-          </div>
-
-          <div className="md:col-span-1">
-            <Label>Tipo</Label>
-            <Select
-              value={form.watch("transaction_type")}
-              onValueChange={(value) =>
-                form.setValue("transaction_type", value as FormValues["transaction_type"])
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="expense">Despesa</SelectItem>
-                <SelectItem value="income">Receita</SelectItem>
-                <SelectItem value="transfer">Transferência</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="md:col-span-1">
-            <Label>Valor</Label>
-            <Input type="number" step="0.01" {...form.register("amount")} />
-          </div>
-          <div className="md:col-span-2">
-            <Label>Descrição</Label>
-            <Input {...form.register("description")} onBlur={suggestCategory} />
-          </div>
-          <div className="md:col-span-1">
-            <Label>Data</Label>
-            <Input type="date" {...form.register("posted_at")} />
-          </div>
-          <div className="md:col-span-1">
-            <Label>Categoria</Label>
-            <Select
-              value={form.watch("category_id") || "none"}
-              onValueChange={(value) => form.setValue("category_id", value === "none" ? "" : value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Sem categoria</SelectItem>
-                {categoryItems.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.path}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="md:col-span-2">
-            <Label>Conta/cartão</Label>
-            <Select
-              value={`${form.watch("account_id")}|${form.watch("account_kind")}`}
-              onValueChange={(value) => {
-                const [accountId, accountKind] = value.split("|");
-                form.setValue("account_id", accountId);
-                form.setValue("account_kind", accountKind as FormValues["account_kind"]);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((account) => (
-                  <SelectItem key={account.id} value={`${account.account_key}|${account.kind}`}>
-                    {account.name}
-                  </SelectItem>
-                ))}
-                {accounts.length === 0 && (
-                  <SelectItem value="manual-cash|checking">Dinheiro</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-end gap-2 md:col-span-4">
-            <Button type="submit" disabled={saveMutation.isPending}>
-              Salvar lançamento
-            </Button>
-            {status && <p className="text-sm text-muted-foreground">{status}</p>}
-          </div>
-        </form>
-      </CardContent>
+      <CardContent>{formContent}</CardContent>
     </Card>
   );
 }
