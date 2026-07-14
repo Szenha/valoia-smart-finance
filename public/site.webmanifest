@@ -1,6 +1,6 @@
 {
-  "name": "Valoia",
-  "short_name": "Valoia",
+  "name": "Ticlio",
+  "short_name": "Ticlio",
   "description": "Inteligência para sua vida financeira.",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

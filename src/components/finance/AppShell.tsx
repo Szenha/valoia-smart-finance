@@ -16,7 +16,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { ValoiaLogo } from "@/components/brand/valoia-logo";
+import { TiclioLogo } from "@/components/brand/ticlio-logo";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { fetchAccounts, fetchCategories } from "@/lib/finance/data";
@@ -139,9 +139,9 @@ export function AppShell({
       >
         <div className={cn("px-2", collapsed && "flex justify-center px-0")}>
           {collapsed ? (
-            <ValoiaLogo variant="icon" className="h-10 w-10 rounded-lg" />
+            <TiclioLogo variant="icon" className="h-10 w-10 rounded-lg" />
           ) : (
-            <ValoiaLogo variant="full-on-light" className="w-full" />
+            <TiclioLogo variant="full-on-light" style={{ height: 32, width: "auto" }} />
           )}
         </div>
         <Button
@@ -226,7 +226,7 @@ export function AppShell({
             title={userEmail || undefined}
           >
             <div className="flex min-w-0 items-center gap-3">
-              <ValoiaLogo
+              <TiclioLogo
                 variant="icon"
                 className="h-9 w-9 shrink-0 rounded-xl ring-1 ring-white/15 lg:ring-slate-200"
               />

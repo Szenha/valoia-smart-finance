@@ -23,7 +23,7 @@ export const Route = createFileRoute("/")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
-  head: () => ({ meta: [{ title: "Valoia — Lançamentos" }] }),
+  head: () => ({ meta: [{ title: "Ticlio — Lançamentos" }] }),
   component: Index,
 });
 

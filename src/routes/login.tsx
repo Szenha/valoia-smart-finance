@@ -2,7 +2,7 @@ import { createFileRoute, redirect, useNavigate, Link } from "@tanstack/react-ro
 import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
-import { ValoiaLogo } from "@/components/brand/valoia-logo";
+import { TiclioLogo } from "@/components/brand/ticlio-logo";
 
 export const Route = createFileRoute("/login")({
   beforeLoad: async () => {
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/login")({
     if (user) throw redirect({ to: "/" });
   },
   head: () => ({
-    meta: [{ title: "Valoia — Entrar" }],
+    meta: [{ title: "Ticlio — Entrar" }],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       {
@@ -84,7 +84,7 @@ function Login() {
         fontFamily: "Inter, system-ui, -apple-system, sans-serif",
         WebkitFontSmoothing: "antialiased",
         minHeight: "100vh",
-        background: "#010917",
+        background: "#F7FAF9",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -96,23 +96,23 @@ function Login() {
       }}
     >
       {/* Browser autofill (saved credentials) paints its own background,
-          ignoring our dark theme. Override it with the box-shadow-inset
+          ignoring our light theme. Override it with the box-shadow-inset
           trick and a very long transition delay so it never flashes white. */}
       <style>{`
-        .valoia-auth-input:-webkit-autofill,
-        .valoia-auth-input:-webkit-autofill:hover,
-        .valoia-auth-input:-webkit-autofill:focus,
-        .valoia-auth-input:-webkit-autofill:active,
-        .valoia-auth-input:autofill {
-          -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.05) inset !important;
-          box-shadow: 0 0 0 1000px rgba(255,255,255,0.05) inset !important;
-          -webkit-text-fill-color: #ffffff !important;
-          caret-color: #ffffff;
+        .ticlio-auth-input:-webkit-autofill,
+        .ticlio-auth-input:-webkit-autofill:hover,
+        .ticlio-auth-input:-webkit-autofill:focus,
+        .ticlio-auth-input:-webkit-autofill:active,
+        .ticlio-auth-input:autofill {
+          -webkit-box-shadow: 0 0 0 1000px #F3F5F4 inset !important;
+          box-shadow: 0 0 0 1000px #F3F5F4 inset !important;
+          -webkit-text-fill-color: #0B1B2A !important;
+          caret-color: #0B1B2A;
           transition: background-color 5000s ease-in-out 0s, color 5000s ease-in-out 0s;
         }
-        .valoia-auth-input:-webkit-autofill:focus {
-          -webkit-box-shadow: 0 0 0 1000px rgba(198,214,39,0.08) inset !important;
-          box-shadow: 0 0 0 1000px rgba(198,214,39,0.08) inset !important;
+        .ticlio-auth-input:-webkit-autofill:focus {
+          -webkit-box-shadow: 0 0 0 1000px rgba(3,92,58,0.06) inset !important;
+          box-shadow: 0 0 0 1000px rgba(3,92,58,0.06) inset !important;
         }
       `}</style>
 
@@ -120,26 +120,26 @@ function Login() {
       <div
         style={{
           position: "absolute",
-          top: "15%",
-          left: "20%",
-          width: 400,
-          height: 400,
+          top: "12%",
+          left: "18%",
+          width: 420,
+          height: 420,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(198,214,39,0.10) 0%, transparent 70%)",
-          filter: "blur(40px)",
+          background: "radial-gradient(circle, rgba(52,211,153,0.16) 0%, transparent 70%)",
+          filter: "blur(50px)",
           pointerEvents: "none",
         }}
       />
       <div
         style={{
           position: "absolute",
-          bottom: "10%",
-          right: "15%",
-          width: 300,
-          height: 300,
+          bottom: "8%",
+          right: "12%",
+          width: 320,
+          height: 320,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(3,92,58,0.20) 0%, transparent 70%)",
-          filter: "blur(40px)",
+          background: "radial-gradient(circle, rgba(3,92,58,0.14) 0%, transparent 70%)",
+          filter: "blur(50px)",
           pointerEvents: "none",
         }}
       />
@@ -152,16 +152,16 @@ function Login() {
             display: "flex",
             alignItems: "center",
             gap: 6,
-            color: "rgba(255,255,255,0.4)",
+            color: "rgba(11,27,42,0.4)",
             fontSize: 14,
             textDecoration: "none",
             transition: "color .15s",
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.8)";
+            (e.currentTarget as HTMLElement).style.color = "rgba(11,27,42,0.8)";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.4)";
+            (e.currentTarget as HTMLElement).style.color = "rgba(11,27,42,0.4)";
           }}
         >
           ← Voltar
@@ -173,11 +173,11 @@ function Login() {
         style={{
           width: "100%",
           maxWidth: 420,
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.09)",
+          background: "#ffffff",
+          border: "1px solid rgba(11,27,42,0.08)",
           borderRadius: 20,
           padding: "40px 40px 36px",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04)",
+          boxShadow: "0 24px 60px rgba(11,27,42,0.10), 0 0 0 1px rgba(11,27,42,0.02)",
           position: "relative",
           zIndex: 1,
         }}
@@ -196,8 +196,8 @@ function Login() {
         />
 
         {/* Logo */}
-        <div style={{ marginBottom: 32 }}>
-          <ValoiaLogo variant="full" style={{ width: "clamp(220px, 55vw, 280px)" }} />
+        <div style={{ marginBottom: 32, width: "fit-content" }}>
+          <TiclioLogo variant="full-on-light" style={{ width: "clamp(160px, 40vw, 200px)" }} />
         </div>
 
         {/* Heading */}
@@ -205,14 +205,14 @@ function Login() {
           style={{
             fontSize: 26,
             fontWeight: 800,
-            color: "white",
+            color: "#0B1B2A",
             letterSpacing: "-0.025em",
             margin: "0 0 4px",
           }}
         >
           {mode === "login" ? "Bem-vindo de volta" : "Criar conta"}
         </h1>
-        <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", margin: "0 0 28px" }}>
+        <p style={{ fontSize: 14, color: "rgba(11,27,42,0.5)", margin: "0 0 28px" }}>
           {mode === "login"
             ? "Entre na sua conta para continuar"
             : "Comece a controlar suas finanças hoje"}
@@ -224,7 +224,7 @@ function Login() {
             display: "flex",
             gap: 0,
             marginBottom: 28,
-            background: "rgba(255,255,255,0.05)",
+            background: "#F3F5F4",
             borderRadius: 10,
             padding: 4,
           }}
@@ -243,9 +243,9 @@ function Login() {
                 fontSize: 13,
                 fontWeight: 600,
                 transition: "all .2s",
-                background: mode === m ? "rgba(198,214,39,0.20)" : "transparent",
-                color: mode === m ? "#C6D627" : "rgba(255,255,255,0.4)",
-                boxShadow: mode === m ? "0 0 12px rgba(198,214,39,0.25)" : "none",
+                background: mode === m ? "#ffffff" : "transparent",
+                color: mode === m ? "#035C3A" : "rgba(11,27,42,0.45)",
+                boxShadow: mode === m ? "0 1px 4px rgba(11,27,42,0.12)" : "none",
               }}
             >
               {m === "login" ? "Entrar" : "Cadastrar"}
@@ -256,14 +256,14 @@ function Login() {
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Email */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.55)" }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(11,27,42,0.6)" }}>
               Email
             </label>
             <input
               type="email"
               required
               autoComplete="email"
-              className="valoia-auth-input"
+              className="ticlio-auth-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onFocus={() => setFocusedField("email")}
@@ -271,15 +271,14 @@ function Login() {
               placeholder="seu@email.com"
               style={{
                 padding: "11px 14px",
-                background:
-                  focusedField === "email" ? "rgba(198,214,39,0.08)" : "rgba(255,255,255,0.05)",
+                background: focusedField === "email" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
                 border:
                   focusedField === "email"
-                    ? "1px solid rgba(198,214,39,0.5)"
-                    : "1px solid rgba(255,255,255,0.1)",
+                    ? "1px solid rgba(3,92,58,0.4)"
+                    : "1px solid rgba(11,27,42,0.08)",
                 borderRadius: 10,
                 fontSize: 14,
-                color: "white",
+                color: "#0B1B2A",
                 outline: "none",
                 transition: "all .2s",
               }}
@@ -288,7 +287,7 @@ function Login() {
 
           {/* Password */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.55)" }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(11,27,42,0.6)" }}>
               Senha
             </label>
             <input
@@ -296,7 +295,7 @@ function Login() {
               required
               minLength={6}
               autoComplete={mode === "login" ? "current-password" : "new-password"}
-              className="valoia-auth-input"
+              className="ticlio-auth-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onFocus={() => setFocusedField("password")}
@@ -304,15 +303,14 @@ function Login() {
               placeholder="••••••••"
               style={{
                 padding: "11px 14px",
-                background:
-                  focusedField === "password" ? "rgba(198,214,39,0.08)" : "rgba(255,255,255,0.05)",
+                background: focusedField === "password" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
                 border:
                   focusedField === "password"
-                    ? "1px solid rgba(198,214,39,0.5)"
-                    : "1px solid rgba(255,255,255,0.1)",
+                    ? "1px solid rgba(3,92,58,0.4)"
+                    : "1px solid rgba(11,27,42,0.08)",
                 borderRadius: 10,
                 fontSize: 14,
-                color: "white",
+                color: "#0B1B2A",
                 outline: "none",
                 transition: "all .2s",
               }}
@@ -325,10 +323,10 @@ function Login() {
               style={{
                 padding: "10px 14px",
                 borderRadius: 8,
-                background: "rgba(239,68,68,0.1)",
-                border: "1px solid rgba(239,68,68,0.25)",
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid rgba(239,68,68,0.2)",
                 fontSize: 13,
-                color: "#fca5a5",
+                color: "#b91c1c",
               }}
             >
               {error}
@@ -340,9 +338,9 @@ function Login() {
                 padding: "10px 14px",
                 borderRadius: 8,
                 background: "rgba(52,211,153,0.1)",
-                border: "1px solid rgba(52,211,153,0.25)",
+                border: "1px solid rgba(52,211,153,0.3)",
                 fontSize: 13,
-                color: "#6ee7b7",
+                color: "#047857",
               }}
             >
               {info}
@@ -366,7 +364,7 @@ function Login() {
               // text keeps reliable contrast — small filled buttons use
               // --primary, the darker end of the brand gradient.
               background: loading ? "rgba(3,92,58,0.5)" : "#035C3A",
-              boxShadow: loading ? "none" : "0 0 24px rgba(3,92,58,0.45)",
+              boxShadow: loading ? "none" : "0 8px 20px rgba(3,92,58,0.25)",
               transition: "all .2s",
               letterSpacing: "-0.01em",
             }}
@@ -387,7 +385,7 @@ function Login() {
             marginTop: 24,
             textAlign: "center",
             fontSize: 13,
-            color: "rgba(255,255,255,0.3)",
+            color: "rgba(11,27,42,0.4)",
             lineHeight: 1.5,
           }}
         >
@@ -400,9 +398,10 @@ function Login() {
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#C6D627",
+                  color: "#035C3A",
                   cursor: "pointer",
                   fontSize: 13,
+                  fontWeight: 600,
                   padding: 0,
                 }}
               >
@@ -418,9 +417,10 @@ function Login() {
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#C6D627",
+                  color: "#035C3A",
                   cursor: "pointer",
                   fontSize: 13,
+                  fontWeight: 600,
                   padding: 0,
                 }}
               >
@@ -433,7 +433,7 @@ function Login() {
 
       {/* Bottom badge */}
       <p
-        style={{ marginTop: 28, fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center" }}
+        style={{ marginTop: 28, fontSize: 12, color: "rgba(11,27,42,0.35)", textAlign: "center" }}
       >
         Dados protegidos · Conforme LGPD
       </p>
