@@ -1,5 +1,12 @@
 import { supabase } from "@/lib/supabase/client";
-import type { AccountRow, CategoryRow, HouseholdMemberRow, TxnRow } from "./types";
+import type {
+  AccountBalanceRow,
+  AccountRow,
+  CardSummaryRow,
+  CategoryRow,
+  HouseholdMemberRow,
+  TxnRow,
+} from "./types";
 
 export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
   const { data, error } = await supabase
@@ -27,12 +34,26 @@ export async function fetchCategories(orgId: string): Promise<CategoryRow[]> {
 export async function fetchAccounts(orgId: string): Promise<AccountRow[]> {
   const { data, error } = await supabase
     .from("financial_accounts")
-    .select("id, account_key, name, institution, kind, archived")
+    .select(
+      "id, account_key, name, institution, kind, archived, initial_balance, initial_balance_date, closing_day, due_day, credit_limit",
+    )
     .eq("organization_id", orgId)
     .order("archived")
     .order("name");
   if (error) throw new Error(error.message);
   return (data ?? []) as AccountRow[];
+}
+
+export async function fetchAccountBalances(orgId: string): Promise<AccountBalanceRow[]> {
+  const { data, error } = await supabase.rpc("account_balances", { p_org_id: orgId });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AccountBalanceRow[];
+}
+
+export async function fetchCardSummary(orgId: string): Promise<CardSummaryRow[]> {
+  const { data, error } = await supabase.rpc("card_summary", { p_org_id: orgId });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CardSummaryRow[];
 }
 
 export async function fetchHouseholdMembers(orgId: string): Promise<HouseholdMemberRow[]> {

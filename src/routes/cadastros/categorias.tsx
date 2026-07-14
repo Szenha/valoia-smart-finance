@@ -39,6 +39,7 @@ import {
   descendantCategoryIds,
   type CategoryOption,
 } from "@/lib/finance/categories";
+import { CATEGORY_ICON_OPTIONS, categoryIconFor } from "@/lib/finance/category-icons";
 import { fetchCategories } from "@/lib/finance/data";
 import type { CategoryRow } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
@@ -91,12 +92,14 @@ function CategoriasRoute() {
   const [createStep, setCreateStep] = useState<CreateStep>("choose");
   const [newName, setNewName] = useState("");
   const [newParentId, setNewParentId] = useState("");
+  const [newIcon, setNewIcon] = useState("");
 
   // Edit flow: separate dialog, keeps the full set of fields.
   const [editingCategory, setEditingCategory] = useState<CategoryRow | null>(null);
   const [editName, setEditName] = useState("");
   const [editType, setEditType] = useState<CategoryType>("expense");
   const [editParentId, setEditParentId] = useState("root");
+  const [editIcon, setEditIcon] = useState("");
 
   const [deleteCategory, setDeleteCategory] = useState<{
     category: CategoryRow;
@@ -117,6 +120,7 @@ function CategoriasRoute() {
     setCreateStep("choose");
     setNewName("");
     setNewParentId("");
+    setNewIcon("");
     setCreateOpen(true);
   }
 
@@ -126,6 +130,7 @@ function CategoriasRoute() {
       setCreateStep("choose");
       setNewName("");
       setNewParentId("");
+      setNewIcon("");
     }
   }
 
@@ -142,6 +147,7 @@ function CategoriasRoute() {
         name: newName,
         type: parent?.type ?? "expense",
         parent_id: createStep === "subcategory" ? newParentId : null,
+        icon: newIcon || null,
       });
       if (error) throw new Error(error.message);
     },
@@ -164,6 +170,7 @@ function CategoriasRoute() {
     setEditName(category.name);
     setEditType(category.type as CategoryType);
     setEditParentId(category.parent_id ?? "root");
+    setEditIcon(category.icon ?? "");
   }
 
   const blockedParentIds = editingCategory
@@ -179,6 +186,7 @@ function CategoriasRoute() {
           name: editName,
           type: editType,
           parent_id: editParentId === "root" ? null : editParentId,
+          icon: editIcon || null,
         })
         .eq("id", editingCategory.id)
         .eq("organization_id", orgId);
@@ -305,6 +313,7 @@ function CategoriasRoute() {
                   onChange={(event) => setNewName(event.target.value)}
                 />
               </div>
+              <IconPicker value={newIcon} onChange={setNewIcon} />
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setCreateStep("choose")}>
                   Voltar
@@ -342,6 +351,7 @@ function CategoriasRoute() {
                 <Label>Nome</Label>
                 <Input value={newName} onChange={(event) => setNewName(event.target.value)} />
               </div>
+              <IconPicker value={newIcon} onChange={setNewIcon} />
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setCreateStep("choose")}>
                   Voltar
@@ -406,6 +416,7 @@ function CategoriasRoute() {
               </SelectContent>
             </Select>
           </div>
+          <IconPicker value={editIcon} onChange={setEditIcon} />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setEditingCategory(null)}>
               Cancelar
@@ -487,6 +498,7 @@ function CategoryTreeItem({
             <ChevronRight className="h-4 w-4" />
           )}
         </Button>
+        <CategoryIconBadge icon={category.icon} type={category.type} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">{category.name}</p>
           <p className="truncate text-xs text-muted-foreground">{category.path}</p>
@@ -525,6 +537,46 @@ function CategoryTreeItem({
             />
           ))
         : null}
+    </div>
+  );
+}
+
+function CategoryIconBadge({ icon, type }: { icon: string | null | undefined; type: string }) {
+  const Icon = categoryIconFor(icon, type);
+  return (
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+      <Icon className="h-3.5 w-3.5" />
+    </span>
+  );
+}
+
+function IconPicker({ value, onChange }: { value: string; onChange: (icon: string) => void }) {
+  return (
+    <div>
+      <Label>Ícone</Label>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {CATEGORY_ICON_OPTIONS.map((option) => {
+          const Icon = option.icon;
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              title={option.label}
+              aria-label={option.label}
+              aria-pressed={selected}
+              onClick={() => onChange(selected ? "" : option.value)}
+              className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
+                selected
+                  ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import Anthropic from "@anthropic-ai/sdk";
 
+export type PaymentMethodHint = "debit" | "credit" | "cash" | "pix" | null;
+
 export type VoiceTransactionDraft = {
   original_text: string;
   description: string;
@@ -8,6 +10,8 @@ export type VoiceTransactionDraft = {
   transaction_type: "expense" | "income" | "transfer";
   date: string;
   account_hint: string | null;
+  payment_method_hint: PaymentMethodHint;
+  installments_count: number;
   confidence: number;
 };
 
@@ -26,14 +30,22 @@ Responda APENAS JSON válido:
   "transaction_type": "expense" | "income" | "transfer",
   "date": "YYYY-MM-DD",
   "account_hint": string | null,
+  "payment_method_hint": "debit" | "credit" | "cash" | "pix" | null,
+  "installments_count": number,
   "confidence": number
 }
 
 Regras:
-- amount sempre positivo.
+- amount é sempre o valor TOTAL da compra (positivo), mesmo quando parcelado.
+  Ex: "390 reais em 3 parcelas" -> amount 390, installments_count 3 (não 130).
 - transaction_type "expense" para gastos, "income" para entradas, "transfer" para transferências.
 - Se não houver data, use ${TODAY}.
-- Não invente conta; se a fala mencionar cartão/conta/banco, coloque em account_hint.
+- account_hint: só o NOME/instituição da conta ou cartão mencionado (ex: "Nubank", "Inter"),
+  sem a palavra "cartão"/"conta". null se não houver nome específico.
+- payment_method_hint: classifique a forma de pagamento mencionada:
+  "debit" para "débito", "cash" para "dinheiro"/"espécie", "pix" para "pix",
+  "credit" para "crédito"/"cartão" (sem especificar débito). null se não houver menção.
+- installments_count: número de parcelas mencionado (ex: "em 3 vezes", "parcelado em 5"). 1 se à vista ou não mencionado.
 - confidence entre 0 e 1.`;
 
 function parseDraft(rawText: string, fallbackText: string): VoiceTransactionDraft {
@@ -48,6 +60,7 @@ function parseDraft(rawText: string, fallbackText: string): VoiceTransactionDraf
   if (!parsed.description || !Number.isFinite(parsed.amount)) {
     throw new Error("Não foi possível identificar descrição e valor no relato.");
   }
+  const installments = Number(parsed.installments_count);
   return {
     original_text: parsed.original_text ?? fallbackText,
     description: parsed.description,
@@ -55,6 +68,8 @@ function parseDraft(rawText: string, fallbackText: string): VoiceTransactionDraf
     transaction_type: parsed.transaction_type ?? "expense",
     date: parsed.date ?? TODAY,
     account_hint: parsed.account_hint ?? null,
+    payment_method_hint: parsed.payment_method_hint ?? null,
+    installments_count: Number.isFinite(installments) && installments >= 1 ? installments : 1,
     confidence: Number.isFinite(parsed.confidence) ? Number(parsed.confidence) : 0.7,
   };
 }

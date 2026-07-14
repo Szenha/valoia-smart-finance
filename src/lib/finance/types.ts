@@ -1,3 +1,5 @@
+import { CreditCard, Landmark, TrendingUp, type LucideIcon } from "lucide-react";
+
 export type AccountKind = "checking" | "credit_card" | "investment";
 
 export type CategoryRow = {
@@ -17,6 +19,33 @@ export type AccountRow = {
   institution: string | null;
   kind: AccountKind;
   archived: boolean;
+  initial_balance: number | null;
+  initial_balance_date: string | null;
+  closing_day: number | null;
+  due_day: number | null;
+  credit_limit: number | null;
+};
+
+export type AccountBalanceRow = {
+  account_id: string;
+  account_key: string;
+  name: string;
+  initial_balance: number | null;
+  initial_balance_date: string | null;
+  current_balance: number;
+};
+
+export type CardSummaryRow = {
+  account_id: string;
+  account_key: string;
+  name: string;
+  credit_limit: number | null;
+  closing_day: number | null;
+  due_day: number | null;
+  current_invoice_total: number;
+  future_installments_total: number;
+  limit_used: number;
+  limit_available: number | null;
 };
 
 export type TxnRow = {
@@ -52,6 +81,16 @@ export const accountKindLabel: Record<string, string> = {
   credit_card: "Cartão de crédito",
   investment: "Investimento",
 };
+
+const ACCOUNT_KIND_ICON: Record<string, LucideIcon> = {
+  checking: Landmark,
+  credit_card: CreditCard,
+  investment: TrendingUp,
+};
+
+export function accountKindIcon(kind: string): LucideIcon {
+  return ACCOUNT_KIND_ICON[kind] ?? Landmark;
+}
 
 export function formatCurrency(value: number, currency = "BRL") {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(value);

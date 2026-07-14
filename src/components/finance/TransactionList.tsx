@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertCircle, CheckCircle2, Lock } from "lucide-react";
+import { AlertCircle, CheckCircle2, Layers, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
+import { categoryIconFor } from "@/lib/finance/category-icons";
 import {
+  accountKindIcon,
   accountKindLabel,
   accountLabel,
   formatCurrency,
@@ -141,6 +143,7 @@ export function TransactionList({
             const isEditing = editingCategoryFor === transaction.id;
             const consolidated = transaction.consolidation_status === "consolidado";
             const amountClass = transaction.amount < 0 ? "text-red-700" : "text-emerald-700";
+            const AccountKindIcon = accountKindIcon(String(transaction.account_kind));
             return (
               <div
                 key={transaction.id}
@@ -149,8 +152,9 @@ export function TransactionList({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-medium">{transaction.description || "-"}</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="flex items-center gap-1 text-sm text-muted-foreground">
                       {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
+                      <AccountKindIcon className="h-3 w-3" />
                       {accountKindLabel[String(transaction.account_kind)] ??
                         transaction.account_kind}
                     </p>
@@ -181,22 +185,34 @@ export function TransactionList({
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 gap-2 px-2"
-                      disabled={consolidated}
-                      onClick={() => setEditingCategoryFor(transaction.id)}
-                    >
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${colorForCategory(
-                          category,
-                          categoryIndex,
-                        )}`}
-                        style={category?.color ? { backgroundColor: category.color } : undefined}
-                      />
-                      {categoryPath(categories, transaction.category_id)}
-                    </Button>
+                    (() => {
+                      const CategoryIcon = categoryIconFor(
+                        category?.icon,
+                        category?.type ?? "expense",
+                      );
+                      return (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-2 px-2"
+                          disabled={consolidated}
+                          onClick={() => setEditingCategoryFor(transaction.id)}
+                        >
+                          <span
+                            className={`flex h-5 w-5 items-center justify-center rounded-full text-white ${colorForCategory(
+                              category,
+                              categoryIndex,
+                            )}`}
+                            style={
+                              category?.color ? { backgroundColor: category.color } : undefined
+                            }
+                          >
+                            <CategoryIcon className="h-3 w-3" />
+                          </span>
+                          {categoryPath(categories, transaction.category_id)}
+                        </Button>
+                      );
+                    })()
                   )}
                   <Badge variant={transaction.needs_review ? "secondary" : "outline"}>
                     {transaction.needs_review ? (
@@ -208,6 +224,7 @@ export function TransactionList({
                   </Badge>
                   {transaction.installment_plan_id ? (
                     <Badge variant="outline">
+                      <Layers className="mr-1 h-3 w-3" />
                       {transaction.installment_number
                         ? `${transaction.installment_number} parcela`
                         : "Parcelado"}

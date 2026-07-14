@@ -4,7 +4,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
-import { fetchHouseholdMembers } from "@/lib/finance/data";
+import { fetchAccountBalances, fetchHouseholdMembers } from "@/lib/finance/data";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -47,6 +47,11 @@ function DashboardRoute() {
     queryFn: () => fetchHouseholdMembers(orgId!),
   });
   const bounds = monthBounds();
+  const balancesQuery = useQuery({
+    queryKey: ["account-balances", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchAccountBalances(orgId!),
+  });
   const summaryQuery = useQuery({
     queryKey: ["dashboard-summary", orgId],
     enabled: !!orgId,
@@ -108,10 +113,44 @@ function DashboardRoute() {
     (sum, row) => sum + Number(row.total),
     0,
   );
+  const checkingBalances = balancesQuery.data ?? [];
+  const consolidatedBalance = checkingBalances.reduce((sum, row) => sum + row.current_balance, 0);
 
   return (
     <AppShell activeSection="analytics" title="Dashboard" subtitle="Resumo do mês atual">
       <AnalyticsTabs value="dashboard" />
+      {checkingBalances.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Saldo bancário</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {checkingBalances.length > 1 ? (
+              <div className="flex items-center justify-between border-b pb-3">
+                <span className="text-sm font-medium">Total consolidado</span>
+                <strong
+                  className={`text-xl ${consolidatedBalance < 0 ? "text-red-700" : "text-emerald-700"}`}
+                >
+                  {formatCurrency(consolidatedBalance)}
+                </strong>
+              </div>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {checkingBalances.map((row) => (
+                <div
+                  key={row.account_id}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm"
+                >
+                  <span>{row.name}</span>
+                  <strong className={row.current_balance < 0 ? "text-red-700" : "text-emerald-700"}>
+                    {formatCurrency(row.current_balance)}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
       <section className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>

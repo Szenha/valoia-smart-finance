@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mic, MicOff, Sparkles } from "lucide-react";
-import { useRef, useState } from "react";
+import { Loader2, Mic, Sparkles, Square } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { transcribeAudioFn, type TranscriptionResult } from "@/lib/ai/transcribe-audio";
-import { extractVoiceTextFn } from "@/lib/ai/voice-entry";
+import { extractVoiceTextFn, type PaymentMethodHint } from "@/lib/ai/voice-entry";
+import { matchPaymentAccount } from "@/lib/finance/account-match";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
+import { computeInstallmentSchedule } from "@/lib/finance/installments";
 import type { AccountRow, CategoryRow } from "@/lib/finance/types";
 import { supabase } from "@/lib/supabase/client";
 
@@ -29,8 +31,9 @@ const schema = z.object({
   description: z.string().min(2, "Descreva o lançamento"),
   category_id: z.string().optional(),
   posted_at: z.string().min(10),
-  account_id: z.string().min(1),
+  account_id: z.string().min(1, "Selecione a conta ou cartão utilizado"),
   account_kind: z.enum(["checking", "credit_card", "investment"]),
+  installments_count: z.coerce.number().int().min(1).max(60),
   original_text: z.string().optional(),
 });
 
@@ -68,6 +71,19 @@ function fileToBase64(blob: Blob): Promise<string> {
   });
 }
 
+function formatSeconds(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+type ProcessingStage = "idle" | "transcribing" | "interpreting";
+
+const PROCESSING_LABEL: Record<Exclude<ProcessingStage, "idle">, string> = {
+  transcribing: "Transcrevendo áudio…",
+  interpreting: "Interpretando lançamento…",
+};
+
 export function QuickAddForm({
   orgId,
   userId,
@@ -80,11 +96,20 @@ export function QuickAddForm({
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [processingStage, setProcessingStage] = useState<ProcessingStage>("idle");
   const [pendingAudio, setPendingAudio] = useState<PendingAudio | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
+  const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const categoryItems = leafCategoryOptions(categories);
+
+  useEffect(() => {
+    return () => {
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+    };
+  }, []);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -96,27 +121,24 @@ export function QuickAddForm({
       posted_at: today(),
       account_id: accounts[0]?.account_key ?? "manual-cash",
       account_kind: accounts[0]?.kind ?? "checking",
+      installments_count: 1,
       original_text: "",
     },
   });
 
   const saveMutation = useMutation({
     mutationFn: async (values: FormValues) => {
-      const signedAmount =
-        values.transaction_type === "expense" ? -Math.abs(values.amount) : Math.abs(values.amount);
-      const fitId = `MANUAL-${crypto.randomUUID()}`;
-      const { error } = await supabase.from("transactions").insert({
+      const signedType =
+        values.transaction_type === "expense"
+          ? "MANUAL_DEBIT"
+          : values.transaction_type === "income"
+            ? "MANUAL_CREDIT"
+            : "MANUAL_TRANSFER";
+      const sign = values.transaction_type === "expense" ? -1 : 1;
+      const baseRow = {
         organization_id: orgId,
-        amount: signedAmount,
         description: values.description,
-        posted_at: new Date(values.posted_at).toISOString(),
-        fit_id: fitId,
-        type:
-          values.transaction_type === "expense"
-            ? "MANUAL_DEBIT"
-            : values.transaction_type === "income"
-              ? "MANUAL_CREDIT"
-              : "MANUAL_TRANSFER",
+        type: signedType,
         account_id: values.account_id,
         account_kind: values.account_kind,
         currency: "BRL",
@@ -126,6 +148,48 @@ export function QuickAddForm({
         classification_method: values.category_id ? "manual" : null,
         classification_confidence: values.category_id ? 1 : null,
         needs_review: !values.category_id,
+      };
+
+      if (values.installments_count > 1) {
+        const account = accounts.find((a) => a.account_key === values.account_id);
+        const schedule = computeInstallmentSchedule(
+          new Date(values.posted_at),
+          values.amount,
+          values.installments_count,
+          account?.closing_day ?? null,
+        );
+        const { data: plan, error: planError } = await supabase
+          .from("installment_plans")
+          .insert({
+            organization_id: orgId,
+            account_id: values.account_id,
+            description_normalized: values.description.trim().toLowerCase(),
+            total_installments: values.installments_count,
+            installment_amount: schedule[0].amount,
+            confirmed_by: userId,
+          })
+          .select("id")
+          .single();
+        if (planError) throw new Error(planError.message);
+
+        const rows = schedule.map((installment) => ({
+          ...baseRow,
+          amount: sign * Math.abs(installment.amount),
+          posted_at: new Date(installment.postedAt).toISOString(),
+          fit_id: `MANUAL-${crypto.randomUUID()}`,
+          installment_plan_id: plan.id,
+          installment_number: installment.number,
+        }));
+        const { error } = await supabase.from("transactions").insert(rows);
+        if (error) throw new Error(error.message);
+        return;
+      }
+
+      const { error } = await supabase.from("transactions").insert({
+        ...baseRow,
+        amount: sign * Math.abs(values.amount),
+        posted_at: new Date(values.posted_at).toISOString(),
+        fit_id: `MANUAL-${crypto.randomUUID()}`,
       });
       if (error) throw new Error(error.message);
     },
@@ -138,6 +202,7 @@ export function QuickAddForm({
         posted_at: today(),
         account_id: form.getValues("account_id"),
         account_kind: form.getValues("account_kind"),
+        installments_count: 1,
         original_text: "",
       });
       setStatus("Lançamento salvo.");
@@ -170,6 +235,31 @@ export function QuickAddForm({
     }
   }
 
+  /** Applies the AI draft's payment-method/account-name hints to the account
+   *  fields, or clears the account so the user must pick explicitly when
+   *  more than one account of the inferred kind exists. Returns a status
+   *  suffix describing what happened, or "" when there was nothing to say. */
+  function applyAccountMatch(draft: {
+    payment_method_hint: PaymentMethodHint;
+    account_hint: string | null;
+  }): string {
+    const match = matchPaymentAccount(accounts, {
+      paymentMethodHint: draft.payment_method_hint,
+      accountNameHint: draft.account_hint,
+    });
+    if (match.status === "resolved") {
+      form.setValue("account_id", match.accountId);
+      form.setValue("account_kind", match.accountKind);
+      return "";
+    }
+    if (match.status === "ambiguous") {
+      form.setValue("account_id", "");
+      const kindLabel = match.accountKind === "credit_card" ? "cartão" : "conta";
+      return ` Selecione qual ${kindLabel} foi usado.`;
+    }
+    return "";
+  }
+
   async function interpretNativeText() {
     const text = form.getValues("original_text")?.trim();
     if (!text) return;
@@ -180,8 +270,10 @@ export function QuickAddForm({
       form.setValue("amount", draft.amount);
       form.setValue("transaction_type", draft.transaction_type);
       form.setValue("posted_at", draft.date);
+      form.setValue("installments_count", draft.installments_count);
+      const accountNote = applyAccountMatch(draft);
       await suggestCategory();
-      setStatus("Confira os campos antes de salvar.");
+      setStatus(`Confira os campos antes de salvar.${accountNote}`);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err));
     }
@@ -205,21 +297,25 @@ export function QuickAddForm({
   }
 
   async function transcribeAndInterpretAudio(audio: PendingAudio) {
-    setStatus("Transcrevendo áudio…");
+    setProcessingStage("transcribing");
+    setStatus(PROCESSING_LABEL.transcribing);
     try {
       const transcription = await transcribeAudioFn({ data: audio });
       await logTranscriptionUsage(transcription);
       form.setValue("original_text", transcription.text);
 
-      setStatus("Interpretando transcrição…");
+      setProcessingStage("interpreting");
+      setStatus(PROCESSING_LABEL.interpreting);
       const draft = await extractVoiceTextFn({ data: { text: transcription.text } });
       form.setValue("description", draft.description);
       form.setValue("amount", draft.amount);
       form.setValue("transaction_type", draft.transaction_type);
       form.setValue("posted_at", draft.date);
+      form.setValue("installments_count", draft.installments_count);
+      const accountNote = applyAccountMatch(draft);
       setPendingAudio(null);
       await suggestCategory();
-      setStatus("Transcrição interpretada. Confira antes de salvar.");
+      setStatus(`Transcrição interpretada. Confira antes de salvar.${accountNote}`);
     } catch (err) {
       setPendingAudio(audio);
       setStatus(
@@ -227,6 +323,15 @@ export function QuickAddForm({
           err instanceof Error ? err.message : String(err)
         }`,
       );
+    } finally {
+      setProcessingStage("idle");
+    }
+  }
+
+  function stopRecordingTimer() {
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
     }
   }
 
@@ -234,6 +339,7 @@ export function QuickAddForm({
     if (recording) {
       recorderRef.current?.stop();
       setRecording(false);
+      stopRecordingTimer();
       return;
     }
     try {
@@ -245,6 +351,7 @@ export function QuickAddForm({
       };
       recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
+        stopRecordingTimer();
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         try {
           const audioBase64 = await fileToBase64(blob);
@@ -268,6 +375,10 @@ export function QuickAddForm({
       recordingStartedAtRef.current = Date.now();
       recorder.start();
       setRecording(true);
+      setRecordingSeconds(0);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((current) => current + 1);
+      }, 1000);
       setStatus("Gravando…");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err));
@@ -281,17 +392,53 @@ export function QuickAddForm({
     >
       <div className="md:col-span-6">
         <Label>Texto ditado ou anotação</Label>
-        <div className="mt-1 flex gap-2">
+        <div className="mt-1 flex items-start gap-2">
           <Textarea
             placeholder="Ex: gastei 42 reais no mercado hoje no cartão"
             autoFocus={autoFocusInput}
             {...form.register("original_text")}
           />
-          <Button type="button" variant="outline" size="icon" onClick={toggleRecording}>
-            {recording ? <MicOff /> : <Mic />}
-          </Button>
+          <div className="flex flex-col items-center gap-1">
+            <Button
+              type="button"
+              variant={recording ? "destructive" : "outline"}
+              size="icon"
+              disabled={processingStage !== "idle"}
+              aria-label={recording ? "Parar gravação" : "Gravar áudio"}
+              className={recording ? "animate-pulse" : undefined}
+              onClick={toggleRecording}
+            >
+              {processingStage !== "idle" ? (
+                <Loader2 className="animate-spin" />
+              ) : recording ? (
+                <Square className="fill-current" />
+              ) : (
+                <Mic />
+              )}
+            </Button>
+            {recording ? (
+              <span className="whitespace-nowrap text-xs font-medium text-red-600">
+                ● {formatSeconds(recordingSeconds)}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <Button type="button" variant="secondary" className="mt-2" onClick={interpretNativeText}>
+        {recording ? (
+          <p className="mt-1 text-xs text-red-600">Gravando… toque no botão para parar.</p>
+        ) : null}
+        {processingStage !== "idle" ? (
+          <div className="mt-2 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {PROCESSING_LABEL[processingStage]}
+          </div>
+        ) : null}
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-2"
+          disabled={processingStage !== "idle"}
+          onClick={interpretNativeText}
+        >
           <Sparkles className="mr-2 h-4 w-4" />
           Interpretar texto
         </Button>
@@ -381,6 +528,22 @@ export function QuickAddForm({
           </SelectContent>
         </Select>
       </div>
+      {form.watch("account_kind") === "credit_card" ? (
+        <div className="md:col-span-2">
+          <Label>Parcelas</Label>
+          <Input type="number" min={1} max={60} {...form.register("installments_count")} />
+          {form.watch("installments_count") > 1 && form.watch("amount") > 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {form.watch("installments_count")}x de{" "}
+              {(form.watch("amount") / form.watch("installments_count")).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              })}{" "}
+              (aprox.)
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex items-end gap-2 md:col-span-4">
         <Button type="submit" disabled={saveMutation.isPending}>
           Salvar lançamento

@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { fetchHouseholdMembers } from "@/lib/finance/data";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -33,7 +34,15 @@ function currentYearBounds() {
   return { start: `${year}-01-01`, end: `${year}-12-31` };
 }
 
+function currentMonthBounds() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
 function ReportsRoute() {
+  const isMobile = useIsMobile();
   const [creatorFilter, setCreatorFilter] = useState("all");
   const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
   const orgId = orgQuery.data;
@@ -51,8 +60,19 @@ function ReportsRoute() {
     enabled: !!orgId,
     queryFn: () => fetchHouseholdMembers(orgId!),
   });
-  const bounds = currentYearBounds();
+  // Mobile defaults to the current month only — dense multi-month tables/
+  // charts are reserved for desktop, where there's room to compare them.
+  const bounds = isMobile ? currentMonthBounds() : currentYearBounds();
   const createdBy = creatorFilter === "all" ? null : creatorFilter;
+  const summaryQuery = useQuery({
+    queryKey: ["reports-month-summary", orgId],
+    enabled: !!orgId && isMobile,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("dashboard_month_summary", { p_org_id: orgId! });
+      if (error) throw new Error(error.message);
+      return data?.[0] as { income: number; expenses: number; balance: number } | undefined;
+    },
+  });
   const categoryQuery = useQuery({
     queryKey: ["reports-category", orgId, creatorFilter],
     enabled: !!orgId,
@@ -69,7 +89,7 @@ function ReportsRoute() {
   });
   const accountQuery = useQuery({
     queryKey: ["reports-account", orgId, creatorFilter],
-    enabled: !!orgId,
+    enabled: !!orgId && !isMobile,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("expenses_by_account_for_user", {
         p_org_id: orgId!,
@@ -83,7 +103,7 @@ function ReportsRoute() {
   });
   const largestQuery = useQuery({
     queryKey: ["reports-largest", orgId, creatorFilter],
-    enabled: !!orgId,
+    enabled: !!orgId && !isMobile,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("largest_expenses_for_user", {
         p_org_id: orgId!,
@@ -98,7 +118,7 @@ function ReportsRoute() {
   });
   const monthlyQuery = useQuery({
     queryKey: ["reports-monthly", orgId, creatorFilter],
-    enabled: !!orgId,
+    enabled: !!orgId && !isMobile,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("monthly_comparison_for_user", {
         p_org_id: orgId!,
@@ -111,7 +131,7 @@ function ReportsRoute() {
   });
   const recurringQuery = useQuery({
     queryKey: ["reports-recurring", orgId],
-    enabled: !!orgId,
+    enabled: !!orgId && !isMobile,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("recurring_expenses", {
         p_org_id: orgId!,
@@ -137,7 +157,11 @@ function ReportsRoute() {
   });
 
   return (
-    <AppShell activeSection="analytics" title="Relatórios" subtitle="Visão consolidada do ano">
+    <AppShell
+      activeSection="analytics"
+      title="Relatórios"
+      subtitle={isMobile ? "Resumo do mês atual" : "Visão consolidada do ano"}
+    >
       <AnalyticsTabs value="reports" />
       <div className="flex justify-end">
         <Select value={creatorFilter} onValueChange={setCreatorFilter}>
@@ -156,46 +180,86 @@ function ReportsRoute() {
           </SelectContent>
         </Select>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Comparação mês a mês</CardTitle>
-        </CardHeader>
-        <CardContent className="h-[320px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthlyQuery.data ?? []}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month_start" />
-              <YAxis />
-              <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-              <Bar dataKey="income" fill="#059669" name="Receitas" />
-              <Bar dataKey="expenses" fill="#dc2626" name="Despesas" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-      <section className="grid gap-4 lg:grid-cols-2">
-        <BudgetComparison rows={budgetQuery.data ?? []} />
-        <ReportTable
-          title="Despesas por categoria"
-          rows={categoryQuery.data ?? []}
-          labelKey="category_name"
-        />
-        <ReportTable
-          title="Despesas por conta/cartão"
-          rows={accountQuery.data ?? []}
-          labelKey="account_name"
-        />
-        <ReportTable
-          title="Maiores despesas"
-          rows={largestQuery.data ?? []}
-          labelKey="description"
-        />
-        <ReportTable
-          title="Despesas recorrentes"
-          rows={recurringQuery.data ?? []}
-          labelKey="pattern"
-        />
-      </section>
+
+      {isMobile ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Resumo do mês</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-xs text-muted-foreground">Receitas</p>
+                <strong className="text-emerald-700">
+                  {formatCurrency(summaryQuery.data?.income ?? 0)}
+                </strong>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Despesas</p>
+                <strong className="text-red-700">
+                  {formatCurrency(summaryQuery.data?.expenses ?? 0)}
+                </strong>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Saldo</p>
+                <strong>{formatCurrency(summaryQuery.data?.balance ?? 0)}</strong>
+              </div>
+            </CardContent>
+          </Card>
+          <BudgetComparison rows={budgetQuery.data ?? []} />
+          <ReportTable
+            title="Despesas por categoria (mês atual)"
+            rows={categoryQuery.data ?? []}
+            labelKey="category_name"
+          />
+          <p className="text-center text-xs text-muted-foreground">
+            Comparações entre meses, por conta e recorrências ficam disponíveis no desktop.
+          </p>
+        </>
+      ) : (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Comparação mês a mês</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyQuery.data ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month_start" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Bar dataKey="income" fill="#059669" name="Receitas" />
+                  <Bar dataKey="expenses" fill="#dc2626" name="Despesas" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <BudgetComparison rows={budgetQuery.data ?? []} />
+            <ReportTable
+              title="Despesas por categoria"
+              rows={categoryQuery.data ?? []}
+              labelKey="category_name"
+            />
+            <ReportTable
+              title="Despesas por conta/cartão"
+              rows={accountQuery.data ?? []}
+              labelKey="account_name"
+            />
+            <ReportTable
+              title="Maiores despesas"
+              rows={largestQuery.data ?? []}
+              labelKey="description"
+            />
+            <ReportTable
+              title="Despesas recorrentes"
+              rows={recurringQuery.data ?? []}
+              labelKey="pattern"
+            />
+          </section>
+        </>
+      )}
     </AppShell>
   );
 }

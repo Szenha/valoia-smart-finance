@@ -220,11 +220,27 @@ export function AppShell({
       <div
         className={cn("transition-[padding] duration-200", collapsed ? "lg:pl-[76px]" : "lg:pl-72")}
       >
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur md:px-8">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-            {subtitle ? <p className="text-sm text-slate-500">{subtitle}</p> : null}
-            {userEmail ? <p className="text-xs text-slate-400">{userEmail}</p> : null}
+        <header className="sticky top-0 z-20 border-b border-white/10 bg-[#010917] px-4 py-3 backdrop-blur lg:border-slate-200 lg:bg-white/95 lg:px-8 lg:py-4">
+          <div className="flex items-center gap-3">
+            <ValoiaLogo
+              variant="icon"
+              className="h-8 w-8 shrink-0 rounded-lg ring-1 ring-white/15 lg:hidden"
+            />
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold tracking-tight text-white lg:text-2xl lg:text-slate-950">
+                {title}
+              </h2>
+              {subtitle ? (
+                <p className="truncate text-xs text-[#C6D627] lg:text-sm lg:font-normal lg:text-slate-500">
+                  {subtitle}
+                </p>
+              ) : null}
+              {userEmail ? (
+                <p className="truncate text-[11px] text-white/40 lg:text-xs lg:text-slate-400">
+                  {userEmail}
+                </p>
+              ) : null}
+            </div>
           </div>
         </header>
         <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6 md:px-8 lg:pb-6">
