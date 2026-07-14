@@ -1,5 +1,15 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Repeat,
+  Tags,
+  Target,
+  TrendingUp,
+  WalletCards,
+  type LucideIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -218,7 +228,46 @@ function ReportsRoute() {
         </>
       ) : (
         <>
-          <Card>
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <ReportEntryCard
+              icon={TrendingUp}
+              title="Comparação mês a mês"
+              description="Receitas e despesas dos últimos 6 meses"
+              anchor="#report-monthly"
+            />
+            <ReportEntryCard
+              icon={Target}
+              title="Planejado vs realizado"
+              description="Quanto do orçamento do ano já foi usado, por categoria"
+              anchor="#report-budget"
+            />
+            <ReportEntryCard
+              icon={Tags}
+              title="Por categoria"
+              description="Despesas do ano agrupadas por categoria"
+              anchor="#report-category"
+            />
+            <ReportEntryCard
+              icon={WalletCards}
+              title="Por conta/cartão"
+              description="Despesas do ano agrupadas por conta ou cartão"
+              anchor="#report-account"
+            />
+            <ReportEntryCard
+              icon={ArrowUpRight}
+              title="Maiores despesas"
+              description="As 10 maiores despesas individuais do ano"
+              anchor="#report-largest"
+            />
+            <ReportEntryCard
+              icon={Repeat}
+              title="Recorrentes"
+              description="Padrões de despesa que se repetem mês a mês"
+              anchor="#report-recurring"
+            />
+          </section>
+
+          <Card id="report-monthly">
             <CardHeader>
               <CardTitle>Comparação mês a mês</CardTitle>
             </CardHeader>
@@ -236,23 +285,29 @@ function ReportsRoute() {
             </CardContent>
           </Card>
           <section className="grid gap-4 lg:grid-cols-2">
-            <BudgetComparison rows={budgetQuery.data ?? []} />
+            <div id="report-budget">
+              <BudgetComparison rows={budgetQuery.data ?? []} />
+            </div>
             <ReportTable
+              id="report-category"
               title="Despesas por categoria"
               rows={categoryQuery.data ?? []}
               labelKey="category_name"
             />
             <ReportTable
+              id="report-account"
               title="Despesas por conta/cartão"
               rows={accountQuery.data ?? []}
               labelKey="account_name"
             />
             <ReportTable
+              id="report-largest"
               title="Maiores despesas"
               rows={largestQuery.data ?? []}
               labelKey="description"
             />
             <ReportTable
+              id="report-recurring"
               title="Despesas recorrentes"
               rows={recurringQuery.data ?? []}
               labelKey="pattern"
@@ -265,6 +320,37 @@ function ReportsRoute() {
 }
 
 type ReportRow = Record<string, string | number | null>;
+
+function ReportEntryCard({
+  icon: Icon,
+  title,
+  description,
+  anchor,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  anchor: string;
+}) {
+  return (
+    <a
+      href={anchor}
+      className="group flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50/40"
+    >
+      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <h3 className="font-medium">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <span className="mt-auto flex items-center gap-1 text-sm font-medium text-emerald-700">
+        Ver detalhes{" "}
+        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </a>
+  );
+}
 
 function BudgetComparison({ rows }: { rows: ReportRow[] }) {
   return (
@@ -315,16 +401,18 @@ function BudgetComparison({ rows }: { rows: ReportRow[] }) {
 }
 
 function ReportTable({
+  id,
   title,
   rows,
   labelKey,
 }: {
+  id?: string;
   title: string;
   rows: ReportRow[];
   labelKey: string;
 }) {
   return (
-    <Card>
+    <Card id={id}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>

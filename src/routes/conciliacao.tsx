@@ -553,6 +553,7 @@ function ReconciliationRoute() {
           transactions={manualTransactionsQuery.data ?? []}
           suggestions={suggestions}
           busy={actionMutation.isPending}
+          source={activeImport?.source ?? null}
           onMatch={(item, transaction, confidence) =>
             actionMutation.mutate({
               type: "match",

@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Pencil, RefreshCcw } from "lucide-react";
 import { useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
@@ -20,6 +21,7 @@ import {
   accountKindLabel,
   formatCurrency,
   type AccountKind,
+  type AccountRow,
 } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -38,6 +40,18 @@ export const Route = createFileRoute("/cadastros/contas-e-cartoes")({
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
+
+const EMPTY_FORM = {
+  accountName: "",
+  accountKey: "",
+  institution: "",
+  kind: "checking" as AccountKind,
+  initialBalance: "",
+  initialBalanceDate: today(),
+  closingDay: "",
+  dueDay: "",
+  creditLimit: "",
+};
 
 function ContasECartoesRoute() {
   const queryClient = useQueryClient();
@@ -59,17 +73,45 @@ function ContasECartoesRoute() {
     queryFn: () => fetchCardSummary(orgId!),
   });
 
-  const [accountName, setAccountName] = useState("");
-  const [accountKey, setAccountKey] = useState("");
-  const [institution, setInstitution] = useState("");
-  const [kind, setKind] = useState<AccountKind>("checking");
-  const [initialBalance, setInitialBalance] = useState("");
-  const [initialBalanceDate, setInitialBalanceDate] = useState(today());
-  const [closingDay, setClosingDay] = useState("");
-  const [dueDay, setDueDay] = useState("");
-  const [creditLimit, setCreditLimit] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [accountName, setAccountName] = useState(EMPTY_FORM.accountName);
+  const [accountKey, setAccountKey] = useState(EMPTY_FORM.accountKey);
+  const [institution, setInstitution] = useState(EMPTY_FORM.institution);
+  const [kind, setKind] = useState<AccountKind>(EMPTY_FORM.kind);
+  const [initialBalance, setInitialBalance] = useState(EMPTY_FORM.initialBalance);
+  const [initialBalanceDate, setInitialBalanceDate] = useState(EMPTY_FORM.initialBalanceDate);
+  const [closingDay, setClosingDay] = useState(EMPTY_FORM.closingDay);
+  const [dueDay, setDueDay] = useState(EMPTY_FORM.dueDay);
+  const [creditLimit, setCreditLimit] = useState(EMPTY_FORM.creditLimit);
 
-  const addAccount = useMutation({
+  function resetForm() {
+    setEditingId(null);
+    setAccountName(EMPTY_FORM.accountName);
+    setAccountKey(EMPTY_FORM.accountKey);
+    setInstitution(EMPTY_FORM.institution);
+    setKind(EMPTY_FORM.kind);
+    setInitialBalance(EMPTY_FORM.initialBalance);
+    setInitialBalanceDate(EMPTY_FORM.initialBalanceDate);
+    setClosingDay(EMPTY_FORM.closingDay);
+    setDueDay(EMPTY_FORM.dueDay);
+    setCreditLimit(EMPTY_FORM.creditLimit);
+  }
+
+  function startEdit(account: AccountRow) {
+    setEditingId(account.id);
+    setAccountName(account.name);
+    setAccountKey(account.account_key);
+    setInstitution(account.institution ?? "");
+    setKind(account.kind);
+    setInitialBalance(account.initial_balance != null ? String(account.initial_balance) : "");
+    setInitialBalanceDate(account.initial_balance_date ?? today());
+    setClosingDay(account.closing_day != null ? String(account.closing_day) : "");
+    setDueDay(account.due_day != null ? String(account.due_day) : "");
+    setCreditLimit(account.credit_limit != null ? String(account.credit_limit) : "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const saveAccount = useMutation({
     mutationFn: async () => {
       if (!orgId) return;
       const { error } = await supabase.from("financial_accounts").upsert(
@@ -90,14 +132,7 @@ function ContasECartoesRoute() {
       if (error) throw new Error(error.message);
     },
     onSuccess: async () => {
-      setAccountName("");
-      setAccountKey("");
-      setInstitution("");
-      setInitialBalance("");
-      setInitialBalanceDate(today());
-      setClosingDay("");
-      setDueDay("");
-      setCreditLimit("");
+      resetForm();
       await queryClient.invalidateQueries({ queryKey: ["accounts", orgId] });
       await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
       await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
@@ -107,6 +142,11 @@ function ContasECartoesRoute() {
   async function archiveAccount(id: string, archived: boolean) {
     await supabase.from("financial_accounts").update({ archived: !archived }).eq("id", id);
     await queryClient.invalidateQueries({ queryKey: ["accounts", orgId] });
+    await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
+    await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
+  }
+
+  async function refreshBalances() {
     await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
     await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
   }
@@ -130,8 +170,13 @@ function ContasECartoesRoute() {
     >
       <CadastrosTabs value="contas" />
       <Card>
-        <CardHeader>
-          <CardTitle>Nova conta ou cartão</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>{editingId ? "Editar conta ou cartão" : "Nova conta ou cartão"}</CardTitle>
+          {editingId ? (
+            <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
+              Cancelar edição
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-3 md:grid-cols-2">
@@ -141,7 +186,11 @@ function ContasECartoesRoute() {
             </div>
             <div>
               <Label>Chave da conta</Label>
-              <Input value={accountKey} onChange={(event) => setAccountKey(event.target.value)} />
+              <Input
+                value={accountKey}
+                disabled={!!editingId}
+                onChange={(event) => setAccountKey(event.target.value)}
+              />
             </div>
             <div>
               <Label>Instituição</Label>
@@ -220,10 +269,10 @@ function ContasECartoesRoute() {
             ) : null}
             <Button
               className="md:col-span-2"
-              onClick={() => addAccount.mutate()}
-              disabled={!accountName || !accountKey}
+              onClick={() => saveAccount.mutate()}
+              disabled={!accountName || !accountKey || saveAccount.isPending}
             >
-              Salvar conta
+              {editingId ? "Salvar alterações" : "Salvar conta"}
             </Button>
           </div>
         </CardContent>
@@ -250,10 +299,172 @@ function ContasECartoesRoute() {
               const KindIcon = accountKindIcon(account.kind);
               const balance = balanceByAccountId.get(account.id);
               const cardSummary = cardSummaryByAccountId.get(account.id);
+              const actions = (
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label="Editar"
+                    onClick={() => startEdit(account)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => archiveAccount(account.id, account.archived)}
+                  >
+                    {account.archived ? "Reativar" : "Arquivar"}
+                  </Button>
+                </div>
+              );
+
+              if (account.kind === "credit_card") {
+                const used = cardSummary?.limit_used ?? 0;
+                const limit = account.credit_limit;
+                const pct = limit && limit > 0 ? Math.min((used / limit) * 100, 100) : null;
+                const barColor =
+                  pct === null
+                    ? "bg-slate-300"
+                    : pct >= 90
+                      ? "bg-red-500"
+                      : pct >= 70
+                        ? "bg-amber-500"
+                        : "bg-emerald-600";
+                return (
+                  <div
+                    key={account.id}
+                    className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                          <KindIcon className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <strong>{account.name}</strong>
+                          <p className="text-muted-foreground">
+                            {account.institution ?? "Sem instituição"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Limite utilizado</span>
+                        <span>{pct !== null ? `${pct.toFixed(0)}%` : "sem limite definido"}</span>
+                      </div>
+                      <div className="mt-1 h-2 rounded-full bg-slate-100">
+                        <div
+                          className={`h-2 rounded-full ${barColor}`}
+                          style={{ width: `${pct ?? 0}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-lg bg-slate-50 p-2">
+                        <p className="text-[10px] uppercase text-muted-foreground">Usado</p>
+                        <strong className="text-sm">{formatCurrency(used)}</strong>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 p-2">
+                        <p className="text-[10px] uppercase text-muted-foreground">Disponível</p>
+                        <strong className="text-sm text-emerald-700">
+                          {formatCurrency(cardSummary?.limit_available ?? limit ?? 0)}
+                        </strong>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 p-2">
+                        <p className="text-[10px] uppercase text-muted-foreground">Total</p>
+                        <strong className="text-sm">
+                          {limit != null ? formatCurrency(limit) : "—"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+                        Fecha dia {account.closing_day ?? "—"}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+                        Vence dia {account.due_day ?? "—"}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+                        Fatura atual {formatCurrency(cardSummary?.current_invoice_total ?? 0)}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                      <p className="text-xs text-muted-foreground">
+                        {formatCurrency(cardSummary?.future_installments_total ?? 0)} em parcelas
+                        futuras
+                      </p>
+                      {actions}
+                    </div>
+                  </div>
+                );
+              }
+
+              if (account.kind === "checking") {
+                return (
+                  <div
+                    key={account.id}
+                    className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                        <KindIcon className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <strong>{account.name}</strong>
+                        <p className="text-muted-foreground">
+                          {account.institution ?? "Sem instituição"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-lg bg-slate-50 p-3">
+                      {balance && account.initial_balance_date ? (
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Saldo atual</p>
+                            <strong
+                              className={`text-xl ${balance.current_balance < 0 ? "text-red-700" : "text-emerald-700"}`}
+                            >
+                              {formatCurrency(balance.current_balance)}
+                            </strong>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-400 hover:text-slate-700"
+                            aria-label="Atualizar saldo"
+                            onClick={refreshBalances}
+                          >
+                            <RefreshCcw className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Defina o saldo inicial e a data de referência para calcular o saldo atual.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-end border-t border-slate-100 pt-3">
+                      {actions}
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={account.id}
-                  className="rounded-lg border border-slate-200 bg-white p-4 text-sm"
+                  className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -268,77 +479,8 @@ function ContasECartoesRoute() {
                         </p>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => archiveAccount(account.id, account.archived)}
-                    >
-                      {account.archived ? "Reativar" : "Arquivar"}
-                    </Button>
+                    {actions}
                   </div>
-
-                  {account.kind === "checking" ? (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                      {balance && account.initial_balance_date ? (
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Saldo atual</span>
-                          <strong
-                            className={
-                              balance.current_balance < 0 ? "text-red-700" : "text-emerald-700"
-                            }
-                          >
-                            {formatCurrency(balance.current_balance)}
-                          </strong>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Defina o saldo inicial e a data de referência para calcular o saldo atual.
-                        </p>
-                      )}
-                    </div>
-                  ) : null}
-
-                  {account.kind === "credit_card" ? (
-                    <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Fatura do mês corrente</span>
-                        <strong>{formatCurrency(cardSummary?.current_invoice_total ?? 0)}</strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Parcelas futuras em aberto</span>
-                        <strong>
-                          {formatCurrency(cardSummary?.future_installments_total ?? 0)}
-                        </strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Limite utilizado</span>
-                        <strong>{formatCurrency(cardSummary?.limit_used ?? 0)}</strong>
-                      </div>
-                      {account.credit_limit != null ? (
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Limite disponível</span>
-                          <strong
-                            className={
-                              (cardSummary?.limit_available ?? 0) < 0
-                                ? "text-red-700"
-                                : "text-emerald-700"
-                            }
-                          >
-                            {formatCurrency(cardSummary?.limit_available ?? account.credit_limit)}
-                          </strong>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Defina o limite do cartão para ver o disponível.
-                        </p>
-                      )}
-                      {account.closing_day == null ? (
-                        <p className="text-xs text-muted-foreground">
-                          Defina o dia de fechamento para calcular a fatura corretamente.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </div>
               );
             })}

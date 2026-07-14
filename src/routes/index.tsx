@@ -82,6 +82,12 @@ function Index() {
     await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
   }
 
+  async function handleDeleteTransaction(txn: TxnRow) {
+    if (!orgId) return;
+    await supabase.from("transactions").delete().eq("id", txn.id).eq("organization_id", orgId);
+    await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+  }
+
   if (!orgId) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -109,6 +115,7 @@ function Index() {
         members={membersQuery.data ?? []}
         currentUserId={userId}
         onCategoryChange={handleCategoryChange}
+        onDelete={handleDeleteTransaction}
       />
     </AppShell>
   );
