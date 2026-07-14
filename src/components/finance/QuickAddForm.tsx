@@ -11,7 +11,10 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -21,6 +24,7 @@ import { extractVoiceTextFn, type PaymentMethodHint } from "@/lib/ai/voice-entry
 import { matchPaymentAccount } from "@/lib/finance/account-match";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
+import { ensureAccountFromTransaction } from "@/lib/finance/data";
 import { computeInstallmentSchedule } from "@/lib/finance/installments";
 import type { AccountRow, CategoryRow } from "@/lib/finance/types";
 import { supabase } from "@/lib/supabase/client";
@@ -104,6 +108,9 @@ export function QuickAddForm({
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const categoryItems = leafCategoryOptions(categories);
+  const myAccounts = accounts.filter((account) => account.owner_user_id === userId);
+  const householdAccounts = accounts.filter((account) => account.owner_user_id !== userId);
+  const orderedAccounts = [...myAccounts, ...householdAccounts];
 
   useEffect(() => {
     return () => {
@@ -119,8 +126,8 @@ export function QuickAddForm({
       description: "",
       category_id: "",
       posted_at: today(),
-      account_id: accounts[0]?.account_key ?? "manual-cash",
-      account_kind: accounts[0]?.kind ?? "checking",
+      account_id: orderedAccounts[0]?.account_key ?? "manual-cash",
+      account_kind: orderedAccounts[0]?.kind ?? "checking",
       installments_count: 1,
       original_text: "",
     },
@@ -135,6 +142,16 @@ export function QuickAddForm({
             ? "MANUAL_CREDIT"
             : "MANUAL_TRANSFER";
       const sign = values.transaction_type === "expense" ? -1 : 1;
+
+      if (!accounts.some((account) => account.account_key === values.account_id)) {
+        await ensureAccountFromTransaction(
+          orgId,
+          values.account_id,
+          values.account_kind,
+          userId ?? undefined,
+        );
+      }
+
       const baseRow = {
         organization_id: orgId,
         description: values.description,
@@ -517,11 +534,27 @@ export function QuickAddForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {accounts.map((account) => (
-              <SelectItem key={account.id} value={`${account.account_key}|${account.kind}`}>
-                {account.name}
-              </SelectItem>
-            ))}
+            {myAccounts.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>Meus</SelectLabel>
+                {myAccounts.map((account) => (
+                  <SelectItem key={account.id} value={`${account.account_key}|${account.kind}`}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            {myAccounts.length > 0 && householdAccounts.length > 0 && <SelectSeparator />}
+            {householdAccounts.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>Da família</SelectLabel>
+                {householdAccounts.map((account) => (
+                  <SelectItem key={account.id} value={`${account.account_key}|${account.kind}`}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
             {accounts.length === 0 && (
               <SelectItem value="manual-cash|checking">Dinheiro</SelectItem>
             )}

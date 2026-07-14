@@ -5,7 +5,12 @@ import { AppShell } from "@/components/finance/AppShell";
 import { QuickAddForm } from "@/components/finance/QuickAddForm";
 import { TransactionList } from "@/components/finance/TransactionList";
 import { ensureDefaultCategories, learnFromConfirmation } from "@/lib/classification/pipeline";
-import { fetchAccounts, fetchHouseholdMembers, fetchTransactions } from "@/lib/finance/data";
+import {
+  fetchAccounts,
+  fetchHouseholdMembers,
+  fetchMemberProfiles,
+  fetchTransactions,
+} from "@/lib/finance/data";
 import type { AccountRow, CategoryRow, TxnRow } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -71,6 +76,13 @@ function Index() {
     queryFn: () => fetchHouseholdMembers(orgId!),
   });
 
+  const memberIds = (membersQuery.data ?? []).map((member) => member.user_id);
+  const profilesQuery = useQuery({
+    queryKey: ["member-profiles", orgId, memberIds],
+    enabled: !!orgId && memberIds.length > 0,
+    queryFn: () => fetchMemberProfiles(memberIds),
+  });
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate({ to: "/login" });
@@ -113,6 +125,7 @@ function Index() {
         transactions={transactions}
         categories={categories}
         members={membersQuery.data ?? []}
+        profiles={profilesQuery.data ?? []}
         currentUserId={userId}
         onCategoryChange={handleCategoryChange}
         onDelete={handleDeleteTransaction}

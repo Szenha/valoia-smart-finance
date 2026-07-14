@@ -16,6 +16,7 @@ import { Route as LandingRouteImport } from './routes/landing'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConciliacaoRouteImport } from './routes/conciliacao'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CadastrosMembrosRouteImport } from './routes/cadastros/membros'
 import { Route as CadastrosContasECartoesRouteImport } from './routes/cadastros/contas-e-cartoes'
 import { Route as CadastrosCategoriasRouteImport } from './routes/cadastros/categorias'
 
@@ -54,6 +55,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CadastrosMembrosRoute = CadastrosMembrosRouteImport.update({
+  id: '/cadastros/membros',
+  path: '/cadastros/membros',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CadastrosContasECartoesRoute = CadastrosContasECartoesRouteImport.update({
   id: '/cadastros/contas-e-cartoes',
   path: '/cadastros/contas-e-cartoes',
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
+  '/cadastros/membros': typeof CadastrosMembrosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
+  '/cadastros/membros': typeof CadastrosMembrosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
+  '/cadastros/membros': typeof CadastrosMembrosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
+    | '/cadastros/membros'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
+    | '/cadastros/membros'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
+    | '/cadastros/membros'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +157,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   CadastrosCategoriasRoute: typeof CadastrosCategoriasRoute
   CadastrosContasECartoesRoute: typeof CadastrosContasECartoesRoute
+  CadastrosMembrosRoute: typeof CadastrosMembrosRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -198,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cadastros/membros': {
+      id: '/cadastros/membros'
+      path: '/cadastros/membros'
+      fullPath: '/cadastros/membros'
+      preLoaderRoute: typeof CadastrosMembrosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cadastros/contas-e-cartoes': {
       id: '/cadastros/contas-e-cartoes'
       path: '/cadastros/contas-e-cartoes'
@@ -225,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   CadastrosCategoriasRoute: CadastrosCategoriasRoute,
   CadastrosContasECartoesRoute: CadastrosContasECartoesRoute,
+  CadastrosMembrosRoute: CadastrosMembrosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

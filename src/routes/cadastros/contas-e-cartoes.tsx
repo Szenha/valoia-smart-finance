@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, RefreshCcw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fetchAccountBalances, fetchAccounts, fetchCardSummary } from "@/lib/finance/data";
+import {
+  fetchAccountBalances,
+  fetchAccounts,
+  fetchCardSummary,
+  fetchHouseholdMembers,
+  fetchMemberProfiles,
+} from "@/lib/finance/data";
 import {
   accountKindIcon,
   accountKindLabel,
   formatCurrency,
+  memberDisplayName,
   type AccountKind,
   type AccountRow,
 } from "@/lib/finance/types";
@@ -51,16 +58,34 @@ const EMPTY_FORM = {
   closingDay: "",
   dueDay: "",
   creditLimit: "",
+  ownerUserId: "",
 };
 
 function ContasECartoesRoute() {
   const queryClient = useQueryClient();
   const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
   const orgId = orgQuery.data;
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
+  }, []);
+
   const accountsQuery = useQuery({
     queryKey: ["accounts", orgId],
     enabled: !!orgId,
     queryFn: () => fetchAccounts(orgId!),
+  });
+  const membersQuery = useQuery({
+    queryKey: ["household-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchHouseholdMembers(orgId!),
+  });
+  const memberIds = (membersQuery.data ?? []).map((member) => member.user_id);
+  const profilesQuery = useQuery({
+    queryKey: ["member-profiles", orgId, memberIds],
+    enabled: !!orgId && memberIds.length > 0,
+    queryFn: () => fetchMemberProfiles(memberIds),
   });
   const balancesQuery = useQuery({
     queryKey: ["account-balances", orgId],
@@ -83,6 +108,11 @@ function ContasECartoesRoute() {
   const [closingDay, setClosingDay] = useState(EMPTY_FORM.closingDay);
   const [dueDay, setDueDay] = useState(EMPTY_FORM.dueDay);
   const [creditLimit, setCreditLimit] = useState(EMPTY_FORM.creditLimit);
+  const [ownerUserId, setOwnerUserId] = useState(EMPTY_FORM.ownerUserId);
+
+  useEffect(() => {
+    if (!editingId && currentUserId && !ownerUserId) setOwnerUserId(currentUserId);
+  }, [editingId, currentUserId, ownerUserId]);
 
   function resetForm() {
     setEditingId(null);
@@ -95,6 +125,7 @@ function ContasECartoesRoute() {
     setClosingDay(EMPTY_FORM.closingDay);
     setDueDay(EMPTY_FORM.dueDay);
     setCreditLimit(EMPTY_FORM.creditLimit);
+    setOwnerUserId(currentUserId ?? EMPTY_FORM.ownerUserId);
   }
 
   function startEdit(account: AccountRow) {
@@ -108,12 +139,13 @@ function ContasECartoesRoute() {
     setClosingDay(account.closing_day != null ? String(account.closing_day) : "");
     setDueDay(account.due_day != null ? String(account.due_day) : "");
     setCreditLimit(account.credit_limit != null ? String(account.credit_limit) : "");
+    setOwnerUserId(account.owner_user_id);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const saveAccount = useMutation({
     mutationFn: async () => {
-      if (!orgId) return;
+      if (!orgId || !ownerUserId) return;
       const { error } = await supabase.from("financial_accounts").upsert(
         {
           organization_id: orgId,
@@ -126,6 +158,7 @@ function ContasECartoesRoute() {
           closing_day: kind === "credit_card" && closingDay ? Number(closingDay) : null,
           due_day: kind === "credit_card" && dueDay ? Number(dueDay) : null,
           credit_limit: kind === "credit_card" && creditLimit ? Number(creditLimit) : null,
+          owner_user_id: ownerUserId,
         },
         { onConflict: "organization_id,account_key" },
       );
@@ -161,6 +194,8 @@ function ContasECartoesRoute() {
   );
   const checkingBalances = balancesQuery.data ?? [];
   const consolidatedBalance = checkingBalances.reduce((sum, row) => sum + row.current_balance, 0);
+  const profileById = new Map((profilesQuery.data ?? []).map((profile) => [profile.id, profile]));
+  const members = membersQuery.data ?? [];
 
   return (
     <AppShell
@@ -206,6 +241,23 @@ function ContasECartoesRoute() {
                   <SelectItem value="checking">Conta corrente</SelectItem>
                   <SelectItem value="credit_card">Cartão de crédito</SelectItem>
                   <SelectItem value="investment">Investimento</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Titular</Label>
+              <Select value={ownerUserId} onValueChange={setOwnerUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o titular" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((member) => (
+                    <SelectItem key={member.user_id} value={member.user_id}>
+                      {member.user_id === currentUserId
+                        ? "Eu"
+                        : memberDisplayName(profileById.get(member.user_id), member.user_id)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -270,7 +322,7 @@ function ContasECartoesRoute() {
             <Button
               className="md:col-span-2"
               onClick={() => saveAccount.mutate()}
-              disabled={!accountName || !accountKey || saveAccount.isPending}
+              disabled={!accountName || !accountKey || !ownerUserId || saveAccount.isPending}
             >
               {editingId ? "Salvar alterações" : "Salvar conta"}
             </Button>
@@ -299,6 +351,13 @@ function ContasECartoesRoute() {
               const KindIcon = accountKindIcon(account.kind);
               const balance = balanceByAccountId.get(account.id);
               const cardSummary = cardSummaryByAccountId.get(account.id);
+              const ownerLabel =
+                account.owner_user_id === currentUserId
+                  ? "Eu"
+                  : memberDisplayName(
+                      profileById.get(account.owner_user_id),
+                      account.owner_user_id,
+                    );
               const actions = (
                 <div className="flex items-center gap-1">
                   <Button
@@ -346,7 +405,7 @@ function ContasECartoesRoute() {
                         <div>
                           <strong>{account.name}</strong>
                           <p className="text-muted-foreground">
-                            {account.institution ?? "Sem instituição"}
+                            {account.institution ?? "Sem instituição"} · Titular: {ownerLabel}
                           </p>
                         </div>
                       </div>
@@ -420,7 +479,7 @@ function ContasECartoesRoute() {
                       <div>
                         <strong>{account.name}</strong>
                         <p className="text-muted-foreground">
-                          {account.institution ?? "Sem instituição"}
+                          {account.institution ?? "Sem instituição"} · Titular: {ownerLabel}
                         </p>
                       </div>
                     </div>
@@ -475,7 +534,7 @@ function ContasECartoesRoute() {
                         <strong>{account.name}</strong>
                         <p className="text-muted-foreground">
                           {account.institution ?? "Sem instituição"} ·{" "}
-                          {accountKindLabel[account.kind]}
+                          {accountKindLabel[account.kind]} · Titular: {ownerLabel}
                         </p>
                       </div>
                     </div>

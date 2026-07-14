@@ -16,6 +16,7 @@ function account(overrides: Partial<AccountRow>): AccountRow {
     closing_day: null,
     due_day: null,
     credit_limit: null,
+    owner_user_id: "owner",
     ...overrides,
   };
 }

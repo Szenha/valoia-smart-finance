@@ -5,6 +5,7 @@ import type {
   CardSummaryRow,
   CategoryRow,
   HouseholdMemberRow,
+  ProfileRow,
   TxnRow,
 } from "./types";
 
@@ -35,7 +36,7 @@ export async function fetchAccounts(orgId: string): Promise<AccountRow[]> {
   const { data, error } = await supabase
     .from("financial_accounts")
     .select(
-      "id, account_key, name, institution, kind, archived, initial_balance, initial_balance_date, closing_day, due_day, credit_limit",
+      "id, account_key, name, institution, kind, archived, initial_balance, initial_balance_date, closing_day, due_day, credit_limit, owner_user_id",
     )
     .eq("organization_id", orgId)
     .order("archived")
@@ -70,6 +71,7 @@ export async function ensureAccountFromTransaction(
   orgId: string,
   accountId: string,
   accountKind: string,
+  ownerUserId?: string,
 ): Promise<void> {
   await supabase.from("financial_accounts").upsert(
     {
@@ -77,9 +79,48 @@ export async function ensureAccountFromTransaction(
       account_key: accountId,
       name: accountId,
       kind: accountKind,
+      ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
     },
     { onConflict: "organization_id,account_key" },
   );
+}
+
+export async function fetchMemberProfiles(userIds: string[]): Promise<ProfileRow[]> {
+  if (userIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, display_name")
+    .in("id", userIds);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ProfileRow[];
+}
+
+export async function findHouseholdCandidate(
+  orgId: string,
+  email: string,
+): Promise<{ user_id: string; display_name: string | null } | null> {
+  const { data, error } = await supabase.rpc("find_household_candidate", {
+    p_org_id: orgId,
+    p_email: email,
+  });
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as { user_id: string; display_name: string | null }[];
+  return rows[0] ?? null;
+}
+
+export async function addHouseholdMember(
+  orgId: string,
+  userId: string,
+  role: string,
+  invitedBy: string | null,
+): Promise<void> {
+  const { error } = await supabase.from("organization_members").insert({
+    organization_id: orgId,
+    user_id: userId,
+    role,
+    invited_by: invitedBy,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export function accountOptionsFromTransactions(transactions: TxnRow[]) {

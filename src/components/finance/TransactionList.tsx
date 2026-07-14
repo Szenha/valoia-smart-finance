@@ -26,8 +26,10 @@ import {
   accountKindLabel,
   accountLabel,
   formatCurrency,
+  memberDisplayName,
   type CategoryRow,
   type HouseholdMemberRow,
+  type ProfileRow,
   type TxnRow,
 } from "@/lib/finance/types";
 
@@ -35,6 +37,7 @@ type Props = {
   transactions: TxnRow[];
   categories: CategoryRow[];
   members: HouseholdMemberRow[];
+  profiles: ProfileRow[];
   currentUserId: string | null;
   onCategoryChange: (txn: TxnRow, categoryId: string) => void;
   onDelete?: (txn: TxnRow) => void;
@@ -56,24 +59,35 @@ function colorForCategory(category: CategoryRow | undefined, index: number) {
   return CATEGORY_COLORS[index % CATEGORY_COLORS.length];
 }
 
-function creatorLabel(createdBy?: string | null) {
+function creatorLabel(
+  createdBy: string | null | undefined,
+  currentUserId: string | null,
+  profileById: Map<string, ProfileRow>,
+) {
   if (!createdBy) return "Sem autor";
-  return `Criado por ${createdBy.slice(0, 8)}`;
+  if (createdBy === currentUserId) return "Criado por você";
+  return `Criado por ${memberDisplayName(profileById.get(createdBy), createdBy)}`;
 }
 
-function memberLabel(memberId: string, currentUserId: string | null) {
+function memberLabel(
+  memberId: string,
+  currentUserId: string | null,
+  profileById: Map<string, ProfileRow>,
+) {
   if (memberId === currentUserId) return "Eu";
-  return `Outro membro ${memberId.slice(0, 6)}`;
+  return memberDisplayName(profileById.get(memberId), memberId);
 }
 
 export function TransactionList({
   transactions,
   categories,
   members,
+  profiles,
   currentUserId,
   onCategoryChange,
   onDelete,
 }: Props) {
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const [selectedAccount, setSelectedAccount] = useState("all");
   const [selectedCreator, setSelectedCreator] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
@@ -115,7 +129,7 @@ export function TransactionList({
               <SelectItem value="all">Todos</SelectItem>
               {members.map((member) => (
                 <SelectItem key={member.user_id} value={member.user_id}>
-                  {memberLabel(member.user_id, currentUserId)}
+                  {memberLabel(member.user_id, currentUserId, profileById)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -252,7 +266,7 @@ export function TransactionList({
                   </div>
                   <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2">
                     <p className="text-xs text-muted-foreground">
-                      {creatorLabel(transaction.created_by)}
+                      {creatorLabel(transaction.created_by, currentUserId, profileById)}
                       {consolidated ? " · período fechado" : ""}
                     </p>
                     <div className="flex items-center gap-1">

@@ -24,6 +24,7 @@ export type AccountRow = {
   closing_day: number | null;
   due_day: number | null;
   credit_limit: number | null;
+  owner_user_id: string;
 };
 
 export type AccountBalanceRow = {
@@ -75,6 +76,16 @@ export type HouseholdMemberRow = {
   user_id: string;
   role: string;
 };
+
+export type ProfileRow = {
+  id: string;
+  email: string;
+  display_name: string | null;
+};
+
+export function memberDisplayName(profile: ProfileRow | null | undefined, userId: string): string {
+  return profile?.display_name || profile?.email || `Membro ${userId.slice(0, 6)}`;
+}
 
 export const accountKindLabel: Record<string, string> = {
   checking: "Conta corrente",
