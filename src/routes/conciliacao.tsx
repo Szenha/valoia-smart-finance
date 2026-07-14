@@ -13,6 +13,7 @@ import {
   type AiTransaction,
 } from "@/lib/ai/extract-transactions";
 import { OfxParseError, parseOfx } from "@/lib/ofx";
+import { defaultPaymentMethod } from "@/lib/finance/transactionIcons";
 import {
   fetchManualTransactionsForPeriod,
   fetchStatementImports,
@@ -383,6 +384,8 @@ function ReconciliationRoute() {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) throw new Error("Usuário não autenticado.");
+        const parentImport = imports.find((imp) => imp.id === action.item.statement_import_id);
+        const entrySource = parentImport?.source === "pdf_manual" ? "pdf_import" : "ofx_import";
         const { data: tx, error: txErr } = await supabase
           .from("transactions")
           .insert({
@@ -396,6 +399,8 @@ function ReconciliationRoute() {
             type: action.item.type,
             account_id: action.item.account_id,
             account_kind: action.item.account_kind,
+            payment_method: defaultPaymentMethod(action.item.account_kind),
+            entry_source: entrySource,
             currency: action.item.currency,
             created_by: user.id,
             category_id: null,

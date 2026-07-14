@@ -57,6 +57,8 @@ export type TxnRow = {
   type: string;
   account_id: string;
   account_kind: AccountKind | string;
+  payment_method: string;
+  entry_source: string;
   currency: string;
   category_id: string | null;
   created_by?: string | null;

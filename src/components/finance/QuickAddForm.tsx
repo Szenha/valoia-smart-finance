@@ -26,6 +26,7 @@ import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import { ensureAccountFromTransaction } from "@/lib/finance/data";
 import { computeInstallmentSchedule } from "@/lib/finance/installments";
+import { defaultPaymentMethod } from "@/lib/finance/transactionIcons";
 import type { AccountRow, CategoryRow } from "@/lib/finance/types";
 import { supabase } from "@/lib/supabase/client";
 
@@ -37,6 +38,7 @@ const schema = z.object({
   posted_at: z.string().min(10),
   account_id: z.string().min(1, "Selecione a conta ou cartão utilizado"),
   account_kind: z.enum(["checking", "credit_card", "investment"]),
+  payment_method: z.enum(["debit", "credit_card", "pix", "other"]),
   installments_count: z.coerce.number().int().min(1).max(60),
   original_text: z.string().optional(),
 });
@@ -103,6 +105,7 @@ export function QuickAddForm({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [processingStage, setProcessingStage] = useState<ProcessingStage>("idle");
   const [pendingAudio, setPendingAudio] = useState<PendingAudio | null>(null);
+  const [usedAiDraft, setUsedAiDraft] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
@@ -128,6 +131,7 @@ export function QuickAddForm({
       posted_at: today(),
       account_id: orderedAccounts[0]?.account_key ?? "manual-cash",
       account_kind: orderedAccounts[0]?.kind ?? "checking",
+      payment_method: defaultPaymentMethod(orderedAccounts[0]?.kind ?? "checking"),
       installments_count: 1,
       original_text: "",
     },
@@ -158,6 +162,8 @@ export function QuickAddForm({
         type: signedType,
         account_id: values.account_id,
         account_kind: values.account_kind,
+        payment_method: values.payment_method,
+        entry_source: usedAiDraft ? "voice_ai" : "manual",
         currency: "BRL",
         created_by: userId,
         category_id: values.category_id || null,
@@ -219,9 +225,11 @@ export function QuickAddForm({
         posted_at: today(),
         account_id: form.getValues("account_id"),
         account_kind: form.getValues("account_kind"),
+        payment_method: form.getValues("payment_method"),
         installments_count: 1,
         original_text: "",
       });
+      setUsedAiDraft(false);
       setStatus("Lançamento salvo.");
       await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
       onSaved?.();
@@ -267,6 +275,7 @@ export function QuickAddForm({
     if (match.status === "resolved") {
       form.setValue("account_id", match.accountId);
       form.setValue("account_kind", match.accountKind);
+      form.setValue("payment_method", defaultPaymentMethod(match.accountKind));
       return "";
     }
     if (match.status === "ambiguous") {
@@ -289,6 +298,7 @@ export function QuickAddForm({
       form.setValue("posted_at", draft.date);
       form.setValue("installments_count", draft.installments_count);
       const accountNote = applyAccountMatch(draft);
+      setUsedAiDraft(true);
       await suggestCategory();
       setStatus(`Confira os campos antes de salvar.${accountNote}`);
     } catch (err) {
@@ -330,6 +340,7 @@ export function QuickAddForm({
       form.setValue("posted_at", draft.date);
       form.setValue("installments_count", draft.installments_count);
       const accountNote = applyAccountMatch(draft);
+      setUsedAiDraft(true);
       setPendingAudio(null);
       await suggestCategory();
       setStatus(`Transcrição interpretada. Confira antes de salvar.${accountNote}`);
@@ -528,6 +539,7 @@ export function QuickAddForm({
             const [accountId, accountKind] = value.split("|");
             form.setValue("account_id", accountId);
             form.setValue("account_kind", accountKind as FormValues["account_kind"]);
+            form.setValue("payment_method", defaultPaymentMethod(accountKind));
           }}
         >
           <SelectTrigger>
@@ -561,6 +573,25 @@ export function QuickAddForm({
           </SelectContent>
         </Select>
       </div>
+      {form.watch("account_kind") === "checking" ? (
+        <div className="md:col-span-2">
+          <Label>Forma de pagamento</Label>
+          <Select
+            value={form.watch("payment_method")}
+            onValueChange={(value) =>
+              form.setValue("payment_method", value as FormValues["payment_method"])
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="debit">Débito</SelectItem>
+              <SelectItem value="pix">Pix</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
       {form.watch("account_kind") === "credit_card" ? (
         <div className="md:col-span-2">
           <Label>Parcelas</Label>

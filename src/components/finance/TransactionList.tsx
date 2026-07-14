@@ -19,8 +19,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import { categoryIconFor } from "@/lib/finance/category-icons";
+import {
+  entrySourceIcon,
+  entrySourceLabel,
+  INDICATOR_GAP_CLASS,
+  INDICATOR_ICON_SIZE_CLASS,
+  paymentMethodIcon,
+  paymentMethodLabel,
+  type EntrySource,
+  type PaymentMethod,
+} from "@/lib/finance/transactionIcons";
 import {
   accountKindIcon,
   accountKindLabel,
@@ -54,9 +65,23 @@ const CATEGORY_COLORS = [
   "bg-orange-500",
 ];
 
+const CATEGORY_BORDER_COLORS = CATEGORY_COLORS.map((c) => `${c.replace("bg-", "border-")}/30`);
+
 function colorForCategory(category: CategoryRow | undefined, index: number) {
   if (category?.color) return "";
   return CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+}
+
+function borderForCategory(category: CategoryRow | undefined, index: number) {
+  if (category?.color) return "";
+  return CATEGORY_BORDER_COLORS[index % CATEGORY_BORDER_COLORS.length];
+}
+
+const DESCRIPTION_MAX_CHARS = 44;
+
+function truncateDescription(text: string, max = DESCRIPTION_MAX_CHARS) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max).trimEnd()}…`;
 }
 
 function creatorLabel(
@@ -90,6 +115,8 @@ export function TransactionList({
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const [selectedAccount, setSelectedAccount] = useState("all");
   const [selectedCreator, setSelectedCreator] = useState("all");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
+  const [selectedEntrySource, setSelectedEntrySource] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
   const categoryItems = leafCategoryOptions(categories);
   const accounts = Array.from(
@@ -100,210 +127,282 @@ export function TransactionList({
       ]),
     ).values(),
   );
-  const displayed =
-    selectedAccount === "all"
-      ? transactions.filter(
-          (transaction) => selectedCreator === "all" || transaction.created_by === selectedCreator,
-        )
-      : transactions.filter(
-          (transaction) =>
-            transaction.account_id === selectedAccount &&
-            (selectedCreator === "all" || transaction.created_by === selectedCreator),
-        );
+  const displayed = transactions.filter(
+    (transaction) =>
+      (selectedAccount === "all" || transaction.account_id === selectedAccount) &&
+      (selectedCreator === "all" || transaction.created_by === selectedCreator) &&
+      (selectedPaymentMethod === "all" || transaction.payment_method === selectedPaymentMethod) &&
+      (selectedEntrySource === "all" || transaction.entry_source === selectedEntrySource),
+  );
   const income = displayed.reduce((sum, t) => (t.amount > 0 ? sum + t.amount : sum), 0);
   const expenses = displayed.reduce((sum, t) => (t.amount < 0 ? sum + Math.abs(t.amount) : sum), 0);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <CardTitle>Transações</CardTitle>
-          <p className="text-sm text-muted-foreground">{displayed.length} lançamento(s)</p>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-          <Select value={selectedCreator} onValueChange={setSelectedCreator}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              {members.map((member) => (
-                <SelectItem key={member.user_id} value={member.user_id}>
-                  {memberLabel(member.user_id, currentUserId, profileById)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-            <SelectTrigger className="w-full sm:w-[220px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as contas</SelectItem>
-              {accounts.map((account) => (
-                <SelectItem
-                  key={`${account.accountId}|${account.accountKind}`}
-                  value={account.accountId}
+    <TooltipProvider>
+      <Card>
+        <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Transações</CardTitle>
+            <p className="text-sm text-muted-foreground">{displayed.length} lançamento(s)</p>
+          </div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+            <Select value={selectedCreator} onValueChange={setSelectedCreator}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {members.map((member) => (
+                  <SelectItem key={member.user_id} value={member.user_id}>
+                    {memberLabel(member.user_id, currentUserId, profileById)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as contas</SelectItem>
+                {accounts.map((account) => (
+                  <SelectItem
+                    key={`${account.accountId}|${account.accountKind}`}
+                    value={account.accountId}
+                  >
+                    {accountLabel(account.accountId, account.accountKind)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as formas</SelectItem>
+                {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {paymentMethodLabel[method]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedEntrySource} onValueChange={setSelectedEntrySource}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as origens</SelectItem>
+                {(Object.keys(entrySourceLabel) as EntrySource[]).map((source) => (
+                  <SelectItem key={source} value={source}>
+                    {entrySourceLabel[source]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 flex flex-wrap gap-6 border-b pb-4 text-sm">
+            <strong className="text-emerald-700">Entradas {formatCurrency(income)}</strong>
+            <strong className="text-red-700">Saídas {formatCurrency(expenses)}</strong>
+            <strong>Saldo {formatCurrency(income - expenses)}</strong>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {displayed.map((transaction) => {
+              const category = categories.find((c) => c.id === transaction.category_id);
+              const categoryIndex = Math.max(
+                categories.findIndex((c) => c.id === transaction.category_id),
+                0,
+              );
+              const isEditing = editingCategoryFor === transaction.id;
+              const consolidated = transaction.consolidation_status === "consolidado";
+              const isIncome = transaction.amount >= 0;
+              const TypeIcon = isIncome ? ArrowUpCircle : ArrowDownCircle;
+              const CategoryIcon = categoryIconFor(category?.icon, category?.type ?? "expense");
+              const AccountKindIcon = accountKindIcon(String(transaction.account_kind));
+              const PaymentMethodIcon = paymentMethodIcon(transaction.payment_method);
+              const EntrySourceIcon = entrySourceIcon(transaction.entry_source);
+              const categoryPillStyle = category?.color
+                ? { backgroundColor: `${category.color}1a`, color: category.color }
+                : undefined;
+              const categoryPillClass = category?.color
+                ? "border border-transparent"
+                : `${colorForCategory(category, categoryIndex)} border border-transparent text-white`;
+              const leftBorderStyle = category?.color
+                ? { borderLeftColor: `${category.color}59` }
+                : undefined;
+              const leftBorderClass = borderForCategory(category, categoryIndex);
+              return (
+                <div
+                  key={transaction.id}
+                  className={`overflow-hidden rounded-lg border border-l-4 border-slate-200 bg-white shadow-sm ${leftBorderClass}`}
+                  style={leftBorderStyle}
                 >
-                  {accountLabel(account.accountId, account.accountKind)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="mb-4 flex flex-wrap gap-6 border-b pb-4 text-sm">
-          <strong className="text-emerald-700">Entradas {formatCurrency(income)}</strong>
-          <strong className="text-red-700">Saídas {formatCurrency(expenses)}</strong>
-          <strong>Saldo {formatCurrency(income - expenses)}</strong>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {displayed.map((transaction) => {
-            const category = categories.find((c) => c.id === transaction.category_id);
-            const categoryIndex = Math.max(
-              categories.findIndex((c) => c.id === transaction.category_id),
-              0,
-            );
-            const isEditing = editingCategoryFor === transaction.id;
-            const consolidated = transaction.consolidation_status === "consolidado";
-            const isIncome = transaction.amount >= 0;
-            const amountClass = isIncome ? "text-emerald-700" : "text-red-700";
-            const sideBarClass = isIncome ? "bg-emerald-500" : "bg-red-500";
-            const TypeIcon = isIncome ? ArrowUpCircle : ArrowDownCircle;
-            const CategoryIcon = categoryIconFor(category?.icon, category?.type ?? "expense");
-            const AccountKindIcon = accountKindIcon(String(transaction.account_kind));
-            const categoryPillStyle = category?.color
-              ? { backgroundColor: `${category.color}1a`, color: category.color }
-              : undefined;
-            const categoryPillClass = category?.color
-              ? "border border-transparent"
-              : `${colorForCategory(category, categoryIndex)} border border-transparent text-white`;
-            return (
-              <div
-                key={transaction.id}
-                className="flex overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
-              >
-                <div className={`w-1.5 shrink-0 ${sideBarClass}`} />
-                <div className="min-w-0 flex-1 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-2.5">
-                      <TypeIcon
-                        className={`mt-0.5 h-5 w-5 shrink-0 ${isIncome ? "text-emerald-600" : "text-red-600"}`}
-                      />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{transaction.description || "-"}</p>
-                        <p className="flex items-center gap-1 text-sm text-muted-foreground">
-                          {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
-                          <AccountKindIcon className="h-3 w-3" />
-                          {accountKindLabel[String(transaction.account_kind)] ??
-                            transaction.account_kind}
+                  <div className="p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="line-clamp-2 min-w-0 font-medium">
+                        {truncateDescription(transaction.description || "-")}
+                      </p>
+                      <strong className="shrink-0 text-right text-xl font-bold text-slate-900">
+                        {formatCurrency(transaction.amount, transaction.currency)}
+                      </strong>
+                    </div>
+                    <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                      {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
+                      <AccountKindIcon className="h-3 w-3" />
+                      {accountKindLabel[String(transaction.account_kind)] ??
+                        transaction.account_kind}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {isEditing ? (
+                        <Select
+                          defaultValue={transaction.category_id ?? "none"}
+                          onValueChange={(value) => {
+                            setEditingCategoryFor(null);
+                            if (value !== "none") onCategoryChange(transaction, value);
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-[180px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sem categoria</SelectItem>
+                            {categoryItems.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.path}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={consolidated}
+                          onClick={() => setEditingCategoryFor(transaction.id)}
+                          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${categoryPillClass}`}
+                          style={categoryPillStyle}
+                        >
+                          <CategoryIcon className="h-3 w-3" />
+                          {categoryPath(categories, transaction.category_id)}
+                        </button>
+                      )}
+                      <Badge
+                        variant={transaction.needs_review ? "secondary" : "outline"}
+                        className="rounded-full"
+                      >
+                        {transaction.needs_review ? (
+                          <AlertCircle className="mr-1 h-3 w-3" />
+                        ) : (
+                          <CheckCircle2 className="mr-1 h-3 w-3" />
+                        )}
+                        {transaction.needs_review ? "Revisar" : "OK"}
+                      </Badge>
+                      {transaction.installment_plan_id ? (
+                        <Badge variant="outline" className="rounded-full">
+                          <Layers className="mr-1 h-3 w-3" />
+                          {transaction.installment_number
+                            ? `${transaction.installment_number} parcela`
+                            : "Parcelado"}
+                        </Badge>
+                      ) : null}
+                      {consolidated ? (
+                        <Badge variant="secondary" className="rounded-full">
+                          <Lock className="mr-1 h-3 w-3" />
+                          Consolidado
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2">
+                      <div
+                        className={`flex min-w-0 items-center ${INDICATOR_GAP_CLASS} text-xs text-muted-foreground`}
+                      >
+                        <div className={`flex items-center ${INDICATOR_GAP_CLASS}`}>
+                          <Tooltip>
+                            <TooltipTrigger
+                              type="button"
+                              aria-label={
+                                paymentMethodLabel[transaction.payment_method as PaymentMethod] ??
+                                transaction.payment_method
+                              }
+                              className="text-slate-500"
+                            >
+                              <PaymentMethodIcon className={INDICATOR_ICON_SIZE_CLASS} />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {paymentMethodLabel[transaction.payment_method as PaymentMethod] ??
+                                transaction.payment_method}
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger
+                              type="button"
+                              aria-label={
+                                entrySourceLabel[transaction.entry_source as EntrySource] ??
+                                transaction.entry_source
+                              }
+                              className="text-slate-500"
+                            >
+                              <EntrySourceIcon className={INDICATOR_ICON_SIZE_CLASS} />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {entrySourceLabel[transaction.entry_source as EntrySource] ??
+                                transaction.entry_source}
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger
+                              type="button"
+                              aria-label={isIncome ? "Entrada" : "Saída"}
+                              className={isIncome ? "text-emerald-600" : "text-red-600"}
+                            >
+                              <TypeIcon className={INDICATOR_ICON_SIZE_CLASS} />
+                            </TooltipTrigger>
+                            <TooltipContent>{isIncome ? "Entrada" : "Saída"}</TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <p className="truncate">
+                          {creatorLabel(transaction.created_by, currentUserId, profileById)}
+                          {consolidated ? " · período fechado" : ""}
                         </p>
                       </div>
-                    </div>
-                    <strong className={`shrink-0 text-lg ${amountClass}`}>
-                      {formatCurrency(transaction.amount, transaction.currency)}
-                    </strong>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                    {isEditing ? (
-                      <Select
-                        defaultValue={transaction.category_id ?? "none"}
-                        onValueChange={(value) => {
-                          setEditingCategoryFor(null);
-                          if (value !== "none") onCategoryChange(transaction, value);
-                        }}
-                      >
-                        <SelectTrigger className="h-7 w-[180px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Sem categoria</SelectItem>
-                          {categoryItems.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.path}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={consolidated}
-                        onClick={() => setEditingCategoryFor(transaction.id)}
-                        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${categoryPillClass}`}
-                        style={categoryPillStyle}
-                      >
-                        <CategoryIcon className="h-3 w-3" />
-                        {categoryPath(categories, transaction.category_id)}
-                      </button>
-                    )}
-                    <Badge
-                      variant={transaction.needs_review ? "secondary" : "outline"}
-                      className="rounded-full"
-                    >
-                      {transaction.needs_review ? (
-                        <AlertCircle className="mr-1 h-3 w-3" />
-                      ) : (
-                        <CheckCircle2 className="mr-1 h-3 w-3" />
-                      )}
-                      {transaction.needs_review ? "Revisar" : "OK"}
-                    </Badge>
-                    {transaction.installment_plan_id ? (
-                      <Badge variant="outline" className="rounded-full">
-                        <Layers className="mr-1 h-3 w-3" />
-                        {transaction.installment_number
-                          ? `${transaction.installment_number} parcela`
-                          : "Parcelado"}
-                      </Badge>
-                    ) : null}
-                    {consolidated ? (
-                      <Badge variant="secondary" className="rounded-full">
-                        <Lock className="mr-1 h-3 w-3" />
-                        Consolidado
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2">
-                    <p className="text-xs text-muted-foreground">
-                      {creatorLabel(transaction.created_by, currentUserId, profileById)}
-                      {consolidated ? " · período fechado" : ""}
-                    </p>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        disabled={consolidated}
-                        aria-label="Editar categoria"
-                        onClick={() => setEditingCategoryFor(transaction.id)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {onDelete ? (
+                      <div className="flex shrink-0 items-center gap-1">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-red-600 hover:text-red-700"
+                          className="h-7 w-7"
                           disabled={consolidated}
-                          aria-label="Excluir lançamento"
-                          onClick={() => {
-                            if (window.confirm("Excluir este lançamento?")) onDelete(transaction);
-                          }}
+                          aria-label="Editar categoria"
+                          onClick={() => setEditingCategoryFor(transaction.id)}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                      ) : null}
+                        {onDelete ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-600 hover:text-red-700"
+                            disabled={consolidated}
+                            aria-label="Excluir lançamento"
+                            onClick={() => {
+                              if (window.confirm("Excluir este lançamento?")) onDelete(transaction);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
   );
 }

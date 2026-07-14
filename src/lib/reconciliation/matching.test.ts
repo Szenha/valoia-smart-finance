@@ -34,6 +34,8 @@ function txn(overrides: Partial<TxnRow>): TxnRow {
     type: "MANUAL_DEBIT",
     account_id: "manual-cash",
     account_kind: "checking",
+    payment_method: "debit",
+    entry_source: "manual",
     currency: "BRL",
     category_id: null,
     created_by: null,
