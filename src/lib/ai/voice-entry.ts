@@ -19,9 +19,12 @@ type VoiceTextInput = {
   text: string;
 };
 
-const TODAY = new Date().toISOString().slice(0, 10);
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
-const TEXT_SYSTEM_PROMPT = `Você transforma uma frase curta em um lançamento financeiro estruturado.
+function textSystemPrompt(todayStr: string): string {
+  return `Você transforma uma frase curta em um lançamento financeiro estruturado.
 Responda APENAS JSON válido:
 {
   "original_text": string,
@@ -39,7 +42,9 @@ Regras:
 - amount é sempre o valor TOTAL da compra (positivo), mesmo quando parcelado.
   Ex: "390 reais em 3 parcelas" -> amount 390, installments_count 3 (não 130).
 - transaction_type "expense" para gastos, "income" para entradas, "transfer" para transferências.
-- Se não houver data, use ${TODAY}.
+- Hoje é ${todayStr}. Use essa data como referência para expressões relativas
+  ("hoje", "ontem", "semana passada"). Se não houver nenhuma pista de data na fala, use ${todayStr}.
+  Nunca invente uma data antiga ou arbitrária — na dúvida, use ${todayStr}.
 - account_hint: só o NOME/instituição da conta ou cartão mencionado (ex: "Nubank", "Inter"),
   sem a palavra "cartão"/"conta". null se não houver nome específico.
 - payment_method_hint: classifique a forma de pagamento mencionada:
@@ -47,8 +52,26 @@ Regras:
   "credit" para "crédito"/"cartão" (sem especificar débito). null se não houver menção.
 - installments_count: número de parcelas mencionado (ex: "em 3 vezes", "parcelado em 5"). 1 se à vista ou não mencionado.
 - confidence entre 0 e 1.`;
+}
 
-function parseDraft(rawText: string, fallbackText: string): VoiceTransactionDraft {
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Guards against the model hallucinating an implausible date (e.g. epoch
+ *  "1970-01-01", or some other placeholder) — falls back to today instead
+ *  of trusting whatever string comes back verbatim. */
+function plausibleDate(value: unknown, todayStr: string): string {
+  if (typeof value !== "string" || !DATE_PATTERN.test(value)) return todayStr;
+  const year = Number(value.slice(0, 4));
+  const currentYear = Number(todayStr.slice(0, 4));
+  if (year < currentYear - 1 || year > currentYear + 1) return todayStr;
+  return value;
+}
+
+export function parseDraft(
+  rawText: string,
+  fallbackText: string,
+  todayStr: string = today(),
+): VoiceTransactionDraft {
   const jsonStart = rawText.indexOf("{");
   const jsonEnd = rawText.lastIndexOf("}");
   if (jsonStart === -1 || jsonEnd <= jsonStart) {
@@ -66,7 +89,7 @@ function parseDraft(rawText: string, fallbackText: string): VoiceTransactionDraf
     description: parsed.description,
     amount: Math.abs(Number(parsed.amount)),
     transaction_type: parsed.transaction_type ?? "expense",
-    date: parsed.date ?? TODAY,
+    date: plausibleDate(parsed.date, todayStr),
     account_hint: parsed.account_hint ?? null,
     payment_method_hint: parsed.payment_method_hint ?? null,
     installments_count: Number.isFinite(installments) && installments >= 1 ? installments : 1,
@@ -81,16 +104,17 @@ export const extractVoiceTextFn = createServerFn({ method: "POST" })
     if (!text) throw new Error("Informe um texto para interpretar.");
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada.");
+    const todayStr = today();
     const client = new Anthropic({ apiKey });
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1200,
-      system: TEXT_SYSTEM_PROMPT,
+      system: textSystemPrompt(todayStr),
       messages: [{ role: "user", content: text }],
     });
     const rawText = message.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("");
-    return parseDraft(rawText, text);
+    return parseDraft(rawText, text, todayStr);
   });
