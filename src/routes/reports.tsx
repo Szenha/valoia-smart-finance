@@ -23,7 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { fetchHouseholdMembers } from "@/lib/finance/data";
+import { fetchHouseholdMembers, fetchMemberProfiles } from "@/lib/finance/data";
+import { resolveMemberName } from "@/lib/finance/member-visuals";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -34,7 +35,7 @@ export const Route = createFileRoute("/reports")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   head: () => ({ meta: [{ title: "Ticlio — Relatórios" }] }),
   component: ReportsRoute,
@@ -70,6 +71,12 @@ function ReportsRoute() {
     queryKey: ["household-members", orgId],
     enabled: !!orgId,
     queryFn: () => fetchHouseholdMembers(orgId!),
+  });
+  const memberIds = (membersQuery.data ?? []).map((member) => member.user_id);
+  const profilesQuery = useQuery({
+    queryKey: ["member-profiles", orgId, memberIds],
+    enabled: !!orgId && memberIds.length > 0,
+    queryFn: () => fetchMemberProfiles(memberIds),
   });
   // Mobile defaults to the current month only — dense multi-month tables/
   // charts are reserved for desktop, where there's room to compare them.
@@ -167,6 +174,11 @@ function ReportsRoute() {
     },
   });
 
+  const filteredByMember = creatorFilter !== "all";
+  const householdWideNote = filteredByMember
+    ? "Sempre mostra o total da família, não é afetado pelo filtro de pessoa acima."
+    : undefined;
+
   return (
     <AppShell
       activeSection="analytics"
@@ -185,7 +197,11 @@ function ReportsRoute() {
               <SelectItem key={member.user_id} value={member.user_id}>
                 {member.user_id === currentUserQuery.data?.id
                   ? "Eu"
-                  : `Outro membro ${member.user_id.slice(0, 6)}`}
+                  : resolveMemberName(
+                      member,
+                      (profilesQuery.data ?? []).find((p) => p.id === member.user_id),
+                      member.user_id,
+                    )}
               </SelectItem>
             ))}
           </SelectContent>
@@ -217,7 +233,7 @@ function ReportsRoute() {
               </div>
             </CardContent>
           </Card>
-          <BudgetComparison rows={budgetQuery.data ?? []} />
+          <BudgetComparison rows={budgetQuery.data ?? []} note={householdWideNote} />
           <ReportTable
             title="Despesas por categoria (mês atual)"
             rows={categoryQuery.data ?? []}
@@ -276,7 +292,14 @@ function ReportsRoute() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyQuery.data ?? []}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month_start" />
+                  <XAxis
+                    dataKey="month_start"
+                    tickFormatter={(value) =>
+                      new Date(`${value}T00:00:00`).toLocaleDateString("pt-BR", {
+                        month: "short",
+                      })
+                    }
+                  />
                   <YAxis />
                   <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                   <Bar dataKey="income" fill="#059669" name="Receitas" />
@@ -287,7 +310,7 @@ function ReportsRoute() {
           </Card>
           <section className="grid gap-4 lg:grid-cols-2">
             <div id="report-budget">
-              <BudgetComparison rows={budgetQuery.data ?? []} />
+              <BudgetComparison rows={budgetQuery.data ?? []} note={householdWideNote} />
             </div>
             <ReportTable
               id="report-category"
@@ -312,6 +335,7 @@ function ReportsRoute() {
               title="Despesas recorrentes"
               rows={recurringQuery.data ?? []}
               labelKey="pattern"
+              note={householdWideNote}
             />
           </section>
         </>
@@ -353,44 +377,73 @@ function ReportEntryCard({
   );
 }
 
-function BudgetComparison({ rows }: { rows: ReportRow[] }) {
+/** budget_vs_actual returns one row per category *per month* in range — on
+ *  desktop that's up to 12 rows for the same category with no period label,
+ *  which just reads as duplicated/contradictory entries. The card promises
+ *  a yearly figure per category, so sum across months here instead of
+ *  rendering the raw monthly rows. */
+function aggregateBudgetRows(rows: ReportRow[]) {
+  const byCategory = new Map<
+    string,
+    { name: string; type: string; planned: number; actual: number }
+  >();
+  for (const row of rows) {
+    const key = `${row.scope_type}:${row.category_id ?? "none"}`;
+    const entry = byCategory.get(key) ?? {
+      name: String(row.category_name ?? "Categoria"),
+      type: String(row.category_type ?? row.scope_type ?? "expense"),
+      planned: 0,
+      actual: 0,
+    };
+    entry.planned += Number(row.planned_amount ?? 0);
+    entry.actual += Number(row.actual_amount ?? 0);
+    byCategory.set(key, entry);
+  }
+  return Array.from(byCategory.values());
+}
+
+function BudgetComparison({ rows, note }: { rows: ReportRow[]; note?: string }) {
+  const aggregated = aggregateBudgetRows(rows);
   return (
     <Card>
       <CardHeader>
         <CardTitle>Planejado vs realizado</CardTitle>
+        {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
-          {rows.map((row, index) => {
-            const planned = Number(row.planned_amount ?? 0);
-            const actual = Number(row.actual_amount ?? 0);
-            const difference = Number(row.difference_amount ?? 0);
-            const over = planned > 0 && actual > planned;
+          {aggregated.map((entry, index) => {
+            const isIncome = entry.type === "income" || entry.type === "macro_income";
+            const planned = entry.planned;
+            const actual = entry.actual;
+            const difference = isIncome ? actual - planned : planned - actual;
+            // Expenses: spending more than planned is bad. Income: receiving
+            // less than planned is bad — the two directions are inverted.
+            const bad = isIncome ? actual < planned : planned > 0 && actual > planned;
+            const percent = planned !== 0 ? (difference / planned) * 100 : null;
             return (
               <div
                 key={index}
                 className={
-                  over
+                  bad
                     ? "rounded-lg border border-red-200 bg-red-50 p-3 text-sm"
                     : "rounded-lg border border-slate-200 bg-white p-3 text-sm"
                 }
               >
                 <div className="flex justify-between gap-3">
-                  <span className="font-medium">{row.category_name ?? "Categoria"}</span>
-                  <strong className={over ? "text-red-700" : "text-emerald-700"}>
-                    {formatCurrency(difference)}
+                  <span className="font-medium">{entry.name}</span>
+                  <strong className={bad ? "text-red-700" : "text-emerald-700"}>
+                    {formatCurrency(Math.abs(difference))}
                   </strong>
                 </div>
                 <p className="text-muted-foreground">
                   Planejado {formatCurrency(planned)} · Realizado {formatCurrency(actual)}
-                  {row.difference_percent !== null && row.difference_percent !== undefined
-                    ? ` · ${Number(row.difference_percent).toFixed(1)}%`
-                    : ""}
+                  {percent !== null ? ` · ${percent.toFixed(1)}%` : ""}
                 </p>
               </div>
             );
           })}
-          {rows.length === 0 ? (
+          {aggregated.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Nenhum planejamento ou realizado encontrado no período.
             </p>
@@ -406,22 +459,25 @@ function ReportTable({
   title,
   rows,
   labelKey,
+  note,
 }: {
   id?: string;
   title: string;
   rows: ReportRow[];
   labelKey: string;
+  note?: string;
 }) {
   return (
     <Card id={id}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
+        {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
           {rows.map((row, index) => (
             <div key={index} className="flex justify-between border-b py-2 text-sm">
-              <span className="max-w-[70%] truncate">{row[labelKey] ?? "Sem nome"}</span>
+              <span className="max-w-[70%] truncate">{row[labelKey] || "Sem nome"}</span>
               <strong>{formatCurrency(Number(row.total ?? row.amount ?? 0))}</strong>
             </div>
           ))}

@@ -36,7 +36,7 @@ export const Route = createFileRoute("/planejamento")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   head: () => ({ meta: [{ title: "Ticlio — Planejamento" }] }),
   component: PlanningRoute,
@@ -221,19 +221,30 @@ function PlanningRoute() {
   const replicateBaseMonth = useMutation({
     mutationFn: async () => {
       if (!orgId) return;
+      // Group/subtotal rows are a computed sum, never a real budgets row —
+      // replicating them would silently create a bogus parent-level plan
+      // that double-counts alongside its own children.
       const filledRows = rows
+        .filter((row) => !row.isGroup)
         .map((row) => ({ row, amount: amountFor(row, baseMonth) }))
         .filter(({ amount }) => amount > 0);
-      if (filledRows.length === 0) return;
+      if (filledRows.length === 0) {
+        throw new Error("Nenhum valor lançado no mês base para replicar.");
+      }
+      // "Para os meses seguintes": only the base month onward, never
+      // retroactively overwriting months that already passed.
+      const targetMonths = MONTHS.map((_, index) => index + 1).filter(
+        (month) => month >= baseMonth,
+      );
       const payload = filledRows.flatMap(({ row, amount }) =>
-        MONTHS.map((_, index) => ({
+        targetMonths.map((month) => ({
           organization_id: orgId,
           scope_type: row.scopeType,
           scope_category_key: scopeCategoryKey(row.categoryId),
           category_id: row.categoryId,
           budget_year: year,
-          budget_month: index + 1,
-          period_month: `${year}-${String(index + 1).padStart(2, "0")}-01`,
+          budget_month: month,
+          period_month: `${year}-${String(month).padStart(2, "0")}-01`,
           planned_amount: amount,
           default_amount: amount,
           is_manual_adjustment: false,
@@ -369,7 +380,7 @@ function PlanningRoute() {
                         disabled={replicateBaseMonth.isPending}
                         onClick={() => replicateBaseMonth.mutate()}
                       >
-                        Replicar mês base para os 12 meses
+                        Replicar planejamento para os meses seguintes
                       </Button>
                     </div>
                   </>
@@ -476,7 +487,9 @@ function PlanningRoute() {
                                             : current,
                                         )
                                       }
-                                      onBlur={(event) => commitEditCell(row, month, event.target.value)}
+                                      onBlur={(event) =>
+                                        commitEditCell(row, month, event.target.value)
+                                      }
                                     />
                                   </TableCell>
                                 );
@@ -505,19 +518,20 @@ function PlanningRoute() {
                       );
                     })}
                     {rows.length > 0 ? (
-                      <TableRow className="bg-slate-900 hover:bg-slate-900">
-                        <TableCell className="sticky left-0 z-10 bg-slate-900 font-semibold text-white">
+                      <TableRow className="bg-primary/10 hover:bg-primary/10">
+                        <TableCell className="sticky left-0 z-10 bg-primary/10 font-semibold text-primary">
                           Saldo planejado
                         </TableCell>
                         {MONTHS.map((_, index) => {
                           const month = index + 1;
-                          const balance = sectionSubtotal("income", month) - sectionSubtotal("expense", month);
+                          const balance =
+                            sectionSubtotal("income", month) - sectionSubtotal("expense", month);
                           return (
                             <TableCell
                               key={month}
                               className={cn(
-                                "text-right font-semibold tabular-nums text-white",
-                                balance < 0 && "text-rose-300",
+                                "text-right font-semibold tabular-nums text-primary",
+                                balance < 0 && "text-rose-600",
                               )}
                             >
                               {formatCurrency(balance)}

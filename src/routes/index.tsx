@@ -25,7 +25,7 @@ export const Route = createFileRoute("/")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   head: () => ({ meta: [{ title: "Ticlio — Transações" }] }),
   component: Index,
@@ -89,11 +89,6 @@ function Index() {
     queryFn: () => fetchMemberProfiles(memberIds),
   });
 
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    navigate({ to: "/login" });
-  }
-
   async function handleCategoryChange(txn: TxnRow, categoryId: string) {
     if (!orgId) return;
     await learnFromConfirmation(orgId, txn.id, txn.description, categoryId);
@@ -124,7 +119,6 @@ function Index() {
       title="Transações"
       subtitle="Registro por voz, texto ou formulário"
       userEmail={userEmail}
-      onSignOut={handleSignOut}
     >
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/70 bg-white py-10 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.08)]">
         <Button
@@ -175,8 +169,10 @@ function Index() {
       </Dialog>
 
       <TransactionList
+        orgId={orgId}
         transactions={transactions}
         categories={categories}
+        accounts={accounts}
         members={membersQuery.data ?? []}
         profiles={profilesQuery.data ?? []}
         currentUserId={userId}

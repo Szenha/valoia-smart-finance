@@ -39,7 +39,7 @@ export const Route = createFileRoute("/cadastros/membros")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   head: () => ({ meta: [{ title: "Ticlio — Membros" }] }),
   component: MembrosRoute,
@@ -165,7 +165,13 @@ function MembrosRoute() {
     onError: (err) => setRemoveError(err instanceof Error ? err.message : String(err)),
   });
 
-  if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  // Wait for the owner lookup too, not just orgId — removeBlockedReason must
+  // never render a "Remover" button before it actually knows who the owner
+  // is (that window used to let anyone, including the owner themselves, be
+  // removed by mistake since `userId === undefined` is never true).
+  if (!orgId || ownerQuery.isLoading) {
+    return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  }
 
   const members = membersQuery.data ?? [];
   const profileById = new Map((profilesQuery.data ?? []).map((profile) => [profile.id, profile]));
@@ -174,6 +180,7 @@ function MembrosRoute() {
   const ownerId = ownerQuery.data;
 
   function removeBlockedReason(userId: string, role: string): string | null {
+    if (!ownerId) return "Não foi possível confirmar o dono da organização.";
     if (userId === ownerId) return "Não é possível remover o dono da organização.";
     if (role === "admin" && adminCount <= 1) {
       return "Não é possível remover o único administrador.";
@@ -187,15 +194,15 @@ function MembrosRoute() {
       setRemoveError(blocked);
       return;
     }
-    if (!window.confirm("Remover este membro do household?")) return;
+    if (!window.confirm("Remover este membro da família?")) return;
     removeMember.mutate(userId);
   }
 
   return (
-    <AppShell activeSection="membros" title="Membros" subtitle="Quem faz parte do seu household">
+    <AppShell activeSection="membros" title="Membros" subtitle="Quem faz parte da sua família">
       <Card>
         <CardHeader>
-          <CardTitle>Membros do household</CardTitle>
+          <CardTitle>Membros da família</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {members.map((member) => {

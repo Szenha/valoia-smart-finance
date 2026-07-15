@@ -67,6 +67,11 @@ type Options = {
   categories: CategoryRow[];
   accounts: AccountRow[];
   onSaved?: () => void;
+  /** When set, saveMutation updates this existing transaction in place
+   *  instead of inserting a new one — installments/plan creation is skipped
+   *  since editing an existing installment's plan is out of scope here. */
+  editingTransactionId?: string;
+  initialValues?: Partial<QuickAddFormValues>;
 };
 
 /**
@@ -75,7 +80,15 @@ type Options = {
  * voice capture overlay (VoiceCaptureFlow) — both drive the same state
  * machine, they just present it differently.
  */
-export function useQuickAddForm({ orgId, userId, categories, accounts, onSaved }: Options) {
+export function useQuickAddForm({
+  orgId,
+  userId,
+  categories,
+  accounts,
+  onSaved,
+  editingTransactionId,
+  initialValues,
+}: Options) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
   const [recording, setRecording] = useState(false);
@@ -114,6 +127,7 @@ export function useQuickAddForm({ orgId, userId, categories, accounts, onSaved }
       payment_method: defaultPaymentMethod(orderedAccounts[0]?.kind ?? "checking"),
       installments_count: 1,
       original_text: "",
+      ...initialValues,
     },
   });
 
@@ -134,6 +148,28 @@ export function useQuickAddForm({ orgId, userId, categories, accounts, onSaved }
           values.account_kind,
           userId ?? undefined,
         );
+      }
+
+      if (editingTransactionId) {
+        const { error } = await supabase
+          .from("transactions")
+          .update({
+            description: values.description,
+            type: signedType,
+            account_id: values.account_id,
+            account_kind: values.account_kind,
+            payment_method: values.payment_method,
+            category_id: values.category_id || null,
+            amount: sign * Math.abs(values.amount),
+            posted_at: new Date(values.posted_at).toISOString(),
+            classification_method: values.category_id ? "manual" : null,
+            classification_confidence: values.category_id ? 1 : null,
+            needs_review: !values.category_id,
+          })
+          .eq("id", editingTransactionId)
+          .eq("organization_id", orgId);
+        if (error) throw new Error(error.message);
+        return;
       }
 
       const baseRow = {
@@ -197,20 +233,22 @@ export function useQuickAddForm({ orgId, userId, categories, accounts, onSaved }
       if (error) throw new Error(error.message);
     },
     onSuccess: async () => {
-      form.reset({
-        transaction_type: "expense",
-        amount: 0,
-        description: "",
-        category_id: "",
-        posted_at: today(),
-        account_id: form.getValues("account_id"),
-        account_kind: form.getValues("account_kind"),
-        payment_method: form.getValues("payment_method"),
-        installments_count: 1,
-        original_text: "",
-      });
-      setUsedAiDraft(false);
-      setStatus("Lançamento salvo.");
+      if (!editingTransactionId) {
+        form.reset({
+          transaction_type: "expense",
+          amount: 0,
+          description: "",
+          category_id: "",
+          posted_at: today(),
+          account_id: form.getValues("account_id"),
+          account_kind: form.getValues("account_kind"),
+          payment_method: form.getValues("payment_method"),
+          installments_count: 1,
+          original_text: "",
+        });
+        setUsedAiDraft(false);
+      }
+      setStatus(editingTransactionId ? "Lançamento atualizado." : "Lançamento salvo.");
       await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
       onSaved?.();
     },

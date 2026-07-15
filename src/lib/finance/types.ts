@@ -31,6 +31,7 @@ export type AccountBalanceRow = {
   account_id: string;
   account_key: string;
   name: string;
+  kind: AccountKind;
   initial_balance: number | null;
   initial_balance_date: string | null;
   current_balance: number;

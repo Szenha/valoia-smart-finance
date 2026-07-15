@@ -4,7 +4,14 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
-import { fetchAccountBalances, fetchCardSummary, fetchHouseholdMembers } from "@/lib/finance/data";
+import { MemberAvatar } from "@/components/finance/MemberAvatar";
+import {
+  fetchAccountBalances,
+  fetchCardSummary,
+  fetchHouseholdMembers,
+  fetchMemberProfiles,
+} from "@/lib/finance/data";
+import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/finance/types";
@@ -15,7 +22,7 @@ export const Route = createFileRoute("/dashboard")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   head: () => ({ meta: [{ title: "Ticlio — Dashboard" }] }),
   component: DashboardRoute,
@@ -48,6 +55,12 @@ function DashboardRoute() {
     queryKey: ["household-members", orgId],
     enabled: !!orgId,
     queryFn: () => fetchHouseholdMembers(orgId!),
+  });
+  const memberIds = (membersQuery.data ?? []).map((member) => member.user_id);
+  const profilesQuery = useQuery({
+    queryKey: ["member-profiles", orgId, memberIds],
+    enabled: !!orgId && memberIds.length > 0,
+    queryFn: () => fetchMemberProfiles(memberIds),
   });
   const bounds = monthBounds();
   const balancesQuery = useQuery({
@@ -131,16 +144,25 @@ function DashboardRoute() {
 
   const summary = summaryQuery.data;
   const delta = summary ? summary.expenses - summary.previous_expenses : 0;
+  // previous_expenses being exactly 0 is our only signal that there's
+  // nothing to compare against yet (a brand-new org, or the household's
+  // first month of use) — showing "aumento de R$X" against a zero baseline
+  // reads as a real trend when it's actually just missing data.
+  const hasPreviousMonthData = (summary?.previous_expenses ?? 0) > 0;
   const creatorTotal = (spendingByCreatorQuery.data ?? []).reduce(
     (sum, row) => sum + Number(row.total),
     0,
   );
-  const checkingBalances = balancesQuery.data ?? [];
-  const consolidatedBalance = checkingBalances.reduce((sum, row) => sum + row.current_balance, 0);
+  const allBalances = balancesQuery.data ?? [];
+  const checkingBalances = allBalances.filter((row) => row.kind === "checking");
+  const investmentBalances = allBalances.filter((row) => row.kind === "investment");
+  const checkingTotal = checkingBalances.reduce((sum, row) => sum + row.current_balance, 0);
+  const investmentTotal = investmentBalances.reduce((sum, row) => sum + row.current_balance, 0);
   const totalCommitted = (cardSummaryQuery.data ?? []).reduce(
     (sum, row) => sum + row.limit_used,
     0,
   );
+  const netWorth = checkingTotal + investmentTotal - totalCommitted;
   const categoryTotal = (categoryQuery.data ?? []).reduce((sum, row) => sum + Number(row.total), 0);
 
   return (
@@ -162,35 +184,65 @@ function DashboardRoute() {
         />
       </section>
 
-      {checkingBalances.length > 0 ? (
+      {allBalances.length > 0 || totalCommitted > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Saldo bancário</CardTitle>
+            <CardTitle>Patrimônio total</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {checkingBalances.length > 1 ? (
-              <div className="flex items-center justify-between border-b pb-3">
-                <span className="text-sm font-medium">Total consolidado</span>
-                <strong
-                  className={`text-xl ${consolidatedBalance < 0 ? "text-red-700" : "text-emerald-700"}`}
-                >
-                  {formatCurrency(consolidatedBalance)}
+          <CardContent className="space-y-4">
+            <div className="border-b border-slate-100 pb-3">
+              <span className="text-sm font-medium text-muted-foreground">Patrimônio líquido</span>
+              <p
+                className={`text-2xl font-bold ${netWorth < 0 ? "text-red-700" : "text-emerald-700"}`}
+              >
+                {formatCurrency(netWorth)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Contas correntes + investimentos − dívida no cartão
+              </p>
+            </div>
+            <div className="grid gap-3 text-sm sm:grid-cols-3">
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-xs text-muted-foreground">Contas correntes</p>
+                <strong className={checkingTotal < 0 ? "text-red-700" : "text-emerald-700"}>
+                  {formatCurrency(checkingTotal)}
                 </strong>
               </div>
-            ) : null}
-            <div className="grid gap-3 sm:grid-cols-2">
-              {checkingBalances.map((row) => (
-                <div
-                  key={row.account_id}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm"
-                >
-                  <span>{row.name}</span>
-                  <strong className={row.current_balance < 0 ? "text-red-700" : "text-emerald-700"}>
-                    {formatCurrency(row.current_balance)}
-                  </strong>
-                </div>
-              ))}
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-xs text-muted-foreground">Investimentos</p>
+                <strong className={investmentTotal < 0 ? "text-red-700" : "text-emerald-700"}>
+                  {formatCurrency(investmentTotal)}
+                </strong>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3">
+                <p className="text-xs text-muted-foreground">Cartões (dívida)</p>
+                <strong className={totalCommitted > 0 ? "text-red-700" : "text-emerald-700"}>
+                  {formatCurrency(-totalCommitted)}
+                </strong>
+              </div>
             </div>
+            {allBalances.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {allBalances.map((row) => (
+                  <div
+                    key={row.account_id}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm"
+                  >
+                    <span>
+                      {row.name}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        ({row.kind === "investment" ? "Investimento" : "Conta corrente"})
+                      </span>
+                    </span>
+                    <strong
+                      className={row.current_balance < 0 ? "text-red-700" : "text-emerald-700"}
+                    >
+                      {formatCurrency(row.current_balance)}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
@@ -252,9 +304,16 @@ function DashboardRoute() {
             <CardTitle>Comparação com mês anterior</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className={delta > 0 ? "text-red-700" : "text-emerald-700"}>
-              {delta > 0 ? "Aumento" : "Redução"} de {formatCurrency(Math.abs(delta))} em despesas.
-            </p>
+            {hasPreviousMonthData ? (
+              <p className={delta > 0 ? "text-red-700" : "text-emerald-700"}>
+                {delta > 0 ? "Aumento" : "Redução"} de {formatCurrency(Math.abs(delta))} em
+                despesas.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Ainda não há dados do mês anterior para comparar.
+              </p>
+            )}
             <div className="mt-4 flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
               <span className="text-muted-foreground">Saldo do mês</span>
               <strong>{formatCurrency(summary?.balance ?? 0)}</strong>
@@ -278,22 +337,31 @@ function DashboardRoute() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Gastos por pessoa</CardTitle>
+            <CardTitle>Gastos por membro da família</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {(spendingByCreatorQuery.data ?? []).map((row) => {
               const member = (membersQuery.data ?? []).find((m) => m.user_id === row.created_by);
-              const label =
-                row.created_by === currentUserQuery.data?.id
-                  ? "Eu"
-                  : member
-                    ? `Outro membro ${member.user_id.slice(0, 6)}`
-                    : "Sem autor";
+              const profile = (profilesQuery.data ?? []).find((p) => p.id === row.created_by);
+              const isMe = row.created_by === currentUserQuery.data?.id;
+              const resolvedName = row.created_by
+                ? resolveMemberName(member, profile, row.created_by)
+                : "Sem autor";
+              const label = isMe ? "Eu" : resolvedName;
               const percent = creatorTotal > 0 ? (Number(row.total) / creatorTotal) * 100 : 0;
               return (
                 <div key={row.created_by ?? "none"} className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>{label}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      {row.created_by ? (
+                        <MemberAvatar
+                          name={resolvedName}
+                          color={resolveMemberColor(row.created_by, member?.color ?? null)}
+                          size="sm"
+                        />
+                      ) : null}
+                      {label}
+                    </span>
                     <strong>{formatCurrency(Number(row.total))}</strong>
                   </div>
                   <div className="h-2 rounded-full bg-slate-100">

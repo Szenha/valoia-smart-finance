@@ -1,4 +1,4 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -39,7 +39,6 @@ type AppShellProps = {
   title: string;
   subtitle?: string;
   userEmail?: string;
-  onSignOut?: () => void;
   children: ReactNode;
 };
 
@@ -85,17 +84,16 @@ const navItems: NavItem[] = [
   },
 ];
 
-export function AppShell({
-  activeSection,
-  title,
-  subtitle,
-  userEmail,
-  onSignOut,
-  children,
-}: AppShellProps) {
+export function AppShell({ activeSection, title, subtitle, userEmail, children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [voiceSheetOpen, setVoiceSheetOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    navigate({ to: "/login" });
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -231,21 +229,16 @@ export function AppShell({
             );
           })}
         </nav>
-        {onSignOut ? (
-          <Button
-            type="button"
-            variant="outline"
-            title={collapsed ? "Sair" : undefined}
-            className={cn(
-              "mt-3 shrink-0 gap-2",
-              collapsed ? "justify-center px-0" : "justify-start",
-            )}
-            onClick={onSignOut}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {!collapsed ? "Sair" : null}
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          title={collapsed ? "Sair" : undefined}
+          className={cn("mt-3 shrink-0 gap-2", collapsed ? "justify-center px-0" : "justify-start")}
+          onClick={handleSignOut}
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          {!collapsed ? "Sair" : null}
+        </Button>
       </aside>
 
       <div
@@ -274,18 +267,20 @@ export function AppShell({
                   {loggedInEmail}
                 </span>
               ) : null}
-              {onSignOut ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                  onClick={onSignOut}
-                  aria-label="Sair"
-                >
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              ) : null}
+              {/* Desktop already has Sair pinned at the bottom of the sidebar
+                  (always visible now, regardless of route) — showing it here
+                  too would be redundant. Mobile has no sidebar, so it stays
+                  here as the only way to sign out on that breakpoint. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+                onClick={handleSignOut}
+                aria-label="Sair"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </header>

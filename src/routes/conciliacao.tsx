@@ -36,7 +36,7 @@ export const Route = createFileRoute("/conciliacao")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   head: () => ({ meta: [{ title: "Ticlio — Extratos e conciliação" }] }),
   component: ReconciliationRoute,
@@ -154,11 +154,6 @@ function ReconciliationRoute() {
       return data as PeriodClosureRow | null;
     },
   });
-
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    navigate({ to: "/login" });
-  }
 
   async function refreshReconciliation(importId?: string) {
     await queryClient.invalidateQueries({ queryKey: ["statement-imports", orgId] });
@@ -537,7 +532,6 @@ function ReconciliationRoute() {
       title="Extratos e conciliação"
       subtitle="Importe OFX/PDF e compare contra os lançamentos do dia a dia"
       userEmail={userEmail}
-      onSignOut={handleSignOut}
     >
       <ImportPanel
         title="Importar para conciliação"

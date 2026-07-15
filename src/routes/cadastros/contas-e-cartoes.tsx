@@ -41,7 +41,7 @@ export const Route = createFileRoute("/cadastros/contas-e-cartoes")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   head: () => ({ meta: [{ title: "Ticlio — Contas e cartões" }] }),
   component: ContasECartoesRoute,
@@ -156,8 +156,9 @@ function ContasECartoesRoute() {
           name: accountName,
           institution: institution || null,
           kind,
-          initial_balance: kind === "checking" && initialBalance ? Number(initialBalance) : null,
-          initial_balance_date: kind === "checking" && initialBalance ? initialBalanceDate : null,
+          initial_balance: kind !== "credit_card" && initialBalance ? Number(initialBalance) : null,
+          initial_balance_date:
+            kind !== "credit_card" && initialBalance ? initialBalanceDate : null,
           closing_day: kind === "credit_card" && closingDay ? Number(closingDay) : null,
           due_day: kind === "credit_card" && dueDay ? Number(dueDay) : null,
           credit_limit: kind === "credit_card" && creditLimit ? Number(creditLimit) : null,
@@ -287,7 +288,7 @@ function ContasECartoesRoute() {
                 </SelectContent>
               </Select>
             </div>
-            {kind === "checking" ? (
+            {kind === "checking" || kind === "investment" ? (
               <>
                 <div>
                   <Label>Saldo inicial</Label>
@@ -577,6 +578,19 @@ function ContasECartoesRoute() {
                     </div>
                     {actions}
                   </div>
+                  {account.kind === "investment" && account.initial_balance != null ? (
+                    <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                      <p className="text-xs text-muted-foreground">
+                        Saldo registrado{" "}
+                        {account.initial_balance_date
+                          ? `em ${new Date(account.initial_balance_date).toLocaleDateString("pt-BR")}`
+                          : ""}
+                      </p>
+                      <strong className="text-lg text-emerald-700">
+                        {formatCurrency(account.initial_balance)}
+                      </strong>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

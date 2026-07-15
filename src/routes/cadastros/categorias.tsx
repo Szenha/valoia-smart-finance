@@ -51,7 +51,7 @@ export const Route = createFileRoute("/cadastros/categorias")({
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/landing" });
+    if (!user) throw redirect({ to: "/login" });
   },
   component: CategoriasRoute,
 });

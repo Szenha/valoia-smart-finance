@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
+import { TransactionEditDialog } from "@/components/finance/TransactionEditDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,7 @@ import {
   accountKindLabel,
   accountLabel,
   formatCurrency,
+  type AccountRow,
   type CategoryRow,
   type HouseholdMemberRow,
   type ProfileRow,
@@ -46,11 +48,13 @@ import {
 } from "@/lib/finance/types";
 
 type Props = {
+  orgId: string;
+  currentUserId: string | null;
   transactions: TxnRow[];
   categories: CategoryRow[];
+  accounts: AccountRow[];
   members: HouseholdMemberRow[];
   profiles: ProfileRow[];
-  currentUserId: string | null;
   onCategoryChange: (txn: TxnRow, categoryId: string) => void;
   onDelete?: (txn: TxnRow) => void;
 };
@@ -107,8 +111,10 @@ function memberLabel(
 }
 
 export function TransactionList({
+  orgId,
   transactions,
   categories,
+  accounts,
   members,
   profiles,
   currentUserId,
@@ -123,6 +129,7 @@ export function TransactionList({
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedEntrySource, setSelectedEntrySource] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<TxnRow | null>(null);
   const creatorFilterInitialized = useRef(false);
   useEffect(() => {
     if (!creatorFilterInitialized.current && currentUserId) {
@@ -131,7 +138,7 @@ export function TransactionList({
     }
   }, [currentUserId]);
   const categoryItems = leafCategoryOptions(categories);
-  const accounts = Array.from(
+  const accountOptions = Array.from(
     new Map(
       transactions.map((t) => [
         `${t.account_id}|${t.account_kind}`,
@@ -177,7 +184,7 @@ export function TransactionList({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas as contas</SelectItem>
-                {accounts.map((account) => (
+                {accountOptions.map((account) => (
                   <SelectItem
                     key={`${account.accountId}|${account.accountKind}`}
                     value={account.accountId}
@@ -425,8 +432,8 @@ export function TransactionList({
                                 size="icon"
                                 className="h-7 w-7"
                                 disabled={consolidated || !canManage}
-                                aria-label="Editar categoria"
-                                onClick={() => setEditingCategoryFor(transaction.id)}
+                                aria-label="Editar lançamento"
+                                onClick={() => setEditingTransaction(transaction)}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -474,6 +481,16 @@ export function TransactionList({
           </div>
         </CardContent>
       </Card>
+      {editingTransaction ? (
+        <TransactionEditDialog
+          transaction={editingTransaction}
+          orgId={orgId}
+          userId={currentUserId}
+          categories={categories}
+          accounts={accounts}
+          onClose={() => setEditingTransaction(null)}
+        />
+      ) : null}
     </TooltipProvider>
   );
 }

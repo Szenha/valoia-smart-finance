@@ -1,8 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
 
+// Deactivated: this page predates the current brand/product and doesn't
+// match it anymore (copy, visual identity, even some claimed features).
+// /login now doubles as the public marketing page, so every /landing visit
+// just goes there instead. Left in place (not deleted) in case any of this
+// copy/layout is worth mining later.
 export const Route = createFileRoute("/landing")({
+  beforeLoad: () => {
+    throw redirect({ to: "/login" });
+  },
   component: LandingPage,
   head: () => ({
     meta: [
