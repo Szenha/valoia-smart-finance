@@ -113,7 +113,7 @@ export function VoiceCaptureFlow({
         className={
           isDarkStage
             ? "fixed inset-0 top-0 left-0 h-dvh w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-none bg-[#0a0a0a] p-0 text-white sm:rounded-none"
-            : "max-w-md"
+            : "max-h-[85dvh] max-w-md overflow-y-auto"
         }
         onOpenAutoFocus={(event) => isDarkStage && event.preventDefault()}
       >
