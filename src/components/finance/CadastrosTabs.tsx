@@ -4,7 +4,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 const ROUTE_BY_TAB = {
   categorias: "/cadastros/categorias",
   contas: "/cadastros/contas-e-cartoes",
-  membros: "/cadastros/membros",
 } as const;
 
 export function CadastrosTabs({ value }: { value: keyof typeof ROUTE_BY_TAB }) {
@@ -17,7 +16,6 @@ export function CadastrosTabs({ value }: { value: keyof typeof ROUTE_BY_TAB }) {
       <TabsList>
         <TabsTrigger value="categorias">Categorias</TabsTrigger>
         <TabsTrigger value="contas">Contas e cartões</TabsTrigger>
-        <TabsTrigger value="membros">Membros</TabsTrigger>
       </TabsList>
     </Tabs>
   );

@@ -1,6 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import type { CSSProperties } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
@@ -18,11 +17,13 @@ export const Route = createFileRoute("/dashboard")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
+  head: () => ({ meta: [{ title: "Ticlio — Dashboard" }] }),
   component: DashboardRoute,
 });
 
-const COLORS = ["#059669", "#2563eb", "#dc2626", "#7c3aed", "#d97706", "#0891b2", "#C6D627"];
-const BRAND_DARK_GREEN = "#035C3A";
+// Soft/pastel palette for the category donut, echoing the reference app's
+// muted chart style (a dominant neutral slice + gentle accent hues).
+const COLORS = ["#94a3b8", "#6ee7b7", "#fda4af", "#93c5fd", "#fcd34d", "#7dd3c0", "#c4b5fd"];
 
 function monthBounds() {
   const now = new Date();
@@ -157,7 +158,7 @@ function DashboardRoute() {
         <StatCard
           label="Comprometido no cartão"
           value={formatCurrency(totalCommitted)}
-          theme="brand-dark"
+          theme="amber"
         />
       </section>
 
@@ -207,8 +208,8 @@ function DashboardRoute() {
                     data={categoryQuery.data ?? []}
                     dataKey="total"
                     nameKey="category_name"
-                    innerRadius={62}
-                    outerRadius={90}
+                    innerRadius={55}
+                    outerRadius={92}
                     paddingAngle={2}
                   >
                     {(categoryQuery.data ?? []).map((_, index) => (
@@ -355,28 +356,55 @@ function DashboardRoute() {
   );
 }
 
-type StatTheme = "green" | "coral" | "blue" | "brand-dark";
+type StatTheme = "green" | "coral" | "blue" | "amber";
 
-const STAT_THEME: Record<StatTheme, { className: string; style?: CSSProperties }> = {
-  green: { className: "bg-emerald-600" },
-  coral: { className: "bg-rose-500" },
-  blue: { className: "bg-sky-600" },
-  "brand-dark": { className: "", style: { backgroundColor: BRAND_DARK_GREEN } },
+const STAT_THEME: Record<StatTheme, { bg: string; label: string; value: string; spark: string }> = {
+  green: {
+    bg: "bg-emerald-50",
+    label: "text-emerald-700",
+    value: "text-emerald-900",
+    spark: "#10b981",
+  },
+  coral: { bg: "bg-rose-50", label: "text-rose-700", value: "text-rose-900", spark: "#f43f5e" },
+  blue: { bg: "bg-sky-50", label: "text-sky-700", value: "text-sky-900", spark: "#0284c7" },
+  amber: { bg: "bg-amber-50", label: "text-amber-700", value: "text-amber-900", spark: "#d97706" },
 };
 
-function StatCard({ label, value, theme }: { label: string; value: string; theme: StatTheme }) {
-  const { className, style } = STAT_THEME[theme];
+// Purely decorative bump-curve, echoing the reference app's sparkline behind
+// each metric card — not driven by real data.
+function DecorativeSparkline({ color }: { color: string }) {
   return (
-    <div
-      className={`relative overflow-hidden rounded-2xl p-4 text-white shadow-sm ${className}`}
-      style={style}
+    <svg
+      viewBox="0 0 120 40"
+      preserveAspectRatio="none"
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-10 w-full opacity-25"
     >
-      <div className="pointer-events-none absolute -bottom-8 -right-6 h-24 w-24 rounded-full bg-white/10 blur-xl" />
-      <div className="pointer-events-none absolute -left-8 -top-8 h-16 w-16 rounded-full bg-white/5 blur-lg" />
-      <p className="relative truncate text-[10px] font-semibold uppercase tracking-wide text-white/80">
+      <path
+        d="M0,32 C15,32 20,10 35,10 C50,10 55,30 70,30 C85,30 90,4 120,4"
+        fill="none"
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function StatCard({ label, value, theme }: { label: string; value: string; theme: StatTheme }) {
+  const { bg, label: labelClass, value: valueClass, spark } = STAT_THEME[theme];
+  return (
+    <div className={`relative overflow-hidden rounded-2xl p-4 ${bg}`}>
+      <DecorativeSparkline color={spark} />
+      <p
+        className={`relative truncate text-[10px] font-semibold uppercase tracking-wide ${labelClass}`}
+      >
         {label}
       </p>
-      <p className="relative mt-1 truncate text-lg font-bold leading-tight lg:text-2xl">{value}</p>
+      <p
+        className={`relative mt-1 truncate text-lg font-bold leading-tight lg:text-2xl ${valueClass}`}
+      >
+        {value}
+      </p>
     </div>
   );
 }

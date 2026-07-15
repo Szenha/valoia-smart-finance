@@ -29,6 +29,22 @@ export async function fetchStatementItems(
   return (data ?? []) as StatementItemRow[];
 }
 
+export async function deleteStatementImport(orgId: string, importId: string): Promise<void> {
+  const { error: txErr } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("organization_id", orgId)
+    .eq("statement_import_id", importId);
+  if (txErr) throw new Error(txErr.message);
+
+  const { error: impErr } = await supabase
+    .from("statement_imports")
+    .delete()
+    .eq("organization_id", orgId)
+    .eq("id", importId);
+  if (impErr) throw new Error(impErr.message);
+}
+
 export async function fetchManualTransactionsForPeriod(
   orgId: string,
   items: StatementItemRow[],

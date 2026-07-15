@@ -13,6 +13,7 @@ import {
   PiggyBank,
   Settings2,
   Tags,
+  Users,
   WalletCards,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -27,7 +28,7 @@ import { QuickAddForm } from "./QuickAddForm";
 
 const SIDEBAR_COLLAPSED_KEY = "calcum:sidebar-collapsed";
 
-type Section = "day" | "cadastros" | "conciliacao" | "planejamento" | "analytics";
+type Section = "day" | "cadastros" | "membros" | "conciliacao" | "planejamento" | "analytics";
 
 type AppShellProps = {
   activeSection: Section;
@@ -49,7 +50,7 @@ type NavItem = {
 // Single source of nav items — both the desktop sidebar and the mobile
 // bottom bar render from this same array, split only by CSS breakpoint.
 const navItems: NavItem[] = [
-  { label: "Dia a dia", to: "/", icon: ListChecks, section: "day" },
+  { label: "Transações", to: "/", icon: ListChecks, section: "day" },
   {
     label: "Cadastros",
     to: "/cadastros/categorias",
@@ -60,6 +61,7 @@ const navItems: NavItem[] = [
       { label: "Contas e cartões", to: "/cadastros/contas-e-cartoes", icon: WalletCards },
     ],
   },
+  { label: "Membros", to: "/cadastros/membros", icon: Users, section: "membros" },
   {
     label: "Conciliação",
     to: "/conciliacao",
@@ -118,6 +120,10 @@ export function AppShell({
       return user;
     },
   });
+  // Prefer the freshly-fetched session email over the per-route userEmail
+  // prop, which not every route passes and can go stale — this is the
+  // "who am I logged in as" indicator shown in the header on every page.
+  const loggedInEmail = currentUserQuery.data?.email ?? userEmail ?? null;
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,
@@ -130,14 +136,14 @@ export function AppShell({
   });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
+    <div className="min-h-screen bg-background text-slate-950">
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-slate-200 bg-white py-5 transition-[width] duration-200 lg:flex",
-          collapsed ? "w-[76px] px-2" : "w-72 px-4",
+          collapsed ? "w-[76px] px-2" : "w-60 px-4",
         )}
       >
-        <div className={cn("px-2", collapsed && "flex justify-center px-0")}>
+        <div className="flex justify-center px-0">
           {collapsed ? (
             <TiclioLogo variant="icon" className="h-10 w-10 rounded-lg" />
           ) : (
@@ -154,7 +160,7 @@ export function AppShell({
         >
           {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
         </Button>
-        <nav className="mt-4 flex flex-1 flex-col gap-1">
+        <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = item.section === activeSection;
@@ -165,13 +171,20 @@ export function AppShell({
                   variant="ghost"
                   title={collapsed ? item.label : undefined}
                   className={cn(
-                    "h-11 w-full gap-3 rounded-md px-3 text-slate-600",
+                    "h-11 w-full gap-2.5 rounded-xl px-2.5 font-medium text-slate-600",
                     collapsed ? "justify-center px-0" : "justify-start",
-                    active && "bg-emerald-50 text-emerald-800 hover:bg-emerald-50",
+                    active && "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
                   )}
                 >
                   <Link to={item.to} aria-label={collapsed ? item.label : undefined}>
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <span
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                        active ? "bg-primary text-white" : "text-slate-500",
+                      )}
+                    >
+                      <Icon className="h-4 w-4" strokeWidth={active ? 2.25 : 2} />
+                    </span>
                     {!collapsed ? item.label : null}
                   </Link>
                 </Button>
@@ -187,7 +200,7 @@ export function AppShell({
                           variant="ghost"
                           className={cn(
                             "h-8 w-full justify-start gap-2 px-2 text-xs text-slate-500",
-                            childActive && "bg-emerald-50 text-emerald-800 hover:bg-emerald-50",
+                            childActive && "bg-primary/10 text-primary hover:bg-primary/10",
                           )}
                         >
                           <Link to={child.to}>
@@ -208,7 +221,10 @@ export function AppShell({
             type="button"
             variant="outline"
             title={collapsed ? "Sair" : undefined}
-            className={cn("gap-2", collapsed ? "justify-center px-0" : "justify-start")}
+            className={cn(
+              "mt-3 shrink-0 gap-2",
+              collapsed ? "justify-center px-0" : "justify-start",
+            )}
             onClick={onSignOut}
           >
             <LogOut className="h-4 w-4 shrink-0" />
@@ -218,51 +234,54 @@ export function AppShell({
       </aside>
 
       <div
-        className={cn("transition-[padding] duration-200", collapsed ? "lg:pl-[76px]" : "lg:pl-72")}
+        className={cn("transition-[padding] duration-200", collapsed ? "lg:pl-[76px]" : "lg:pl-60")}
       >
         <header className="sticky top-0 z-20 px-4 pt-3 backdrop-blur lg:px-8">
-          <div
-            className="mx-auto flex max-w-7xl items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#010917] px-4 py-2.5 shadow-lg shadow-black/10 lg:border-slate-200 lg:bg-white lg:px-6 lg:py-3 lg:shadow-sm"
-            title={userEmail || undefined}
-          >
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.1)] backdrop-blur lg:px-6 lg:py-3">
             <div className="flex min-w-0 items-center gap-3">
               <TiclioLogo
                 variant="icon"
-                className="h-9 w-9 shrink-0 rounded-xl ring-1 ring-white/15 lg:ring-slate-200"
+                className="h-9 w-9 shrink-0 rounded-xl ring-1 ring-slate-200"
               />
               <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold leading-tight tracking-tight text-white lg:text-xl lg:text-slate-950">
+                <h2 className="truncate text-base font-semibold leading-tight tracking-tight text-slate-950 lg:text-xl">
                   {title}
                 </h2>
-                {subtitle ? (
-                  <p className="truncate text-xs text-[#C6D627] lg:font-normal lg:text-slate-500">
-                    {subtitle}
-                  </p>
-                ) : null}
+                {subtitle ? <p className="truncate text-xs text-slate-500">{subtitle}</p> : null}
               </div>
             </div>
-            {onSignOut ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="shrink-0 rounded-full text-white hover:bg-white/10 hover:text-white lg:text-slate-500 lg:hover:bg-slate-100 lg:hover:text-slate-900"
-                onClick={onSignOut}
-                aria-label="Sair"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            ) : null}
+            <div className="flex shrink-0 items-center gap-2">
+              {loggedInEmail ? (
+                <span
+                  className="hidden max-w-[220px] truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline-block"
+                  title={loggedInEmail}
+                >
+                  {loggedInEmail}
+                </span>
+              ) : null}
+              {onSignOut ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  onClick={onSignOut}
+                  aria-label="Sair"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </div>
           </div>
         </header>
-        <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6 md:px-8 lg:pb-6">
+        <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:px-8 lg:pb-6">
           {children}
         </main>
       </div>
 
       {/* Mobile bottom navigation — same navItems as the desktop sidebar. */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden"
+        className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 flex items-stretch gap-1 rounded-full border border-slate-200/70 bg-white/95 p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_28px_-10px_rgba(0,0,0,0.18)] backdrop-blur lg:hidden"
         aria-label="Navegação principal"
       >
         {navItems.map((item) => {
@@ -273,11 +292,14 @@ export function AppShell({
               key={item.label}
               to={item.to}
               className={cn(
-                "flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-slate-500",
-                active && "text-emerald-700",
+                "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[10px] font-medium text-slate-500 transition-colors",
+                active && "bg-slate-100 text-slate-900",
               )}
             >
-              <Icon className="h-5 w-5" />
+              <Icon
+                className={cn("h-5 w-5", active && "text-primary")}
+                strokeWidth={active ? 2.5 : 2}
+              />
               <span className="truncate px-0.5">{item.label}</span>
             </Link>
           );
@@ -285,14 +307,14 @@ export function AppShell({
       </nav>
 
       {/* Voice quick-add FAB — mobile only. On desktop the quick-add form is
-          already pinned at the top of "Dia a dia" in full, so a floating
+          already pinned at the top of "Transações" in full, so a floating
           duplicate would just add clutter; on mobile that form is buried at
           the top of a page the user may not be on, which is the gap this
           closes. */}
       <Button
         type="button"
         size="icon"
-        className="fixed right-4 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:hidden [bottom:calc(4rem+env(safe-area-inset-bottom)+1rem)]"
+        className="fixed right-4 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:hidden [bottom:calc(env(safe-area-inset-bottom)+5.5rem)]"
         aria-label="Registrar por voz"
         onClick={() => setVoiceSheetOpen(true)}
       >

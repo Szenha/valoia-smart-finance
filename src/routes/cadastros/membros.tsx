@@ -2,7 +2,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
-import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,13 +13,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import {
   addHouseholdMember,
   fetchHouseholdMembers,
+  fetchOrganizationOwner,
   findHouseholdCandidate,
   fetchMemberProfiles,
+  removeHouseholdMember,
+  updateHouseholdMember,
 } from "@/lib/finance/data";
-import { memberDisplayName } from "@/lib/finance/types";
+import {
+  MEMBER_COLOR_PALETTE,
+  nextAvailableColor,
+  resolveMemberColor,
+  resolveMemberName,
+} from "@/lib/finance/member-visuals";
+import type { HouseholdMemberRow } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 
@@ -32,6 +41,7 @@ export const Route = createFileRoute("/cadastros/membros")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
+  head: () => ({ meta: [{ title: "Ticlio — Membros" }] }),
   component: MembrosRoute,
 });
 
@@ -62,10 +72,44 @@ function MembrosRoute() {
     enabled: !!orgId && memberIds.length > 0,
     queryFn: () => fetchMemberProfiles(memberIds),
   });
+  const ownerQuery = useQuery({
+    queryKey: ["org-owner", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchOrganizationOwner(orgId!),
+  });
 
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("");
   const [role, setRole] = useState("colaborador");
   const [formError, setFormError] = useState("");
+  const [removeError, setRemoveError] = useState("");
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editingUserId && membersQuery.data && !color) {
+      setColor(nextAvailableColor(membersQuery.data.map((m) => m.color)));
+    }
+  }, [membersQuery.data, editingUserId, color]);
+
+  function resetForm() {
+    setEditingUserId(null);
+    setEmail("");
+    setName("");
+    setColor(nextAvailableColor((membersQuery.data ?? []).map((m) => m.color)));
+    setRole("colaborador");
+    setFormError("");
+  }
+
+  function startEdit(member: HouseholdMemberRow) {
+    setEditingUserId(member.user_id);
+    setEmail("");
+    setName(member.display_name ?? "");
+    setColor(resolveMemberColor(member.user_id, member.color));
+    setRole(member.role);
+    setFormError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   const addMember = useMutation({
     mutationFn: async () => {
@@ -74,15 +118,51 @@ function MembrosRoute() {
       if (!candidate) {
         throw new Error("Usuário não encontrado ou você não tem permissão para adicioná-lo.");
       }
-      await addHouseholdMember(orgId, candidate.user_id, role, currentUserId);
+      await addHouseholdMember(
+        orgId,
+        candidate.user_id,
+        role,
+        currentUserId,
+        name || null,
+        color || null,
+      );
     },
     onSuccess: async () => {
-      setEmail("");
-      setFormError("");
+      resetForm();
       await queryClient.invalidateQueries({ queryKey: ["household-members", orgId] });
       await queryClient.invalidateQueries({ queryKey: ["member-profiles", orgId] });
     },
     onError: (err) => setFormError(err instanceof Error ? err.message : String(err)),
+  });
+
+  const editMember = useMutation({
+    mutationFn: async () => {
+      if (!orgId || !editingUserId) return;
+      await updateHouseholdMember(orgId, editingUserId, {
+        role,
+        displayName: name || null,
+        color: color || null,
+      });
+    },
+    onSuccess: async () => {
+      resetForm();
+      await queryClient.invalidateQueries({ queryKey: ["household-members", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["member-profiles", orgId] });
+    },
+    onError: (err) => setFormError(err instanceof Error ? err.message : String(err)),
+  });
+
+  const removeMember = useMutation({
+    mutationFn: async (userId: string) => {
+      if (!orgId) return;
+      await removeHouseholdMember(orgId, userId);
+    },
+    onSuccess: async () => {
+      setRemoveError("");
+      await queryClient.invalidateQueries({ queryKey: ["household-members", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["member-profiles", orgId] });
+    },
+    onError: (err) => setRemoveError(err instanceof Error ? err.message : String(err)),
   });
 
   if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
@@ -90,47 +170,108 @@ function MembrosRoute() {
   const members = membersQuery.data ?? [];
   const profileById = new Map((profilesQuery.data ?? []).map((profile) => [profile.id, profile]));
   const isAdmin = members.find((member) => member.user_id === currentUserId)?.role === "admin";
+  const adminCount = members.filter((member) => member.role === "admin").length;
+  const ownerId = ownerQuery.data;
+
+  function removeBlockedReason(userId: string, role: string): string | null {
+    if (userId === ownerId) return "Não é possível remover o dono da organização.";
+    if (role === "admin" && adminCount <= 1) {
+      return "Não é possível remover o único administrador.";
+    }
+    return null;
+  }
+
+  function handleRemove(userId: string, role: string) {
+    const blocked = removeBlockedReason(userId, role);
+    if (blocked) {
+      setRemoveError(blocked);
+      return;
+    }
+    if (!window.confirm("Remover este membro do household?")) return;
+    removeMember.mutate(userId);
+  }
 
   return (
-    <AppShell activeSection="cadastros" title="Membros" subtitle="Quem faz parte do seu household">
-      <CadastrosTabs value="membros" />
+    <AppShell activeSection="membros" title="Membros" subtitle="Quem faz parte do seu household">
       <Card>
         <CardHeader>
           <CardTitle>Membros do household</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {members.map((member) => (
-            <div
-              key={member.user_id}
-              className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm"
-            >
-              <span>
-                {member.user_id === currentUserId
-                  ? "Eu"
-                  : memberDisplayName(profileById.get(member.user_id), member.user_id)}
-              </span>
-              <span className="text-muted-foreground">
-                {ROLE_LABEL[member.role] ?? member.role}
-              </span>
-            </div>
-          ))}
+          {members.map((member) => {
+            const resolvedName = resolveMemberName(
+              member,
+              profileById.get(member.user_id),
+              member.user_id,
+            );
+            const resolvedColor = resolveMemberColor(member.user_id, member.color);
+            return (
+              <div
+                key={member.user_id}
+                className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm"
+              >
+                <div className="flex items-center gap-2.5">
+                  <MemberAvatar name={resolvedName} color={resolvedColor} />
+                  <span>{member.user_id === currentUserId ? "Eu" : resolvedName}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-muted-foreground">
+                    {ROLE_LABEL[member.role] ?? member.role}
+                  </span>
+                  {isAdmin ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => startEdit(member)}
+                    >
+                      Editar
+                    </Button>
+                  ) : null}
+                  {isAdmin && !removeBlockedReason(member.user_id, member.role) ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700"
+                      disabled={removeMember.isPending}
+                      onClick={() => handleRemove(member.user_id, member.role)}
+                    >
+                      Remover
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+          {removeError ? <p className="text-sm text-red-600">{removeError}</p> : null}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Adicionar membro</CardTitle>
+          <CardTitle>{editingUserId ? "Editar membro" : "Adicionar membro"}</CardTitle>
         </CardHeader>
         <CardContent>
           {isAdmin ? (
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="md:col-span-2">
-                <Label>E-mail</Label>
+              {editingUserId ? null : (
+                <div className="md:col-span-2">
+                  <Label>E-mail</Label>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="pessoa@exemplo.com"
+                  />
+                </div>
+              )}
+              <div className={editingUserId ? "md:col-span-2" : ""}>
+                <Label>Nome</Label>
                 <Input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="pessoa@exemplo.com"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Como esse membro aparece nos lançamentos"
                 />
               </div>
               <div>
@@ -146,13 +287,43 @@ function MembrosRoute() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button
-                className="md:col-span-3"
-                onClick={() => addMember.mutate()}
-                disabled={!email || addMember.isPending}
-              >
-                Adicionar
-              </Button>
+              <div className="md:col-span-3">
+                <Label>Cor</Label>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {MEMBER_COLOR_PALETTE.map((swatch) => (
+                    <button
+                      key={swatch}
+                      type="button"
+                      aria-label={`Cor ${swatch}`}
+                      onClick={() => setColor(swatch)}
+                      className="h-8 w-8 rounded-full ring-offset-2 transition-shadow"
+                      style={{
+                        backgroundColor: swatch,
+                        boxShadow: color === swatch ? `0 0 0 2px ${swatch}` : undefined,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2 md:col-span-3">
+                {editingUserId ? (
+                  <>
+                    <Button onClick={() => editMember.mutate()} disabled={editMember.isPending}>
+                      Salvar
+                    </Button>
+                    <Button type="button" variant="outline" onClick={resetForm}>
+                      Cancelar
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    onClick={() => addMember.mutate()}
+                    disabled={!email || addMember.isPending}
+                  >
+                    Adicionar
+                  </Button>
+                )}
+              </div>
               {formError ? <p className="md:col-span-3 text-sm text-red-600">{formError}</p> : null}
             </div>
           ) : (

@@ -15,10 +15,12 @@ import {
 import { OfxParseError, parseOfx } from "@/lib/ofx";
 import { defaultPaymentMethod } from "@/lib/finance/transactionIcons";
 import {
+  deleteStatementImport,
   fetchManualTransactionsForPeriod,
   fetchStatementImports,
   fetchStatementItems,
 } from "@/lib/reconciliation/data";
+import { Trash2 } from "lucide-react";
 import { suggestStatementMatches } from "@/lib/reconciliation/matching";
 import type {
   PeriodClosureRow,
@@ -434,6 +436,26 @@ function ReconciliationRoute() {
     },
   });
 
+  const deleteImportMutation = useMutation({
+    mutationFn: async (importId: string) => {
+      if (!orgId) return;
+      await deleteStatementImport(orgId, importId);
+    },
+    onSuccess: async (_data, importId) => {
+      if (selectedImportId === importId) setSelectedImportId(null);
+      await refreshReconciliation();
+      await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+    },
+  });
+
+  function handleDeleteImport(statementImport: StatementImportRow) {
+    const ok = window.confirm(
+      `Excluir o extrato "${statementImport.filename}"? Isso também apaga ${statementImport.transaction_count} lançamento(s) importados dele. Essa ação não pode ser desfeita.`,
+    );
+    if (!ok) return;
+    deleteImportMutation.mutate(statementImport.id);
+  }
+
   const closureMutation = useMutation({
     mutationFn: async (action: "close" | "reopen") => {
       if (!orgId || !activeImport || !competencePeriod) return;
@@ -533,24 +555,43 @@ function ReconciliationRoute() {
         <div className="space-y-2">
           <h2 className="font-medium">Extratos importados</h2>
           {imports.map((statementImport: StatementImportRow) => (
-            <Button
-              key={statementImport.id}
-              type="button"
-              variant={activeImportId === statementImport.id ? "default" : "outline"}
-              className="h-auto w-full justify-start text-left"
-              onClick={() => setSelectedImportId(statementImport.id)}
-            >
-              <span>
-                <span className="block">{statementImport.filename}</span>
-                <span className="block text-xs opacity-80">
-                  {statementImport.transaction_count} item(ns) ·{" "}
-                  {new Date(statementImport.created_at).toLocaleDateString("pt-BR")}
+            <div key={statementImport.id} className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant={activeImportId === statementImport.id ? "default" : "outline"}
+                className="h-auto flex-1 justify-start text-left"
+                onClick={() => setSelectedImportId(statementImport.id)}
+              >
+                <span>
+                  <span className="block">{statementImport.filename}</span>
+                  <span className="block text-xs opacity-80">
+                    {statementImport.transaction_count} item(ns) ·{" "}
+                    {new Date(statementImport.created_at).toLocaleDateString("pt-BR")}
+                  </span>
                 </span>
-              </span>
-            </Button>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-slate-400 hover:text-red-600"
+                aria-label="Excluir extrato"
+                disabled={deleteImportMutation.isPending}
+                onClick={() => handleDeleteImport(statementImport)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           ))}
           {imports.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum extrato importado ainda.</p>
+          ) : null}
+          {deleteImportMutation.error ? (
+            <p className="text-sm text-red-600">
+              {deleteImportMutation.error instanceof Error
+                ? deleteImportMutation.error.message
+                : String(deleteImportMutation.error)}
+            </p>
           ) : null}
         </div>
         <ReconciliationBoard

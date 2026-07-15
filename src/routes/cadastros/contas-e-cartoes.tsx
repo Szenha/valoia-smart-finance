@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, RefreshCcw } from "lucide-react";
+import { Pencil, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  countAccountTransactions,
+  deleteAccount,
   fetchAccountBalances,
   fetchAccounts,
   fetchCardSummary,
@@ -41,6 +43,7 @@ export const Route = createFileRoute("/cadastros/contas-e-cartoes")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
+  head: () => ({ meta: [{ title: "Ticlio — Contas e cartões" }] }),
   component: ContasECartoesRoute,
 });
 
@@ -177,6 +180,29 @@ function ContasECartoesRoute() {
     await queryClient.invalidateQueries({ queryKey: ["accounts", orgId] });
     await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
     await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
+  }
+
+  const [deleteError, setDeleteError] = useState("");
+
+  async function removeAccount(account: AccountRow) {
+    if (!orgId) return;
+    setDeleteError("");
+    try {
+      const linkedCount = await countAccountTransactions(orgId, account.account_key);
+      if (linkedCount > 0) {
+        setDeleteError(
+          `"${account.name}" tem ${linkedCount} transação(ões) vinculada(s) e não pode ser excluída. Arquive-a em vez disso.`,
+        );
+        return;
+      }
+      if (!window.confirm(`Excluir "${account.name}" definitivamente?`)) return;
+      await deleteAccount(orgId, account.id);
+      await queryClient.invalidateQueries({ queryKey: ["accounts", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function refreshBalances() {
@@ -346,6 +372,7 @@ function ContasECartoesRoute() {
           <CardTitle>Contas e cartões cadastrados</CardTitle>
         </CardHeader>
         <CardContent>
+          {deleteError ? <p className="mb-3 text-sm text-red-600">{deleteError}</p> : null}
           <div className="grid gap-3 md:grid-cols-2">
             {(accountsQuery.data ?? []).map((account) => {
               const KindIcon = accountKindIcon(account.kind);
@@ -376,6 +403,16 @@ function ContasECartoesRoute() {
                     onClick={() => archiveAccount(account.id, account.archived)}
                   >
                     {account.archived ? "Reativar" : "Arquivar"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-400 hover:text-red-600"
+                    aria-label="Excluir"
+                    onClick={() => removeAccount(account)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               );

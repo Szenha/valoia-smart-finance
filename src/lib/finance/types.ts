@@ -77,6 +77,8 @@ export type TxnRow = {
 export type HouseholdMemberRow = {
   user_id: string;
   role: string;
+  display_name: string | null;
+  color: string | null;
 };
 
 export type ProfileRow = {

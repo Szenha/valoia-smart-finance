@@ -37,6 +37,7 @@ export const Route = createFileRoute("/planejamento")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
+  head: () => ({ meta: [{ title: "Ticlio — Planejamento" }] }),
   component: PlanningRoute,
 });
 

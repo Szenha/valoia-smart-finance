@@ -60,11 +60,30 @@ export async function fetchCardSummary(orgId: string): Promise<CardSummaryRow[]>
 export async function fetchHouseholdMembers(orgId: string): Promise<HouseholdMemberRow[]> {
   const { data, error } = await supabase
     .from("organization_members")
-    .select("user_id, role")
+    .select("user_id, role, display_name, color")
     .eq("organization_id", orgId)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as HouseholdMemberRow[];
+}
+
+export async function fetchOrganizationOwner(orgId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("owner_id")
+    .eq("id", orgId)
+    .single();
+  if (error) throw new Error(error.message);
+  return data.owner_id as string;
+}
+
+export async function removeHouseholdMember(orgId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("organization_members")
+    .delete()
+    .eq("organization_id", orgId)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
 }
 
 export async function ensureAccountFromTransaction(
@@ -113,13 +132,49 @@ export async function addHouseholdMember(
   userId: string,
   role: string,
   invitedBy: string | null,
+  displayName: string | null,
+  color: string | null,
 ): Promise<void> {
   const { error } = await supabase.from("organization_members").insert({
     organization_id: orgId,
     user_id: userId,
     role,
     invited_by: invitedBy,
+    display_name: displayName,
+    color,
   });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateHouseholdMember(
+  orgId: string,
+  userId: string,
+  fields: { role: string; displayName: string | null; color: string | null },
+): Promise<void> {
+  const { error } = await supabase
+    .from("organization_members")
+    .update({ role: fields.role, display_name: fields.displayName, color: fields.color })
+    .eq("organization_id", orgId)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+export async function countAccountTransactions(orgId: string, accountKey: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", orgId)
+    .eq("account_id", accountKey);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+export async function deleteAccount(orgId: string, accountId: string): Promise<void> {
+  const { error } = await supabase
+    .from("financial_accounts")
+    .delete()
+    .eq("organization_id", orgId)
+    .eq("id", accountId);
   if (error) throw new Error(error.message);
 }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowDownCircle,
@@ -9,6 +9,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import { categoryIconFor } from "@/lib/finance/category-icons";
+import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import {
   entrySourceIcon,
   entrySourceLabel,
@@ -37,7 +39,6 @@ import {
   accountKindLabel,
   accountLabel,
   formatCurrency,
-  memberDisplayName,
   type CategoryRow,
   type HouseholdMemberRow,
   type ProfileRow,
@@ -88,19 +89,21 @@ function creatorLabel(
   createdBy: string | null | undefined,
   currentUserId: string | null,
   profileById: Map<string, ProfileRow>,
+  memberById: Map<string, HouseholdMemberRow>,
 ) {
   if (!createdBy) return "Sem autor";
   if (createdBy === currentUserId) return "Criado por você";
-  return `Criado por ${memberDisplayName(profileById.get(createdBy), createdBy)}`;
+  return `Criado por ${resolveMemberName(memberById.get(createdBy), profileById.get(createdBy), createdBy)}`;
 }
 
 function memberLabel(
   memberId: string,
   currentUserId: string | null,
   profileById: Map<string, ProfileRow>,
+  memberById: Map<string, HouseholdMemberRow>,
 ) {
   if (memberId === currentUserId) return "Eu";
-  return memberDisplayName(profileById.get(memberId), memberId);
+  return resolveMemberName(memberById.get(memberId), profileById.get(memberId), memberId);
 }
 
 export function TransactionList({
@@ -113,11 +116,20 @@ export function TransactionList({
   onDelete,
 }: Props) {
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const memberById = new Map(members.map((member) => [member.user_id, member]));
+  const isAdmin = members.find((member) => member.user_id === currentUserId)?.role === "admin";
   const [selectedAccount, setSelectedAccount] = useState("all");
   const [selectedCreator, setSelectedCreator] = useState("all");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedEntrySource, setSelectedEntrySource] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
+  const creatorFilterInitialized = useRef(false);
+  useEffect(() => {
+    if (!creatorFilterInitialized.current && currentUserId) {
+      setSelectedCreator(currentUserId);
+      creatorFilterInitialized.current = true;
+    }
+  }, [currentUserId]);
   const categoryItems = leafCategoryOptions(categories);
   const accounts = Array.from(
     new Map(
@@ -154,7 +166,7 @@ export function TransactionList({
                 <SelectItem value="all">Todos</SelectItem>
                 {members.map((member) => (
                   <SelectItem key={member.user_id} value={member.user_id}>
-                    {memberLabel(member.user_id, currentUserId, profileById)}
+                    {memberLabel(member.user_id, currentUserId, profileById, memberById)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -218,6 +230,9 @@ export function TransactionList({
               );
               const isEditing = editingCategoryFor === transaction.id;
               const consolidated = transaction.consolidation_status === "consolidado";
+              const canManage = transaction.created_by
+                ? transaction.created_by === currentUserId
+                : isAdmin;
               const isIncome = transaction.amount >= 0;
               const TypeIcon = isIncome ? ArrowUpCircle : ArrowDownCircle;
               const CategoryIcon = categoryIconFor(category?.icon, category?.type ?? "expense");
@@ -237,24 +252,39 @@ export function TransactionList({
               return (
                 <div
                   key={transaction.id}
-                  className={`overflow-hidden rounded-lg border border-l-4 border-slate-200 bg-white shadow-sm ${leftBorderClass}`}
+                  className={`overflow-hidden rounded-2xl border border-l-4 border-slate-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.08)] ${leftBorderClass}`}
                   style={leftBorderStyle}
                 >
                   <div className="p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="line-clamp-2 min-w-0 font-medium">
-                        {truncateDescription(transaction.description || "-")}
-                      </p>
-                      <strong className="shrink-0 text-right text-xl font-bold text-slate-900">
-                        {formatCurrency(transaction.amount, transaction.currency)}
-                      </strong>
+                    <div className="flex items-start gap-3">
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                          isIncome ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+                        }`}
+                      >
+                        <TypeIcon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="line-clamp-2 min-w-0 font-medium">
+                            {truncateDescription(transaction.description || "-")}
+                          </p>
+                          <strong
+                            className={`shrink-0 text-right text-lg font-bold tabular-nums ${
+                              isIncome ? "text-emerald-700" : "text-rose-700"
+                            }`}
+                          >
+                            {formatCurrency(transaction.amount, transaction.currency)}
+                          </strong>
+                        </div>
+                        <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                          {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
+                          <AccountKindIcon className="h-3 w-3" />
+                          {accountKindLabel[String(transaction.account_kind)] ??
+                            transaction.account_kind}
+                        </p>
+                      </div>
                     </div>
-                    <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                      {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
-                      <AccountKindIcon className="h-3 w-3" />
-                      {accountKindLabel[String(transaction.account_kind)] ??
-                        transaction.account_kind}
-                    </p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {isEditing ? (
                         <Select
@@ -362,37 +392,78 @@ export function TransactionList({
                             <TooltipContent>{isIncome ? "Entrada" : "Saída"}</TooltipContent>
                           </Tooltip>
                         </div>
+                        {transaction.created_by ? (
+                          <MemberAvatar
+                            name={resolveMemberName(
+                              memberById.get(transaction.created_by),
+                              profileById.get(transaction.created_by),
+                              transaction.created_by,
+                            )}
+                            color={resolveMemberColor(
+                              transaction.created_by,
+                              memberById.get(transaction.created_by)?.color ?? null,
+                            )}
+                          />
+                        ) : null}
                         <p className="truncate">
-                          {creatorLabel(transaction.created_by, currentUserId, profileById)}
+                          {creatorLabel(
+                            transaction.created_by,
+                            currentUserId,
+                            profileById,
+                            memberById,
+                          )}
                           {consolidated ? " · período fechado" : ""}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          disabled={consolidated}
-                          aria-label="Editar categoria"
-                          onClick={() => setEditingCategoryFor(transaction.id)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                disabled={consolidated || !canManage}
+                                aria-label="Editar categoria"
+                                onClick={() => setEditingCategoryFor(transaction.id)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {!canManage ? (
+                            <TooltipContent>
+                              Você só pode editar seus próprios lançamentos.
+                            </TooltipContent>
+                          ) : null}
+                        </Tooltip>
                         {onDelete ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-red-600 hover:text-red-700"
-                            disabled={consolidated}
-                            aria-label="Excluir lançamento"
-                            onClick={() => {
-                              if (window.confirm("Excluir este lançamento?")) onDelete(transaction);
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-red-600 hover:text-red-700"
+                                  disabled={consolidated || !canManage}
+                                  aria-label="Excluir lançamento"
+                                  onClick={() => {
+                                    if (window.confirm("Excluir este lançamento?"))
+                                      onDelete(transaction);
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            {!canManage ? (
+                              <TooltipContent>
+                                Você só pode excluir seus próprios lançamentos.
+                              </TooltipContent>
+                            ) : null}
+                          </Tooltip>
                         ) : null}
                       </div>
                     </div>

@@ -62,12 +62,14 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --radius: 0.75rem;
+  /* App background: light neutral grey (not pure white) so cards can float
+     above it with visible contrast — see --card below. */
+  --background: oklch(0.967 0.004 106);
   --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
+  --card: oklch(0.995 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
+  --popover: oklch(0.995 0 0);
   --popover-foreground: oklch(0.129 0.042 264.695);
   /* Brand primary: deep petroleum green sampled from the Ticlio mark (#035C3A). */
   --primary: oklch(0.419 0.094 159.53);

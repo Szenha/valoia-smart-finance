@@ -7,10 +7,11 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { supabase } from "../lib/supabase/client";
 
 function NotFoundComponent() {
   return (
@@ -127,6 +128,26 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Every cached query (org id, accounts, transactions, members...) is keyed
+  // without a user id, so switching accounts in the same tab without a full
+  // reload would otherwise keep serving the previous user's cached data —
+  // e.g. a household member logging in right after an admin would briefly
+  // see the admin's org/transactions, or vice versa. Wipe the cache whenever
+  // the authenticated user actually changes.
+  const lastUserId = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const userId = session?.user?.id ?? null;
+      if (lastUserId.current !== undefined && userId !== lastUserId.current) {
+        queryClient.clear();
+      }
+      lastUserId.current = userId;
+    });
+    return () => subscription.unsubscribe();
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

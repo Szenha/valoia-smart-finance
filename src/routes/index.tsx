@@ -23,7 +23,7 @@ export const Route = createFileRoute("/")({
     } = await supabase.auth.getUser();
     if (!user) throw redirect({ to: "/landing" });
   },
-  head: () => ({ meta: [{ title: "Ticlio — Lançamentos" }] }),
+  head: () => ({ meta: [{ title: "Ticlio — Transações" }] }),
   component: Index,
 });
 
@@ -115,7 +115,7 @@ function Index() {
   return (
     <AppShell
       activeSection="day"
-      title="Dia a dia"
+      title="Transações"
       subtitle="Registro por voz, texto ou formulário"
       userEmail={userEmail}
       onSignOut={handleSignOut}
