@@ -19,12 +19,16 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
 import { Button } from "@/components/ui/button";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
-import { fetchAccounts, fetchCategories } from "@/lib/finance/data";
+import {
+  fetchAccounts,
+  fetchCategories,
+  fetchHouseholdMembers,
+  fetchMemberProfiles,
+} from "@/lib/finance/data";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { QuickAddForm } from "./QuickAddForm";
+import { VoiceCaptureFlow } from "./VoiceCaptureFlow";
 
 const SIDEBAR_COLLAPSED_KEY = "calcum:sidebar-collapsed";
 
@@ -133,6 +137,17 @@ export function AppShell({
     queryKey: ["accounts", orgId],
     enabled: !!orgId,
     queryFn: () => fetchAccounts(orgId!),
+  });
+  const membersQuery = useQuery({
+    queryKey: ["household-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchHouseholdMembers(orgId!),
+  });
+  const memberIds = (membersQuery.data ?? []).map((member) => member.user_id);
+  const profilesQuery = useQuery({
+    queryKey: ["member-profiles", orgId, memberIds],
+    enabled: !!orgId && memberIds.length > 0,
+    queryFn: () => fetchMemberProfiles(memberIds),
   });
 
   return (
@@ -279,38 +294,36 @@ export function AppShell({
         </main>
       </div>
 
-      {/* Mobile bottom navigation — same navItems as the desktop sidebar. */}
+      {/* Mobile bottom navigation — same navItems as the desktop sidebar,
+          minus whichever section is currently active: you're already there,
+          so showing it back at you just eats space that 6 items don't have
+          on a phone-width screen. The desktop sidebar is a separate block
+          above and keeps showing all items with the active one highlighted —
+          this only changes the mobile bar. */}
       <nav
         className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 flex items-stretch gap-1 rounded-full border border-slate-200/70 bg-white/95 p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_28px_-10px_rgba(0,0,0,0.18)] backdrop-blur lg:hidden"
         aria-label="Navegação principal"
       >
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = item.section === activeSection;
-          return (
-            <Link
-              key={item.label}
-              to={item.to}
-              className={cn(
-                "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[10px] font-medium text-slate-500 transition-colors",
-                active && "bg-slate-100 text-slate-900",
-              )}
-            >
-              <Icon
-                className={cn("h-5 w-5", active && "text-primary")}
-                strokeWidth={active ? 2.5 : 2}
-              />
-              <span className="truncate px-0.5">{item.label}</span>
-            </Link>
-          );
-        })}
+        {navItems
+          .filter((item) => item.section !== activeSection)
+          .map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.label}
+                to={item.to}
+                className="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[10px] font-medium text-slate-500 transition-colors"
+              >
+                <Icon className="h-5 w-5" strokeWidth={2} />
+                <span className="truncate px-0.5">{item.label}</span>
+              </Link>
+            );
+          })}
       </nav>
 
-      {/* Voice quick-add FAB — mobile only. On desktop the quick-add form is
-          already pinned at the top of "Transações" in full, so a floating
-          duplicate would just add clutter; on mobile that form is buried at
-          the top of a page the user may not be on, which is the gap this
-          closes. */}
+      {/* Voice quick-add FAB — mobile only. Same 4-stage capture flow as the
+          hero button on "Transações", available from any page so the user
+          never has to navigate away to add something by voice. */}
       <Button
         type="button"
         size="icon"
@@ -321,30 +334,18 @@ export function AppShell({
         <Mic className="h-6 w-6" />
       </Button>
 
-      <Drawer open={voiceSheetOpen} onOpenChange={setVoiceSheetOpen}>
-        <DrawerContent className="max-h-[85vh]">
-          <DrawerHeader className="text-left">
-            <DrawerTitle>Lançamento rápido</DrawerTitle>
-          </DrawerHeader>
-          <div className="overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-            {voiceSheetOpen ? (
-              orgId ? (
-                <QuickAddForm
-                  bare
-                  autoFocusInput
-                  orgId={orgId}
-                  userId={currentUserQuery.data?.id ?? null}
-                  categories={categoriesQuery.data ?? []}
-                  accounts={accountsQuery.data ?? []}
-                  onSaved={() => setVoiceSheetOpen(false)}
-                />
-              ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">Carregando…</p>
-              )
-            ) : null}
-          </div>
-        </DrawerContent>
-      </Drawer>
+      {orgId ? (
+        <VoiceCaptureFlow
+          open={voiceSheetOpen}
+          onOpenChange={setVoiceSheetOpen}
+          orgId={orgId}
+          userId={currentUserQuery.data?.id ?? null}
+          categories={categoriesQuery.data ?? []}
+          accounts={accountsQuery.data ?? []}
+          members={membersQuery.data ?? []}
+          profiles={profilesQuery.data ?? []}
+        />
+      ) : null}
     </div>
   );
 }

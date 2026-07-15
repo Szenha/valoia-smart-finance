@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Monitor } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,9 +23,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { buildCategoryTree, leafCategoryOptions } from "@/lib/finance/categories";
+import { buildCategoryTree, type CategoryOption } from "@/lib/finance/categories";
 import { fetchCategories } from "@/lib/finance/data";
 import { formatCurrency, type CategoryRow } from "@/lib/finance/types";
+import { cn } from "@/lib/utils";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 
@@ -43,6 +44,7 @@ export const Route = createFileRoute("/planejamento")({
 
 type BudgetScope = "macro_income" | "macro_expense" | "category";
 type Granularity = "macro" | "category" | "subcategory";
+type Section = "income" | "expense";
 
 type BudgetRow = {
   id: string;
@@ -63,6 +65,18 @@ type PlanningRow = {
   categoryId: string | null;
   label: string;
   depth: number;
+  section: Section;
+  isGroup?: boolean;
+  childKeys?: string[];
+};
+
+function sectionOf(category: Pick<CategoryRow, "type">): Section {
+  return category.type === "income" ? "income" : "expense";
+}
+
+const SECTION_LABEL: Record<Section, string> = {
+  income: "Receitas",
+  expense: "Despesas",
 };
 
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
@@ -134,6 +148,7 @@ function PlanningRoute() {
 
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
   const rows = useMemo(() => buildPlanningRows(granularity, categories), [granularity, categories]);
+  const rowByKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows]);
   const budgetByKey = useMemo(() => {
     const map = new Map<string, BudgetRow>();
     for (const budget of budgetsQuery.data ?? []) {
@@ -142,8 +157,20 @@ function PlanningRoute() {
     return map;
   }, [budgetsQuery.data]);
 
-  function amountFor(row: PlanningRow, month: number) {
+  function amountFor(row: PlanningRow, month: number): number {
+    if (row.isGroup && row.childKeys) {
+      return row.childKeys.reduce((sum, childKey) => {
+        const childRow = rowByKey.get(childKey);
+        return sum + (childRow ? amountFor(childRow, month) : 0);
+      }, 0);
+    }
     return Number(budgetByKey.get(`${row.key}:${month}`)?.planned_amount ?? 0);
+  }
+
+  function sectionSubtotal(section: Section, month: number) {
+    return rows
+      .filter((row) => row.section === section && row.depth === 0)
+      .reduce((sum, row) => sum + amountFor(row, month), 0);
   }
 
   const saveCell = useMutation({
@@ -383,54 +410,122 @@ function PlanningRoute() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((row) => (
-                      <TableRow key={row.key}>
-                        <TableCell
-                          className="sticky left-0 z-10 bg-white font-medium"
-                          style={{ paddingLeft: `${row.depth * 16 + 16}px` }}
-                        >
-                          {row.label}
+                    {(["income", "expense"] as Section[]).map((section) => {
+                      const sectionRows = rows.filter((row) => row.section === section);
+                      if (sectionRows.length === 0) return null;
+                      const topLevelCount = sectionRows.filter((row) => row.depth === 0).length;
+                      return (
+                        <Fragment key={section}>
+                          <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                            <TableCell
+                              colSpan={13}
+                              className="sticky left-0 z-10 bg-slate-50/80 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                            >
+                              {SECTION_LABEL[section]}
+                            </TableCell>
+                          </TableRow>
+                          {sectionRows.map((row) => (
+                            <TableRow key={row.key}>
+                              <TableCell
+                                className={cn(
+                                  "sticky left-0 z-10 bg-white",
+                                  row.isGroup ? "font-semibold" : "font-medium",
+                                )}
+                                style={{ paddingLeft: `${row.depth * 16 + 16}px` }}
+                              >
+                                {row.label}
+                              </TableCell>
+                              {MONTHS.map((_, index) => {
+                                const month = index + 1;
+                                const cellKey = `${row.key}:${month}`;
+                                const isEditing = editingCell?.key === cellKey;
+                                const amount = amountFor(row, month);
+                                if (mobileReadOnly || row.isGroup) {
+                                  return (
+                                    <TableCell
+                                      key={month}
+                                      className={cn(
+                                        "text-right tabular-nums",
+                                        row.isGroup && "bg-slate-50/60 font-semibold",
+                                      )}
+                                    >
+                                      {amount > 0 ? formatCurrency(amount) : "—"}
+                                    </TableCell>
+                                  );
+                                }
+                                return (
+                                  <TableCell key={month} className="text-right">
+                                    <Input
+                                      id={`cell-${cellKey}`}
+                                      type="text"
+                                      inputMode="decimal"
+                                      className="h-9 min-w-[150px] text-right tabular-nums"
+                                      placeholder="R$ 0,00"
+                                      value={
+                                        isEditing
+                                          ? editingCell.value
+                                          : amount > 0
+                                            ? formatCurrency(amount)
+                                            : ""
+                                      }
+                                      onFocus={() => startEditCell(row, month)}
+                                      onChange={(event) =>
+                                        setEditingCell((current) =>
+                                          current
+                                            ? { ...current, value: event.target.value }
+                                            : current,
+                                        )
+                                      }
+                                      onBlur={(event) => commitEditCell(row, month, event.target.value)}
+                                    />
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ))}
+                          {topLevelCount > 1 ? (
+                            <TableRow className="bg-slate-100/70 hover:bg-slate-100/70">
+                              <TableCell className="sticky left-0 z-10 bg-slate-100/70 font-semibold">
+                                Subtotal {SECTION_LABEL[section]}
+                              </TableCell>
+                              {MONTHS.map((_, index) => {
+                                const amount = sectionSubtotal(section, index + 1);
+                                return (
+                                  <TableCell
+                                    key={index}
+                                    className="text-right font-semibold tabular-nums"
+                                  >
+                                    {amount > 0 ? formatCurrency(amount) : "—"}
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                    {rows.length > 0 ? (
+                      <TableRow className="bg-slate-900 hover:bg-slate-900">
+                        <TableCell className="sticky left-0 z-10 bg-slate-900 font-semibold text-white">
+                          Saldo planejado
                         </TableCell>
                         {MONTHS.map((_, index) => {
                           const month = index + 1;
-                          const cellKey = `${row.key}:${month}`;
-                          const isEditing = editingCell?.key === cellKey;
-                          const amount = amountFor(row, month);
-                          if (mobileReadOnly) {
-                            return (
-                              <TableCell key={month} className="text-right tabular-nums">
-                                {amount > 0 ? formatCurrency(amount) : "—"}
-                              </TableCell>
-                            );
-                          }
+                          const balance = sectionSubtotal("income", month) - sectionSubtotal("expense", month);
                           return (
-                            <TableCell key={month} className="text-right">
-                              <Input
-                                id={`cell-${cellKey}`}
-                                type="text"
-                                inputMode="decimal"
-                                className="h-9 min-w-[150px] text-right tabular-nums"
-                                placeholder="R$ 0,00"
-                                value={
-                                  isEditing
-                                    ? editingCell.value
-                                    : amount > 0
-                                      ? formatCurrency(amount)
-                                      : ""
-                                }
-                                onFocus={() => startEditCell(row, month)}
-                                onChange={(event) =>
-                                  setEditingCell((current) =>
-                                    current ? { ...current, value: event.target.value } : current,
-                                  )
-                                }
-                                onBlur={(event) => commitEditCell(row, month, event.target.value)}
-                              />
+                            <TableCell
+                              key={month}
+                              className={cn(
+                                "text-right font-semibold tabular-nums text-white",
+                                balance < 0 && "text-rose-300",
+                              )}
+                            >
+                              {formatCurrency(balance)}
                             </TableCell>
                           );
                         })}
                       </TableRow>
-                    ))}
+                    ) : null}
                     {rows.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={13} className="py-8 text-center text-muted-foreground">
@@ -509,18 +604,20 @@ function buildPlanningRows(granularity: Granularity, categories: CategoryRow[]):
   if (granularity === "macro") {
     return [
       {
-        key: `macro_expense:${ZERO_UUID}`,
-        scopeType: "macro_expense",
-        categoryId: null,
-        label: "Despesa total",
-        depth: 0,
-      },
-      {
         key: `macro_income:${ZERO_UUID}`,
         scopeType: "macro_income",
         categoryId: null,
         label: "Receita total",
         depth: 0,
+        section: "income",
+      },
+      {
+        key: `macro_expense:${ZERO_UUID}`,
+        scopeType: "macro_expense",
+        categoryId: null,
+        label: "Despesa total",
+        depth: 0,
+        section: "expense",
       },
     ];
   }
@@ -532,16 +629,45 @@ function buildPlanningRows(granularity: Granularity, categories: CategoryRow[]):
       categoryId: category.id,
       label: category.name,
       depth: 0,
+      section: sectionOf(category),
     }));
   }
 
-  return leafCategoryOptions(categories).map((category) => ({
-    key: `category:${category.id}`,
-    scopeType: "category" as const,
-    categoryId: category.id,
-    label: category.path,
-    depth: category.depth,
-  }));
+  // Subcategory view: a full tree. Categories with children become a
+  // read-only group row (planned amount = sum of its children, computed by
+  // amountFor) followed by their descendants; leaf categories stay a single
+  // editable row exactly like before.
+  function buildNode(category: CategoryOption, depth: number, section: Section): PlanningRow[] {
+    const key = `category:${category.id}`;
+    if (category.children.length === 0) {
+      return [
+        {
+          key,
+          scopeType: "category" as const,
+          categoryId: category.id,
+          label: category.path,
+          depth,
+          section,
+        },
+      ];
+    }
+    const childRows = category.children.flatMap((child) => buildNode(child, depth + 1, section));
+    const groupRow: PlanningRow = {
+      key,
+      scopeType: "category" as const,
+      categoryId: category.id,
+      label: category.name,
+      depth,
+      section,
+      isGroup: true,
+      childKeys: category.children.map((child) => `category:${child.id}`),
+    };
+    return [groupRow, ...childRows];
+  }
+
+  return buildCategoryTree(categories).flatMap((category) =>
+    buildNode(category, 0, sectionOf(category)),
+  );
 }
 
 function scopeCategoryKey(categoryId: string | null) {
