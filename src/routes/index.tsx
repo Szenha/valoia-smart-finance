@@ -17,7 +17,7 @@ import {
   fetchTransactions,
 } from "@/lib/finance/data";
 import type { AccountRow, CategoryRow, TxnRow } from "@/lib/finance/types";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
 export const Route = createFileRoute("/")({
@@ -35,7 +35,6 @@ export const Route = createFileRoute("/")({
 function Index() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [orgId, setOrgId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -52,13 +51,15 @@ function Index() {
       }
       setUserId(user.id);
       setUserEmail(user.email ?? "");
-      const org = await getOrCreateOrganization();
-      setOrgId(org);
-      await ensureDefaultCategories(org);
     }
     init();
   }, [navigate]);
 
+  const { orgId } = useActiveOrganization(userId);
+
+  // ensureDefaultCategories é idempotente e roda toda vez que o workspace
+  // ativo muda (inclusive um workspace recém-criado no seletor), garantindo
+  // a árvore de categorias padrão sem depender de um passo de "signup".
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,

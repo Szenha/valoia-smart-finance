@@ -14,6 +14,7 @@ import type {
   GoalRealizedRow,
   GoalRow,
   HouseholdMemberRow,
+  OrganizationRow,
   ProfileRow,
   TxnRow,
 } from "./types";
@@ -118,6 +119,40 @@ export async function fetchOrganizationOwner(orgId: string): Promise<string> {
     .single();
   if (error) throw new Error(error.message);
   return data.owner_id as string;
+}
+
+// Todas as organizações (workspaces) a que o usuário pertence, mais antiga
+// primeiro — a lista completa é o que sustenta o seletor de workspace; RLS
+// (org_select/members_select) já restringe isso ao próprio usuário, sem
+// precisar de RPC dedicada.
+export async function fetchMyOrganizations(userId: string): Promise<OrganizationRow[]> {
+  const { data, error } = await supabase
+    .from("organization_members")
+    .select("role, created_at, organizations!inner(id, name, owner_id)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => {
+    const org = row.organizations as unknown as { id: string; name: string; owner_id: string };
+    return { id: org.id, name: org.name, owner_id: org.owner_id, role: row.role as string };
+  });
+}
+
+// Cria um novo workspace com o usuário logado como dono — o trigger
+// trg_add_owner_as_admin já existente cuida de vinculá-lo como admin.
+export async function createOrganization(name: string, ownerId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .insert({ name, owner_id: ownerId })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+export async function renameOrganization(orgId: string, name: string): Promise<void> {
+  const { error } = await supabase.from("organizations").update({ name }).eq("id", orgId);
+  if (error) throw new Error(error.message);
 }
 
 export async function removeHouseholdMember(orgId: string, userId: string): Promise<void> {

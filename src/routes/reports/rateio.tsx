@@ -48,7 +48,7 @@ import {
 } from "@/lib/finance/expense-split";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import { formatCurrency, type CategoryRow, type TxnRow } from "@/lib/finance/types";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -101,13 +101,12 @@ function categoryPathOf(categories: CategoryRow[], categoryId: string | null): s
 
 function RateioRoute() {
   const queryClient = useQueryClient();
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => (await supabase.auth.getUser()).data.user,
   });
   const currentUserId = currentUserQuery.data?.id ?? null;
+  const { orgId } = useActiveOrganization(currentUserId);
 
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],

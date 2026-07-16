@@ -30,7 +30,7 @@ import {
   resolveMemberName,
 } from "@/lib/finance/member-visuals";
 import type { HouseholdMemberRow } from "@/lib/finance/types";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
 export const Route = createFileRoute("/cadastros/membros")({
@@ -53,13 +53,13 @@ const ROLE_LABEL: Record<string, string> = {
 
 function MembrosRoute() {
   const queryClient = useQueryClient();
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
+
+  const { orgId } = useActiveOrganization(currentUserId);
 
   const membersQuery = useQuery({
     queryKey: ["household-members", orgId],

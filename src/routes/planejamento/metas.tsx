@@ -67,7 +67,7 @@ import {
   type GoalRow,
   type GoalType,
 } from "@/lib/finance/types";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -145,13 +145,13 @@ function num(value: string): number | null {
 
 function MetasRoute() {
   const queryClient = useQueryClient();
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
+
+  const { orgId } = useActiveOrganization(currentUserId);
 
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],

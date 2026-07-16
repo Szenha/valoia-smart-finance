@@ -27,7 +27,7 @@ import type {
   StatementImportRow,
   StatementItemRow,
 } from "@/lib/reconciliation/types";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
 export const Route = createFileRoute("/conciliacao")({
@@ -69,7 +69,7 @@ function periodLabel(period: string) {
 function ReconciliationRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [orgId, setOrgId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
   const [ofxStatus, setOfxStatus] = useState<"idle" | "parsing" | "saving" | "done" | "error">(
@@ -91,10 +91,12 @@ function ReconciliationRoute() {
         return;
       }
       setUserEmail(user.email ?? "");
-      setOrgId(await getOrCreateOrganization());
+      setUserId(user.id);
     }
     init();
   }, [navigate]);
+
+  const { orgId } = useActiveOrganization(userId);
 
   const importsQuery = useQuery({
     queryKey: ["statement-imports", orgId],

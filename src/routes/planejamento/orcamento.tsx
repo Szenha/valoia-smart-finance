@@ -42,7 +42,7 @@ import {
   type CategoryRow,
 } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
 export const Route = createFileRoute("/planejamento/orcamento")({
@@ -140,8 +140,16 @@ function PlanningRoute() {
   // auto-saves on blur (see commitEditCell).
   const [isEditingMatrix, setIsEditingMatrix] = useState(false);
 
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
+  const currentUserQuery = useQuery({
+    queryKey: ["current-user"],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      return user;
+    },
+  });
+  const { orgId } = useActiveOrganization(currentUserQuery.data?.id ?? null);
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,

@@ -26,7 +26,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { fetchHouseholdMembers, fetchMemberProfiles } from "@/lib/finance/data";
 import { resolveMemberName } from "@/lib/finance/member-visuals";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { categoryTypeLabelPlural, formatCurrency } from "@/lib/finance/types";
 
@@ -57,8 +57,6 @@ function currentMonthBounds() {
 function ReportsRoute() {
   const isMobile = useIsMobile();
   const [creatorFilter, setCreatorFilter] = useState("all");
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => {
@@ -68,6 +66,7 @@ function ReportsRoute() {
       return user;
     },
   });
+  const { orgId } = useActiveOrganization(currentUserQuery.data?.id ?? null);
   const membersQuery = useQuery({
     queryKey: ["household-members", orgId],
     enabled: !!orgId,

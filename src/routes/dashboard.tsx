@@ -12,7 +12,7 @@ import {
   fetchMemberProfiles,
 } from "@/lib/finance/data";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { categoryTypeLabelPlural, formatCurrency } from "@/lib/finance/types";
 
@@ -40,8 +40,6 @@ function monthBounds() {
 }
 
 function DashboardRoute() {
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => {
@@ -51,6 +49,7 @@ function DashboardRoute() {
       return user;
     },
   });
+  const { orgId } = useActiveOrganization(currentUserQuery.data?.id ?? null);
   const membersQuery = useQuery({
     queryKey: ["household-members", orgId],
     enabled: !!orgId,

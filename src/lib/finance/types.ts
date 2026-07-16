@@ -199,6 +199,16 @@ export type HouseholdMemberRow = {
   color: string | null;
 };
 
+// Uma organização = um workspace (ex: "Minha Empresa", "Casa"). Uma pessoa
+// pode pertencer a mais de uma — cada uma isolada por RLS, sem relação entre
+// si. `role` é o papel do usuário logado NESSA organização específica.
+export type OrganizationRow = {
+  id: string;
+  name: string;
+  owner_id: string;
+  role: string;
+};
+
 export type ProfileRow = {
   id: string;
   email: string;

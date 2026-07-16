@@ -45,7 +45,7 @@ import {
   type AccountRow,
   type AdditionalCardRow,
 } from "@/lib/finance/types";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
 export const Route = createFileRoute("/cadastros/contas-e-cartoes")({
@@ -79,13 +79,13 @@ const EMPTY_FORM = {
 
 function ContasECartoesRoute() {
   const queryClient = useQueryClient();
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
+
+  const { orgId } = useActiveOrganization(currentUserId);
 
   const accountsQuery = useQuery({
     queryKey: ["accounts", orgId],

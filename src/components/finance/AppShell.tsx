@@ -2,15 +2,19 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  Check,
   ChevronsLeft,
   ChevronsRight,
+  ChevronsUpDown,
   ClipboardCheck,
   Gauge,
   LayoutDashboard,
   ListChecks,
   LogOut,
   Mic,
+  Pencil,
   PiggyBank,
+  Plus,
   Settings2,
   Tags,
   Target,
@@ -21,13 +25,31 @@ import { useEffect, useState, type ReactNode } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import {
   fetchAccounts,
   fetchAdditionalCards,
   fetchCategories,
   fetchHouseholdMembers,
   fetchMemberProfiles,
+  renameOrganization,
 } from "@/lib/finance/data";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import type { OrganizationRow } from "@/lib/finance/types";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { VoiceCaptureFlow } from "./VoiceCaptureFlow";
@@ -119,11 +141,6 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
     });
   }
 
-  // Data for the mobile "quick add by voice" FAB sheet. Every route already
-  // queries these under the same keys, so this just reuses the cache — it
-  // doesn't add network requests once a page has populated it.
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => {
@@ -133,10 +150,68 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
       return user;
     },
   });
+  const currentUserId = currentUserQuery.data?.id ?? null;
   // Prefer the freshly-fetched session email over the per-route userEmail
   // prop, which not every route passes and can go stale — this is the
   // "who am I logged in as" indicator shown in the header on every page.
   const loggedInEmail = currentUserQuery.data?.email ?? userEmail ?? null;
+
+  // Data for the mobile "quick add by voice" FAB sheet. Every route already
+  // queries these under the same keys, so this just reuses the cache — it
+  // doesn't add network requests once a page has populated it.
+  const workspace = useActiveOrganization(currentUserId);
+  const orgId = workspace.orgId;
+  const activeOrganization =
+    workspace.organizations.find((org) => org.id === orgId) ?? workspace.organizations[0] ?? null;
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createPending, setCreatePending] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  async function handleCreateWorkspace() {
+    const name = createName.trim();
+    if (!name) return;
+    setCreatePending(true);
+    setCreateError("");
+    try {
+      await workspace.createWorkspace(name);
+      setCreateOpen(false);
+      setCreateName("");
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreatePending(false);
+    }
+  }
+
+  const [renamingOrg, setRenamingOrg] = useState<OrganizationRow | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renamePending, setRenamePending] = useState(false);
+  const [renameError, setRenameError] = useState("");
+
+  function openRename(org: OrganizationRow) {
+    setRenamingOrg(org);
+    setRenameValue(org.name);
+    setRenameError("");
+  }
+
+  async function handleRenameWorkspace() {
+    if (!renamingOrg) return;
+    const name = renameValue.trim();
+    if (!name) return;
+    setRenamePending(true);
+    setRenameError("");
+    try {
+      await renameOrganization(renamingOrg.id, name);
+      await workspace.refetchOrganizations();
+      setRenamingOrg(null);
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRenamePending(false);
+    }
+  }
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,
@@ -174,11 +249,47 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
       >
         <div className="flex justify-center px-0">
           {collapsed ? (
-            <TiclioLogo variant="icon" className="h-10 w-10 rounded-lg" />
+            <WorkspaceMenu
+              organizations={workspace.organizations}
+              activeOrg={activeOrganization}
+              onSwitch={workspace.switchOrganization}
+              onRename={openRename}
+              onCreate={() => setCreateOpen(true)}
+              trigger={
+                <button
+                  type="button"
+                  aria-label="Trocar workspace"
+                  className="rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <TiclioLogo variant="icon" className="h-10 w-10 rounded-lg" />
+                </button>
+              }
+            />
           ) : (
             <TiclioLogo variant="full-on-light" style={{ height: 32, width: "auto" }} />
           )}
         </div>
+        {!collapsed ? (
+          <WorkspaceMenu
+            organizations={workspace.organizations}
+            activeOrg={activeOrganization}
+            onSwitch={workspace.switchOrganization}
+            onRename={openRename}
+            onCreate={() => setCreateOpen(true)}
+            trigger={
+              <button
+                type="button"
+                aria-label="Trocar workspace"
+                className="mt-3 flex w-full items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-2 text-left hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">
+                  {activeOrganization?.name ?? "Workspace"}
+                </span>
+                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              </button>
+            }
+          />
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -263,9 +374,24 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
         <header className="sticky top-0 z-20 px-4 pt-3 backdrop-blur lg:px-8">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.1)] backdrop-blur lg:px-6 lg:py-3">
             <div className="flex min-w-0 items-center gap-3">
-              <TiclioLogo
-                variant="icon"
-                className="h-9 w-9 shrink-0 rounded-xl ring-1 ring-slate-200"
+              <WorkspaceMenu
+                organizations={workspace.organizations}
+                activeOrg={activeOrganization}
+                onSwitch={workspace.switchOrganization}
+                onRename={openRename}
+                onCreate={() => setCreateOpen(true)}
+                trigger={
+                  <button
+                    type="button"
+                    aria-label="Trocar workspace"
+                    className="shrink-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >
+                    <TiclioLogo
+                      variant="icon"
+                      className="h-9 w-9 shrink-0 rounded-xl ring-1 ring-slate-200"
+                    />
+                  </button>
+                }
               />
               <div className="min-w-0">
                 <h2 className="truncate text-base font-semibold leading-tight tracking-tight text-slate-950 lg:text-xl">
@@ -350,7 +476,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           open={voiceSheetOpen}
           onOpenChange={setVoiceSheetOpen}
           orgId={orgId}
-          userId={currentUserQuery.data?.id ?? null}
+          userId={currentUserId}
           categories={categoriesQuery.data ?? []}
           accounts={accountsQuery.data ?? []}
           additionalCards={additionalCardsQuery.data ?? []}
@@ -358,6 +484,125 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           profiles={profilesQuery.data ?? []}
         />
       ) : null}
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) {
+            setCreateName("");
+            setCreateError("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Novo workspace</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              autoFocus
+              placeholder="Ex: Minha Empresa, Casa"
+              value={createName}
+              onChange={(event) => setCreateName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void handleCreateWorkspace();
+              }}
+            />
+            {createError ? <p className="text-sm text-red-600">{createError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={!createName.trim() || createPending}
+              onClick={() => void handleCreateWorkspace()}
+            >
+              Criar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!renamingOrg} onOpenChange={(open) => !open && setRenamingOrg(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Renomear workspace</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              autoFocus
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void handleRenameWorkspace();
+              }}
+            />
+            {renameError ? <p className="text-sm text-red-600">{renameError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRenamingOrg(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={!renameValue.trim() || renamePending}
+              onClick={() => void handleRenameWorkspace()}
+            >
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function WorkspaceMenu({
+  trigger,
+  organizations,
+  activeOrg,
+  onSwitch,
+  onRename,
+  onCreate,
+}: {
+  trigger: ReactNode;
+  organizations: OrganizationRow[];
+  activeOrg: OrganizationRow | null;
+  onSwitch: (id: string) => void;
+  onRename: (org: OrganizationRow) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {organizations.map((org) => (
+          <DropdownMenuItem key={org.id} onSelect={() => onSwitch(org.id)} className="gap-2">
+            {org.id === activeOrg?.id ? (
+              <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+            ) : (
+              <span className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="truncate">{org.name}</span>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        {activeOrg?.role === "admin" ? (
+          <DropdownMenuItem onSelect={() => onRename(activeOrg)} className="gap-2">
+            <Pencil className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Renomear "{activeOrg.name}"</span>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onSelect={onCreate} className="gap-2 text-primary focus:text-primary">
+          <Plus className="h-3.5 w-3.5 shrink-0" />
+          Novo workspace
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

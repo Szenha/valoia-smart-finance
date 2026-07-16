@@ -43,7 +43,7 @@ import {
 import { CATEGORY_ICON_OPTIONS } from "@/lib/finance/category-icons";
 import { fetchCategories } from "@/lib/finance/data";
 import { categoryTypeLabel, type CategoryRow, type CategoryType } from "@/lib/finance/types";
-import { getOrCreateOrganization } from "@/lib/supabase/auth";
+import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
 export const Route = createFileRoute("/cadastros/categorias")({
@@ -73,8 +73,16 @@ function ancestorChain(categories: CategoryRow[], categoryId: string): string[] 
 
 function CategoriasRoute() {
   const queryClient = useQueryClient();
-  const orgQuery = useQuery({ queryKey: ["org"], queryFn: getOrCreateOrganization });
-  const orgId = orgQuery.data;
+  const currentUserQuery = useQuery({
+    queryKey: ["current-user"],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      return user;
+    },
+  });
+  const { orgId } = useActiveOrganization(currentUserQuery.data?.id ?? null);
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,
