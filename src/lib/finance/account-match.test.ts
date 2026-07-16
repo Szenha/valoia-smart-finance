@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
 import { accountKindForPaymentMethod, matchPaymentAccount } from "./account-match";
-import type { AccountRow } from "./types";
+import type { AccountRow, AdditionalCardRow } from "./types";
 
 function account(overrides: Partial<AccountRow>): AccountRow {
   return {
@@ -17,6 +17,17 @@ function account(overrides: Partial<AccountRow>): AccountRow {
     due_day: null,
     credit_limit: null,
     owner_user_id: "owner",
+    ...overrides,
+  };
+}
+
+function additionalCard(overrides: Partial<AdditionalCardRow>): AdditionalCardRow {
+  return {
+    id: "holder-1",
+    financial_account_id: "1",
+    member_user_id: "member",
+    label: null,
+    archived: false,
     ...overrides,
   };
 }
@@ -43,14 +54,17 @@ describe("matchPaymentAccount", () => {
       account({ id: "1", account_key: "checking-1", kind: "checking", name: "Conta principal" }),
       account({ id: "2", account_key: "card-1", kind: "credit_card", name: "Cartão único" }),
     ];
-    const result = matchPaymentAccount(accounts, {
-      paymentMethodHint: "debit",
-      accountNameHint: null,
-    });
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "debit", accountNameHint: null },
+      null,
+    );
     assert.deepEqual(result, {
       status: "resolved",
       accountId: "checking-1",
       accountKind: "checking",
+      additionalCardId: null,
     });
   });
 
@@ -59,14 +73,17 @@ describe("matchPaymentAccount", () => {
       account({ id: "1", account_key: "checking-1", kind: "checking", name: "Conta principal" }),
       account({ id: "2", account_key: "card-1", kind: "credit_card", name: "Cartão único" }),
     ];
-    const result = matchPaymentAccount(accounts, {
-      paymentMethodHint: "credit",
-      accountNameHint: null,
-    });
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "credit", accountNameHint: null },
+      null,
+    );
     assert.deepEqual(result, {
       status: "resolved",
       accountId: "card-1",
       accountKind: "credit_card",
+      additionalCardId: null,
     });
   });
 
@@ -75,10 +92,12 @@ describe("matchPaymentAccount", () => {
       account({ id: "1", account_key: "card-nubank", kind: "credit_card", name: "Nubank" }),
       account({ id: "2", account_key: "card-inter", kind: "credit_card", name: "Inter" }),
     ];
-    const result = matchPaymentAccount(accounts, {
-      paymentMethodHint: "credit",
-      accountNameHint: null,
-    });
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "credit", accountNameHint: null },
+      null,
+    );
     assert.equal(result.status, "ambiguous");
     if (result.status === "ambiguous") {
       assert.equal(result.candidates.length, 2);
@@ -91,14 +110,17 @@ describe("matchPaymentAccount", () => {
       account({ id: "1", account_key: "card-nubank", kind: "credit_card", name: "Nubank" }),
       account({ id: "2", account_key: "card-inter", kind: "credit_card", name: "Cartão Inter" }),
     ];
-    const result = matchPaymentAccount(accounts, {
-      paymentMethodHint: "credit",
-      accountNameHint: "Nubank",
-    });
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "credit", accountNameHint: "Nubank" },
+      null,
+    );
     assert.deepEqual(result, {
       status: "resolved",
       accountId: "card-nubank",
       accountKind: "credit_card",
+      additionalCardId: null,
     });
   });
 
@@ -106,23 +128,28 @@ describe("matchPaymentAccount", () => {
     const accounts = [
       account({ id: "1", account_key: "card-itau", kind: "credit_card", name: "Cartão Itaú" }),
     ];
-    const result = matchPaymentAccount(accounts, {
-      paymentMethodHint: "credit",
-      accountNameHint: "itau",
-    });
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "credit", accountNameHint: "itau" },
+      null,
+    );
     assert.deepEqual(result, {
       status: "resolved",
       accountId: "card-itau",
       accountKind: "credit_card",
+      additionalCardId: null,
     });
   });
 
   test("sem forma de pagamento nem nome, não decide nada", () => {
     const accounts = [account({ id: "1", account_key: "checking-1", kind: "checking" })];
-    const result = matchPaymentAccount(accounts, {
-      paymentMethodHint: null,
-      accountNameHint: null,
-    });
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: null, accountNameHint: null },
+      null,
+    );
     assert.deepEqual(result, { status: "none" });
   });
 
@@ -131,14 +158,119 @@ describe("matchPaymentAccount", () => {
       account({ id: "1", account_key: "checking-1", kind: "checking", archived: true }),
       account({ id: "2", account_key: "checking-2", kind: "checking", archived: false }),
     ];
-    const result = matchPaymentAccount(accounts, {
-      paymentMethodHint: "debit",
-      accountNameHint: null,
-    });
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "debit", accountNameHint: null },
+      null,
+    );
     assert.deepEqual(result, {
       status: "resolved",
       accountId: "checking-2",
       accountKind: "checking",
+      additionalCardId: null,
+    });
+  });
+
+  test("cartão adicional único casa pelo nome do cartão pai e herda account_id/kind dele", () => {
+    const accounts = [
+      account({ id: "1", account_key: "card-visa", kind: "credit_card", name: "Visa Infinite" }),
+    ];
+    const holders = [
+      additionalCard({ id: "holder-esposa", financial_account_id: "1", member_user_id: "esposa" }),
+    ];
+    const result = matchPaymentAccount(
+      accounts,
+      holders,
+      { paymentMethodHint: "credit", accountNameHint: "Visa" },
+      "esposa",
+    );
+    assert.deepEqual(result, {
+      status: "resolved",
+      accountId: "card-visa",
+      accountKind: "credit_card",
+      additionalCardId: "holder-esposa",
+    });
+  });
+
+  test("mesmo nome batendo no principal e no adicional é desempatado por quem está logado", () => {
+    const accounts = [
+      account({ id: "1", account_key: "card-visa", kind: "credit_card", name: "Visa Infinite" }),
+    ];
+    const holders = [
+      additionalCard({ id: "holder-esposa", financial_account_id: "1", member_user_id: "esposa" }),
+    ];
+
+    const asOwner = matchPaymentAccount(
+      accounts,
+      holders,
+      { paymentMethodHint: "credit", accountNameHint: "Visa" },
+      "owner",
+    );
+    assert.deepEqual(asOwner, {
+      status: "resolved",
+      accountId: "card-visa",
+      accountKind: "credit_card",
+      additionalCardId: null,
+    });
+
+    const asEsposa = matchPaymentAccount(
+      accounts,
+      holders,
+      { paymentMethodHint: "credit", accountNameHint: "Visa" },
+      "esposa",
+    );
+    assert.deepEqual(asEsposa, {
+      status: "resolved",
+      accountId: "card-visa",
+      accountKind: "credit_card",
+      additionalCardId: "holder-esposa",
+    });
+  });
+
+  test("sem ninguém logado bater com o nome ambíguo, pede confirmação (candidatos deduplicados)", () => {
+    const accounts = [
+      account({ id: "1", account_key: "card-visa", kind: "credit_card", name: "Visa Infinite" }),
+    ];
+    const holders = [
+      additionalCard({ id: "holder-esposa", financial_account_id: "1", member_user_id: "esposa" }),
+    ];
+    const result = matchPaymentAccount(
+      accounts,
+      holders,
+      { paymentMethodHint: "credit", accountNameHint: "Visa" },
+      "outro-membro",
+    );
+    assert.equal(result.status, "ambiguous");
+    if (result.status === "ambiguous") {
+      // Principal e adicional apontam pro mesmo account_id — não deve listar duplicado.
+      assert.equal(result.candidates.length, 1);
+    }
+  });
+
+  test("cartão adicional arquivado não entra no casamento", () => {
+    const accounts = [
+      account({ id: "1", account_key: "card-visa", kind: "credit_card", name: "Visa Infinite" }),
+    ];
+    const holders = [
+      additionalCard({
+        id: "holder-esposa",
+        financial_account_id: "1",
+        member_user_id: "esposa",
+        archived: true,
+      }),
+    ];
+    const result = matchPaymentAccount(
+      accounts,
+      holders,
+      { paymentMethodHint: "credit", accountNameHint: "Visa" },
+      "esposa",
+    );
+    assert.deepEqual(result, {
+      status: "resolved",
+      accountId: "card-visa",
+      accountKind: "credit_card",
+      additionalCardId: null,
     });
   });
 });

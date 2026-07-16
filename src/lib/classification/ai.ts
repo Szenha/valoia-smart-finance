@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import Anthropic from "@anthropic-ai/sdk";
+import { categoryTypeLabel } from "@/lib/finance/types";
 
 // ── Types (shared with pipeline.ts) ───────────────────────────────────────
 
@@ -45,12 +46,6 @@ type AIClassifyInput = {
   categories: CategoryRow[];
 };
 
-const CATEGORY_TYPE_LABEL: Record<string, string> = {
-  expense: "despesa",
-  income: "receita",
-  transfer: "transferência",
-};
-
 export const classifyWithAIFn = createServerFn({ method: "POST" })
   .validator((data: AIClassifyInput) => data)
   .handler(async ({ data }): Promise<ClassificationResult[]> => {
@@ -59,7 +54,10 @@ export const classifyWithAIFn = createServerFn({ method: "POST" })
     const client = new Anthropic({ apiKey });
 
     const categoryList = data.categories
-      .map((c, i) => `${i}. "${c.path ?? c.name}" (${CATEGORY_TYPE_LABEL[c.type] ?? c.type})`)
+      .map(
+        (c, i) =>
+          `${i}. "${c.path ?? c.name}" (${(categoryTypeLabel[c.type] ?? c.type).toLowerCase()})`,
+      )
       .join("\n");
 
     const txnList = data.transactions

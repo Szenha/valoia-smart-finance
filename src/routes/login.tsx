@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { Mic, PiggyBank, RefreshCw, Sparkles, Upload, Users } from "lucide-react";
+import { Mic, PiggyBank, RefreshCw, ShieldCheck, Sparkles, Upload, Users } from "lucide-react";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
@@ -154,6 +154,21 @@ function Login() {
         }
       `}</style>
 
+      {/* Subtle dot-grid texture — the "tech product" layer beneath the
+          ambient color orbs, barely-there so it reads as texture, not noise. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage: "radial-gradient(rgba(11,27,42,0.07) 1px, transparent 1px)",
+          backgroundSize: "28px 28px",
+          maskImage: "radial-gradient(ellipse 80% 60% at 50% 20%, black 40%, transparent 90%)",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 80% 60% at 50% 20%, black 40%, transparent 90%)",
+          pointerEvents: "none",
+        }}
+      />
+
       {/* Ambient orbs */}
       <div
         style={{
@@ -181,19 +196,19 @@ function Login() {
           pointerEvents: "none",
         }}
       />
-
-      {/* Header: single centered logo */}
-      <header
+      <div
         style={{
-          display: "flex",
-          justifyContent: "center",
-          padding: "28px 16px 8px",
-          position: "relative",
-          zIndex: 1,
+          position: "absolute",
+          top: "38%",
+          right: "26%",
+          width: 260,
+          height: 260,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(198,214,39,0.12) 0%, transparent 70%)",
+          filter: "blur(70px)",
+          pointerEvents: "none",
         }}
-      >
-        <TiclioLogo variant="full-on-light" style={{ width: "clamp(140px, 30vw, 168px)" }} />
-      </header>
+      />
 
       <main
         style={{
@@ -203,7 +218,7 @@ function Login() {
           justifyContent: "center",
           position: "relative",
           zIndex: 1,
-          padding: "24px 16px 48px",
+          padding: "40px 16px 48px",
         }}
       >
         <div
@@ -225,13 +240,29 @@ function Login() {
 
           {/* Marketing / hero column */}
           <section>
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 11.5,
+                fontWeight: 700,
+                letterSpacing: "0.16em",
+                textTransform: "uppercase",
+                color: "#035C3A",
+                background: "rgba(3,92,58,0.08)",
+                padding: "5px 12px",
+                borderRadius: 999,
+                marginBottom: 18,
+              }}
+            >
+              Finanças em família, num só lugar
+            </span>
             <h1
               style={{
-                fontSize: "clamp(28px, 4vw, 40px)",
+                fontSize: "clamp(30px, 4.2vw, 42px)",
                 fontWeight: 800,
                 color: "#0B1B2A",
-                letterSpacing: "-0.03em",
-                lineHeight: 1.1,
+                letterSpacing: "-0.035em",
+                lineHeight: 1.08,
                 margin: "0 0 16px",
               }}
             >
@@ -254,7 +285,7 @@ function Login() {
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
-                gap: 12,
+                gap: 6,
               }}
             >
               {FEATURES.map(({ icon: Icon, title, description }) => (
@@ -262,13 +293,11 @@ function Login() {
                   key={title}
                   style={{
                     display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    padding: "16px",
-                    background: "rgba(255,255,255,0.7)",
-                    border: "1px solid rgba(11,27,42,0.06)",
-                    borderRadius: 14,
-                    boxShadow: "0 1px 2px rgba(11,27,42,0.03)",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    padding: "10px 10px",
+                    borderRadius: 12,
+                    transition: "background .15s",
                   }}
                 >
                   <span
@@ -276,23 +305,24 @@ function Login() {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      width: 34,
-                      height: 34,
+                      width: 30,
+                      height: 30,
+                      flexShrink: 0,
                       borderRadius: "50%",
                       background: "rgba(3,92,58,0.08)",
                       color: "#035C3A",
                     }}
                   >
-                    <Icon size={17} />
+                    <Icon size={15} />
                   </span>
                   <div>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: "#0B1B2A", margin: 0 }}>
+                    <p style={{ fontSize: 13.5, fontWeight: 700, color: "#0B1B2A", margin: 0 }}>
                       {title}
                     </p>
                     <p
                       style={{
                         fontSize: 12.5,
-                        color: "rgba(11,27,42,0.55)",
+                        color: "rgba(11,27,42,0.5)",
                         margin: "2px 0 0",
                         lineHeight: 1.4,
                       }}
@@ -305,272 +335,320 @@ function Login() {
             </div>
           </section>
 
-          {/* Auth card */}
-          <section
+          {/* Auth column: brand lockup sits directly above its card, not
+              floating above the whole page, so it visually belongs to the
+              form instead of just decorating the top of the layout. */}
+          <div
             style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
               width: "100%",
               maxWidth: 420,
               justifySelf: "center",
-              background: "#ffffff",
-              border: "1px solid rgba(11,27,42,0.08)",
-              borderRadius: 20,
-              padding: "36px 36px 32px",
-              boxShadow: "0 24px 60px rgba(11,27,42,0.10), 0 0 0 1px rgba(11,27,42,0.02)",
-              position: "relative",
             }}
           >
-            {/* Top gradient line */}
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: "20%",
-                right: "20%",
-                height: 2,
-                background: "linear-gradient(to right, transparent, #C6D627, #035C3A, transparent)",
-                borderRadius: 2,
-              }}
-            />
-
-            <h2
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-                color: "#0B1B2A",
-                letterSpacing: "-0.025em",
-                margin: "0 0 4px",
-              }}
-            >
-              {mode === "login" ? "Bem-vindo de volta" : "Criar conta"}
-            </h2>
-            <p style={{ fontSize: 14, color: "rgba(11,27,42,0.5)", margin: "0 0 24px" }}>
-              {mode === "login"
-                ? "Entre na sua conta para continuar"
-                : "Comece a controlar suas finanças hoje"}
-            </p>
-
-            {/* Mode toggle pills */}
             <div
               style={{
                 display: "flex",
-                gap: 0,
-                marginBottom: 24,
-                background: "#F3F5F4",
-                borderRadius: 10,
-                padding: 4,
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 22,
               }}
             >
-              {(["login", "signup"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => switchMode(m)}
-                  style={{
-                    flex: 1,
-                    padding: "7px 0",
-                    borderRadius: 7,
-                    border: "none",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    transition: "all .2s",
-                    background: mode === m ? "#ffffff" : "transparent",
-                    color: mode === m ? "#035C3A" : "rgba(11,27,42,0.45)",
-                    boxShadow: mode === m ? "0 1px 4px rgba(11,27,42,0.12)" : "none",
-                  }}
-                >
-                  {m === "login" ? "Entrar" : "Cadastrar"}
-                </button>
-              ))}
-            </div>
-
-            <form
-              onSubmit={handleSubmit}
-              style={{ display: "flex", flexDirection: "column", gap: 16 }}
-            >
-              {/* Email */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(11,27,42,0.6)" }}>
-                  Email
-                </label>
-                <input
-                  type="email"
-                  required
-                  autoComplete="email"
-                  className="ticlio-auth-input"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onFocus={() => setFocusedField("email")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="seu@email.com"
-                  style={{
-                    padding: "11px 14px",
-                    background: focusedField === "email" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
-                    border:
-                      focusedField === "email"
-                        ? "1px solid rgba(3,92,58,0.4)"
-                        : "1px solid rgba(11,27,42,0.08)",
-                    borderRadius: 10,
-                    fontSize: 14,
-                    color: "#0B1B2A",
-                    outline: "none",
-                    transition: "all .2s",
-                  }}
-                />
-              </div>
-
-              {/* Password */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(11,27,42,0.6)" }}>
-                  Senha
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  className="ticlio-auth-input"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => setFocusedField("password")}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="••••••••"
-                  style={{
-                    padding: "11px 14px",
-                    background: focusedField === "password" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
-                    border:
-                      focusedField === "password"
-                        ? "1px solid rgba(3,92,58,0.4)"
-                        : "1px solid rgba(11,27,42,0.08)",
-                    borderRadius: 10,
-                    fontSize: 14,
-                    color: "#0B1B2A",
-                    outline: "none",
-                    transition: "all .2s",
-                  }}
-                />
-              </div>
-
-              {/* Error / Info */}
-              {error && (
-                <div
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 8,
-                    background: "rgba(239,68,68,0.08)",
-                    border: "1px solid rgba(239,68,68,0.2)",
-                    fontSize: 13,
-                    color: "#b91c1c",
-                  }}
-                >
-                  {error}
-                </div>
-              )}
-              {info && (
-                <div
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 8,
-                    background: "rgba(52,211,153,0.1)",
-                    border: "1px solid rgba(52,211,153,0.3)",
-                    fontSize: 13,
-                    color: "#047857",
-                  }}
-                >
-                  {info}
-                </div>
-              )}
-
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={loading}
+              <TiclioLogo
+                variant="full-on-light"
                 style={{
-                  marginTop: 4,
-                  padding: "13px 0",
-                  borderRadius: 10,
-                  border: "none",
-                  cursor: loading ? "not-allowed" : "pointer",
-                  fontSize: 15,
-                  fontWeight: 700,
-                  color: "white",
-                  // Solid fill (not the full lime-to-petroleum gradient) so
-                  // white text keeps reliable contrast — small filled
-                  // buttons use --primary, the darker end of the brand
-                  // gradient.
-                  background: loading ? "rgba(3,92,58,0.5)" : "#035C3A",
-                  boxShadow: loading ? "none" : "0 8px 20px rgba(3,92,58,0.25)",
-                  transition: "all .2s",
-                  letterSpacing: "-0.01em",
+                  width: "clamp(150px, 32vw, 184px)",
+                  filter: "drop-shadow(0 6px 16px rgba(3,92,58,0.16))",
                 }}
-                onMouseEnter={(e) => {
-                  if (!loading) (e.currentTarget as HTMLElement).style.opacity = "0.9";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.opacity = "1";
+              />
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  color: "rgba(11,27,42,0.38)",
                 }}
               >
-                {loading ? "Aguarde…" : mode === "login" ? "Entrar →" : "Criar conta →"}
-              </button>
-            </form>
+                Painel financeiro da família
+              </span>
+            </div>
 
-            {/* Footer note */}
-            <p
+            <section
               style={{
-                marginTop: 24,
-                textAlign: "center",
-                fontSize: 13,
-                color: "rgba(11,27,42,0.4)",
-                lineHeight: 1.5,
+                width: "100%",
+                background: "#ffffff",
+                border: "1px solid rgba(11,27,42,0.07)",
+                borderRadius: 20,
+                padding: "36px 36px 32px",
+                boxShadow:
+                  "0 32px 80px -12px rgba(11,27,42,0.16), 0 0 0 1px rgba(11,27,42,0.02), 0 0 0 8px rgba(3,92,58,0.025)",
+                position: "relative",
               }}
             >
-              {mode === "login" ? (
-                <>
-                  Não tem conta?{" "}
+              {/* Top gradient line */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: "20%",
+                  right: "20%",
+                  height: 2,
+                  background:
+                    "linear-gradient(to right, transparent, #C6D627, #035C3A, transparent)",
+                  borderRadius: 2,
+                }}
+              />
+
+              <h2
+                style={{
+                  fontSize: 24,
+                  fontWeight: 800,
+                  color: "#0B1B2A",
+                  letterSpacing: "-0.025em",
+                  margin: "0 0 4px",
+                }}
+              >
+                {mode === "login" ? "Bem-vindo de volta" : "Criar conta"}
+              </h2>
+              <p style={{ fontSize: 14, color: "rgba(11,27,42,0.5)", margin: "0 0 24px" }}>
+                {mode === "login"
+                  ? "Entre na sua conta para continuar"
+                  : "Comece a controlar suas finanças hoje"}
+              </p>
+
+              {/* Mode toggle pills */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 0,
+                  marginBottom: 24,
+                  background: "#F3F5F4",
+                  borderRadius: 10,
+                  padding: 4,
+                }}
+              >
+                {(["login", "signup"] as const).map((m) => (
                   <button
+                    key={m}
                     type="button"
-                    onClick={() => switchMode("signup")}
+                    onClick={() => switchMode(m)}
                     style={{
-                      background: "none",
+                      flex: 1,
+                      padding: "7px 0",
+                      borderRadius: 7,
                       border: "none",
-                      color: "#035C3A",
                       cursor: "pointer",
                       fontSize: 13,
                       fontWeight: 600,
-                      padding: 0,
+                      transition: "all .2s",
+                      background: mode === m ? "#ffffff" : "transparent",
+                      color: mode === m ? "#035C3A" : "rgba(11,27,42,0.45)",
+                      boxShadow: mode === m ? "0 1px 4px rgba(11,27,42,0.12)" : "none",
                     }}
                   >
-                    Cadastre-se grátis
+                    {m === "login" ? "Entrar" : "Cadastrar"}
                   </button>
-                </>
-              ) : (
-                <>
-                  Já tem conta?{" "}
-                  <button
-                    type="button"
-                    onClick={() => switchMode("login")}
+                ))}
+              </div>
+
+              <form
+                onSubmit={handleSubmit}
+                style={{ display: "flex", flexDirection: "column", gap: 16 }}
+              >
+                {/* Email */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(11,27,42,0.6)" }}>
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    autoComplete="email"
+                    className="ticlio-auth-input"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onFocus={() => setFocusedField("email")}
+                    onBlur={() => setFocusedField(null)}
+                    placeholder="seu@email.com"
                     style={{
-                      background: "none",
-                      border: "none",
-                      color: "#035C3A",
-                      cursor: "pointer",
+                      padding: "11px 14px",
+                      background: focusedField === "email" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
+                      border:
+                        focusedField === "email"
+                          ? "1px solid rgba(3,92,58,0.4)"
+                          : "1px solid rgba(11,27,42,0.08)",
+                      borderRadius: 10,
+                      fontSize: 14,
+                      color: "#0B1B2A",
+                      outline: "none",
+                      transition: "all .2s",
+                    }}
+                  />
+                </div>
+
+                {/* Password */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: "rgba(11,27,42,0.6)" }}>
+                    Senha
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                    className="ticlio-auth-input"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onFocus={() => setFocusedField("password")}
+                    onBlur={() => setFocusedField(null)}
+                    placeholder="••••••••"
+                    style={{
+                      padding: "11px 14px",
+                      background: focusedField === "password" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
+                      border:
+                        focusedField === "password"
+                          ? "1px solid rgba(3,92,58,0.4)"
+                          : "1px solid rgba(11,27,42,0.08)",
+                      borderRadius: 10,
+                      fontSize: 14,
+                      color: "#0B1B2A",
+                      outline: "none",
+                      transition: "all .2s",
+                    }}
+                  />
+                </div>
+
+                {/* Error / Info */}
+                {error && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 8,
+                      background: "rgba(239,68,68,0.08)",
+                      border: "1px solid rgba(239,68,68,0.2)",
                       fontSize: 13,
-                      fontWeight: 600,
-                      padding: 0,
+                      color: "#b91c1c",
                     }}
                   >
-                    Entre aqui
-                  </button>
-                </>
-              )}
-            </p>
-          </section>
+                    {error}
+                  </div>
+                )}
+                {info && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 8,
+                      background: "rgba(52,211,153,0.1)",
+                      border: "1px solid rgba(52,211,153,0.3)",
+                      fontSize: 13,
+                      color: "#047857",
+                    }}
+                  >
+                    {info}
+                  </div>
+                )}
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    marginTop: 4,
+                    padding: "13px 0",
+                    borderRadius: 10,
+                    border: "none",
+                    cursor: loading ? "not-allowed" : "pointer",
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: "white",
+                    // Solid fill (not the full lime-to-petroleum gradient) so
+                    // white text keeps reliable contrast — small filled
+                    // buttons use --primary, the darker end of the brand
+                    // gradient.
+                    background: loading ? "rgba(3,92,58,0.5)" : "#035C3A",
+                    boxShadow: loading
+                      ? "none"
+                      : "0 10px 24px -6px rgba(3,92,58,0.4), 0 2px 6px rgba(3,92,58,0.15)",
+                    transition: "all .2s",
+                    letterSpacing: "-0.01em",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading) (e.currentTarget as HTMLElement).style.opacity = "0.9";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.opacity = "1";
+                  }}
+                >
+                  {loading ? "Aguarde…" : mode === "login" ? "Entrar →" : "Criar conta →"}
+                </button>
+              </form>
+
+              {/* Footer note */}
+              <p
+                style={{
+                  marginTop: 24,
+                  textAlign: "center",
+                  fontSize: 13,
+                  color: "rgba(11,27,42,0.4)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {mode === "login" ? (
+                  <>
+                    Não tem conta?{" "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode("signup")}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#035C3A",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        padding: 0,
+                      }}
+                    >
+                      Cadastre-se grátis
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Já tem conta?{" "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode("login")}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#035C3A",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        padding: 0,
+                      }}
+                    >
+                      Entre aqui
+                    </button>
+                  </>
+                )}
+              </p>
+            </section>
+          </div>
         </div>
       </main>
 
       {/* Bottom badge */}
       <p
         style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
           textAlign: "center",
           fontSize: 12,
           color: "rgba(11,27,42,0.35)",
@@ -579,6 +657,7 @@ function Login() {
           zIndex: 1,
         }}
       >
+        <ShieldCheck size={13} />
         Dados protegidos · Conforme LGPD
       </p>
     </div>

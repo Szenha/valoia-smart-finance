@@ -1,9 +1,10 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   ArrowUpRight,
   Repeat,
+  Scale,
   Tags,
   Target,
   TrendingUp,
@@ -27,9 +28,9 @@ import { fetchHouseholdMembers, fetchMemberProfiles } from "@/lib/finance/data";
 import { resolveMemberName } from "@/lib/finance/member-visuals";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/finance/types";
+import { categoryTypeLabelPlural, formatCurrency } from "@/lib/finance/types";
 
-export const Route = createFileRoute("/reports")({
+export const Route = createFileRoute("/reports/")({
   beforeLoad: async () => {
     if (typeof window === "undefined") return;
     const {
@@ -216,13 +217,13 @@ function ReportsRoute() {
             </CardHeader>
             <CardContent className="grid grid-cols-3 gap-3 text-center">
               <div>
-                <p className="text-xs text-muted-foreground">Receitas</p>
+                <p className="text-xs text-muted-foreground">{categoryTypeLabelPlural.income}</p>
                 <strong className="text-emerald-700">
                   {formatCurrency(summaryQuery.data?.income ?? 0)}
                 </strong>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Despesas</p>
+                <p className="text-xs text-muted-foreground">{categoryTypeLabelPlural.expense}</p>
                 <strong className="text-red-700">
                   {formatCurrency(summaryQuery.data?.expenses ?? 0)}
                 </strong>
@@ -282,6 +283,12 @@ function ReportsRoute() {
               description="Padrões de despesa que se repetem mês a mês"
               anchor="#report-recurring"
             />
+            <ReportEntryCard
+              icon={Scale}
+              title="Rateio de despesas"
+              description="Descubra quanto cada membro deve pagar ou receber"
+              to="/reports/rateio"
+            />
           </section>
 
           <Card id="report-monthly">
@@ -302,8 +309,8 @@ function ReportsRoute() {
                   />
                   <YAxis />
                   <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  <Bar dataKey="income" fill="#059669" name="Receitas" />
-                  <Bar dataKey="expenses" fill="#dc2626" name="Despesas" />
+                  <Bar dataKey="income" fill="#059669" name={categoryTypeLabelPlural.income} />
+                  <Bar dataKey="expenses" fill="#dc2626" name={categoryTypeLabelPlural.expense} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -351,17 +358,20 @@ function ReportEntryCard({
   title,
   description,
   anchor,
+  to,
 }: {
   icon: LucideIcon;
   title: string;
   description: string;
-  anchor: string;
+  /** Seção na mesma página (a maioria dos relatórios). */
+  anchor?: string;
+  /** Rota própria — usado pelo rateio, que tem estado demais pra caber como seção. */
+  to?: string;
 }) {
-  return (
-    <a
-      href={anchor}
-      className="group flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50/40"
-    >
+  const className =
+    "group flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50/40";
+  const content = (
+    <>
       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
         <Icon className="h-5 w-5" />
       </span>
@@ -373,6 +383,18 @@ function ReportEntryCard({
         Ver detalhes{" "}
         <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
       </span>
+    </>
+  );
+  if (to) {
+    return (
+      <Link to={to} className={className}>
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <a href={anchor} className={className}>
+      {content}
     </a>
   );
 }

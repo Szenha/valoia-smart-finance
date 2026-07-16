@@ -41,6 +41,7 @@ import {
   accountLabel,
   formatCurrency,
   type AccountRow,
+  type AdditionalCardRow,
   type CategoryRow,
   type HouseholdMemberRow,
   type ProfileRow,
@@ -53,6 +54,7 @@ type Props = {
   transactions: TxnRow[];
   categories: CategoryRow[];
   accounts: AccountRow[];
+  additionalCards?: AdditionalCardRow[];
   members: HouseholdMemberRow[];
   profiles: ProfileRow[];
   onCategoryChange: (txn: TxnRow, categoryId: string) => void;
@@ -89,15 +91,33 @@ function truncateDescription(text: string, max = DESCRIPTION_MAX_CHARS) {
   return `${text.slice(0, max).trimEnd()}…`;
 }
 
-function creatorLabel(
-  createdBy: string | null | undefined,
+/** "Gasto de {membro}" quando a transação foi lançada num cartão adicional
+ *  atribuído a outra pessoa (spent_by_member_id), senão "Criado por
+ *  {membro}" — quem efetivamente digitou o lançamento. */
+function attributionInfo(
+  transaction: Pick<TxnRow, "created_by" | "spent_by_member_id">,
   currentUserId: string | null,
   profileById: Map<string, ProfileRow>,
   memberById: Map<string, HouseholdMemberRow>,
 ) {
-  if (!createdBy) return "Sem autor";
-  if (createdBy === currentUserId) return "Criado por você";
-  return `Criado por ${resolveMemberName(memberById.get(createdBy), profileById.get(createdBy), createdBy)}`;
+  const spentBy = transaction.spent_by_member_id;
+  if (spentBy && spentBy !== transaction.created_by) {
+    return {
+      userId: spentBy,
+      label: `Gasto de ${
+        spentBy === currentUserId
+          ? "você"
+          : resolveMemberName(memberById.get(spentBy), profileById.get(spentBy), spentBy)
+      }`,
+    };
+  }
+  const createdBy = transaction.created_by;
+  if (!createdBy) return { userId: null, label: "Sem autor" };
+  if (createdBy === currentUserId) return { userId: createdBy, label: "Criado por você" };
+  return {
+    userId: createdBy,
+    label: `Criado por ${resolveMemberName(memberById.get(createdBy), profileById.get(createdBy), createdBy)}`,
+  };
 }
 
 function memberLabel(
@@ -115,6 +135,7 @@ export function TransactionList({
   transactions,
   categories,
   accounts,
+  additionalCards,
   members,
   profiles,
   currentUserId,
@@ -240,6 +261,12 @@ export function TransactionList({
               const canManage = transaction.created_by
                 ? transaction.created_by === currentUserId
                 : isAdmin;
+              const attribution = attributionInfo(
+                transaction,
+                currentUserId,
+                profileById,
+                memberById,
+              );
               const isIncome = transaction.amount >= 0;
               const TypeIcon = isIncome ? ArrowUpCircle : ArrowDownCircle;
               const CategoryIcon = categoryIconFor(category?.icon, category?.type ?? "expense");
@@ -399,26 +426,21 @@ export function TransactionList({
                             <TooltipContent>{isIncome ? "Entrada" : "Saída"}</TooltipContent>
                           </Tooltip>
                         </div>
-                        {transaction.created_by ? (
+                        {attribution.userId ? (
                           <MemberAvatar
                             name={resolveMemberName(
-                              memberById.get(transaction.created_by),
-                              profileById.get(transaction.created_by),
-                              transaction.created_by,
+                              memberById.get(attribution.userId),
+                              profileById.get(attribution.userId),
+                              attribution.userId,
                             )}
                             color={resolveMemberColor(
-                              transaction.created_by,
-                              memberById.get(transaction.created_by)?.color ?? null,
+                              attribution.userId,
+                              memberById.get(attribution.userId)?.color ?? null,
                             )}
                           />
                         ) : null}
                         <p className="truncate">
-                          {creatorLabel(
-                            transaction.created_by,
-                            currentUserId,
-                            profileById,
-                            memberById,
-                          )}
+                          {attribution.label}
                           {consolidated ? " · período fechado" : ""}
                         </p>
                       </div>
@@ -488,6 +510,9 @@ export function TransactionList({
           userId={currentUserId}
           categories={categories}
           accounts={accounts}
+          additionalCards={additionalCards}
+          members={members}
+          profiles={profiles}
           onClose={() => setEditingTransaction(null)}
         />
       ) : null}

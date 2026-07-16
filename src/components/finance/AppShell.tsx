@@ -13,6 +13,7 @@ import {
   PiggyBank,
   Settings2,
   Tags,
+  Target,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import { TiclioLogo } from "@/components/brand/ticlio-logo";
 import { Button } from "@/components/ui/button";
 import {
   fetchAccounts,
+  fetchAdditionalCards,
   fetchCategories,
   fetchHouseholdMembers,
   fetchMemberProfiles,
@@ -71,7 +73,16 @@ const navItems: NavItem[] = [
     icon: ClipboardCheck,
     section: "conciliacao",
   },
-  { label: "Planejamento", to: "/planejamento", icon: PiggyBank, section: "planejamento" },
+  {
+    label: "Planejamento",
+    to: "/planejamento/orcamento",
+    icon: PiggyBank,
+    section: "planejamento",
+    children: [
+      { label: "Orçamento", to: "/planejamento/orcamento", icon: PiggyBank },
+      { label: "Metas e objetivos", to: "/planejamento/metas", icon: Target },
+    ],
+  },
   {
     label: "Análises",
     to: "/dashboard",
@@ -135,6 +146,11 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
     queryKey: ["accounts", orgId],
     enabled: !!orgId,
     queryFn: () => fetchAccounts(orgId!),
+  });
+  const additionalCardsQuery = useQuery({
+    queryKey: ["additional-cards", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchAdditionalCards(orgId!),
   });
   const membersQuery = useQuery({
     queryKey: ["household-members", orgId],
@@ -337,6 +353,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           userId={currentUserQuery.data?.id ?? null}
           categories={categoriesQuery.data ?? []}
           accounts={accountsQuery.data ?? []}
+          additionalCards={additionalCardsQuery.data ?? []}
           members={membersQuery.data ?? []}
           profiles={profilesQuery.data ?? []}
         />

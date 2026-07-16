@@ -5,13 +5,20 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { transcribeAudioFn, type TranscriptionResult } from "@/lib/ai/transcribe-audio";
 import { extractVoiceTextFn, type PaymentMethodHint } from "@/lib/ai/voice-entry";
-import { matchPaymentAccount } from "@/lib/finance/account-match";
+import { buildPaymentOptions, matchPaymentAccount } from "@/lib/finance/account-match";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import { ensureAccountFromTransaction } from "@/lib/finance/data";
 import { computeInstallmentSchedule } from "@/lib/finance/installments";
+import { resolveMemberName } from "@/lib/finance/member-visuals";
 import { defaultPaymentMethod } from "@/lib/finance/transactionIcons";
-import type { AccountRow, CategoryRow } from "@/lib/finance/types";
+import type {
+  AccountRow,
+  AdditionalCardRow,
+  CategoryRow,
+  HouseholdMemberRow,
+  ProfileRow,
+} from "@/lib/finance/types";
 import { supabase } from "@/lib/supabase/client";
 
 const schema = z.object({
@@ -25,6 +32,10 @@ const schema = z.object({
   payment_method: z.enum(["debit", "credit_card", "pix", "other"]),
   installments_count: z.coerce.number().int().min(1).max(60),
   original_text: z.string().optional(),
+  // Setado quando a conta/cartão escolhido é um cartão adicional — grava
+  // account_id/kind do cartão pai (mesmo limite), mas atribui o gasto ao
+  // membro vinculado ao adicional, separado de quem lançou (created_by).
+  additional_card_id: z.string().nullable().optional(),
 });
 
 export type QuickAddFormValues = z.infer<typeof schema>;
@@ -66,6 +77,9 @@ type Options = {
   userId: string | null;
   categories: CategoryRow[];
   accounts: AccountRow[];
+  additionalCards?: AdditionalCardRow[];
+  members?: HouseholdMemberRow[];
+  profiles?: ProfileRow[];
   onSaved?: () => void;
   /** When set, saveMutation updates this existing transaction in place
    *  instead of inserting a new one — installments/plan creation is skipped
@@ -85,6 +99,9 @@ export function useQuickAddForm({
   userId,
   categories,
   accounts,
+  additionalCards = [],
+  members = [],
+  profiles = [],
   onSaved,
   editingTransactionId,
   initialValues,
@@ -107,6 +124,24 @@ export function useQuickAddForm({
   const myAccounts = accounts.filter((account) => account.owner_user_id === userId);
   const householdAccounts = accounts.filter((account) => account.owner_user_id !== userId);
   const orderedAccounts = [...myAccounts, ...householdAccounts];
+  // Same account list, but with each additional card injected as its own
+  // selectable option (inheriting account_id/kind from its parent card) —
+  // grouped by who it's assigned to, same "Meus"/"Da família" split as
+  // plain accounts.
+  const paymentOptions = buildPaymentOptions(accounts, additionalCards).map((option) => ({
+    ...option,
+    displayLabel: option.additionalCardId
+      ? (option.label ??
+        `${option.account.name} — ${resolveMemberName(
+          members.find((member) => member.user_id === option.ownerId),
+          profiles.find((profile) => profile.id === option.ownerId),
+          option.ownerId,
+        )}`)
+      : option.account.name,
+  }));
+  const myPaymentOptions = paymentOptions.filter((option) => option.ownerId === userId);
+  const householdPaymentOptions = paymentOptions.filter((option) => option.ownerId !== userId);
+  const additionalCardById = new Map(additionalCards.map((card) => [card.id, card]));
 
   useEffect(() => {
     return () => {
@@ -150,6 +185,10 @@ export function useQuickAddForm({
         );
       }
 
+      const spentByMemberId = values.additional_card_id
+        ? (additionalCardById.get(values.additional_card_id)?.member_user_id ?? null)
+        : null;
+
       if (editingTransactionId) {
         const { error } = await supabase
           .from("transactions")
@@ -165,6 +204,7 @@ export function useQuickAddForm({
             classification_method: values.category_id ? "manual" : null,
             classification_confidence: values.category_id ? 1 : null,
             needs_review: !values.category_id,
+            spent_by_member_id: spentByMemberId,
           })
           .eq("id", editingTransactionId)
           .eq("organization_id", orgId);
@@ -182,6 +222,7 @@ export function useQuickAddForm({
         entry_source: usedAiDraft ? "voice_ai" : "manual",
         currency: "BRL",
         created_by: userId,
+        spent_by_member_id: spentByMemberId,
         category_id: values.category_id || null,
         original_text: values.original_text || null,
         classification_method: values.category_id ? "manual" : null,
@@ -243,6 +284,7 @@ export function useQuickAddForm({
           account_id: form.getValues("account_id"),
           account_kind: form.getValues("account_kind"),
           payment_method: form.getValues("payment_method"),
+          additional_card_id: form.getValues("additional_card_id"),
           installments_count: 1,
           original_text: "",
         });
@@ -286,18 +328,22 @@ export function useQuickAddForm({
     payment_method_hint: PaymentMethodHint;
     account_hint: string | null;
   }): string {
-    const match = matchPaymentAccount(accounts, {
-      paymentMethodHint: draft.payment_method_hint,
-      accountNameHint: draft.account_hint,
-    });
+    const match = matchPaymentAccount(
+      accounts,
+      additionalCards,
+      { paymentMethodHint: draft.payment_method_hint, accountNameHint: draft.account_hint },
+      userId,
+    );
     if (match.status === "resolved") {
       form.setValue("account_id", match.accountId);
       form.setValue("account_kind", match.accountKind);
       form.setValue("payment_method", defaultPaymentMethod(match.accountKind));
+      form.setValue("additional_card_id", match.additionalCardId);
       return "";
     }
     if (match.status === "ambiguous") {
       form.setValue("account_id", "");
+      form.setValue("additional_card_id", null);
       const kindLabel = match.accountKind === "credit_card" ? "cartão" : "conta";
       return ` Selecione qual ${kindLabel} foi usado.`;
     }
@@ -460,6 +506,8 @@ export function useQuickAddForm({
     myAccounts,
     householdAccounts,
     orderedAccounts,
+    myPaymentOptions,
+    householdPaymentOptions,
     saveMutation,
     suggestCategory,
     interpretNativeText,

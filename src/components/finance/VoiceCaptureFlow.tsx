@@ -8,8 +8,10 @@ import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visu
 import { paymentMethodLabel, type PaymentMethod } from "@/lib/finance/transactionIcons";
 import {
   accountLabel,
+  categoryTypeLabel,
   formatCurrency,
   type AccountRow,
+  type AdditionalCardRow,
   type CategoryRow,
   type HouseholdMemberRow,
   type ProfileRow,
@@ -26,14 +28,9 @@ type Props = {
   userId: string | null;
   categories: CategoryRow[];
   accounts: AccountRow[];
+  additionalCards?: AdditionalCardRow[];
   members: HouseholdMemberRow[];
   profiles: ProfileRow[];
-};
-
-const TRANSACTION_TYPE_LABEL: Record<string, string> = {
-  expense: "Despesa",
-  income: "Receita",
-  transfer: "Transferência",
 };
 
 export function VoiceCaptureFlow({
@@ -43,6 +40,7 @@ export function VoiceCaptureFlow({
   userId,
   categories,
   accounts,
+  additionalCards,
   members,
   profiles,
 }: Props) {
@@ -53,6 +51,9 @@ export function VoiceCaptureFlow({
     userId,
     categories,
     accounts,
+    additionalCards,
+    members,
+    profiles,
     onSaved: () => onOpenChange(false),
   });
 
@@ -103,6 +104,26 @@ export function VoiceCaptureFlow({
   const memberName = userId ? resolveMemberName(currentMember, currentProfile, userId) : "Eu";
   const memberColor = userId ? resolveMemberColor(userId, currentMember?.color ?? null) : "#059669";
   const account = accounts.find((a) => a.account_key === values.account_id);
+  // A cartão adicional foi selecionado (manual ou via casamento por voz) —
+  // o gasto é de quem está vinculado a ele, não de quem está logado.
+  const spentByMemberId = values.additional_card_id
+    ? (additionalCards?.find((card) => card.id === values.additional_card_id)?.member_user_id ??
+      null)
+    : null;
+  const spenderLabel = spentByMemberId
+    ? {
+        prefix: "Gasto de",
+        name: resolveMemberName(
+          members.find((member) => member.user_id === spentByMemberId),
+          profiles.find((profile) => profile.id === spentByMemberId),
+          spentByMemberId,
+        ),
+        color: resolveMemberColor(
+          spentByMemberId,
+          members.find((member) => member.user_id === spentByMemberId)?.color ?? null,
+        ),
+      }
+    : { prefix: "Lançado por", name: memberName, color: memberColor };
 
   const isDarkStage = stage === "listening" || stage === "processing";
 
@@ -213,7 +234,7 @@ export function VoiceCaptureFlow({
             </div>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <SummaryField label="Valor" value={formatCurrency(values.amount)} />
-              <SummaryField label="Tipo" value={TRANSACTION_TYPE_LABEL[values.transaction_type]} />
+              <SummaryField label="Tipo" value={categoryTypeLabel[values.transaction_type]} />
               <SummaryField
                 label="Categoria"
                 value={categoryPath(categories, values.category_id || null)}
@@ -241,8 +262,10 @@ export function VoiceCaptureFlow({
                 }
               />
               <div className="col-span-2 flex items-center gap-2 pt-1">
-                <MemberAvatar name={memberName} color={memberColor} />
-                <span className="text-sm text-muted-foreground">Lançado por {memberName}</span>
+                <MemberAvatar name={spenderLabel.name} color={spenderLabel.color} />
+                <span className="text-sm text-muted-foreground">
+                  {spenderLabel.prefix} {spenderLabel.name}
+                </span>
               </div>
             </dl>
             <div className="flex gap-2">

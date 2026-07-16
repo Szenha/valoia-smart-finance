@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ensureDefaultCategories, learnFromConfirmation } from "@/lib/classification/pipeline";
 import {
   fetchAccounts,
+  fetchAdditionalCards,
   fetchHouseholdMembers,
   fetchMemberProfiles,
   fetchTransactions,
@@ -76,6 +77,12 @@ function Index() {
     queryFn: () => fetchAccounts(orgId!),
   });
 
+  const additionalCardsQuery = useQuery({
+    queryKey: ["additional-cards", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchAdditionalCards(orgId!),
+  });
+
   const membersQuery = useQuery({
     queryKey: ["household-members", orgId],
     enabled: !!orgId,
@@ -111,6 +118,7 @@ function Index() {
 
   const categories = (categoriesQuery.data ?? []) as CategoryRow[];
   const accounts = (accountsQuery.data ?? []) as AccountRow[];
+  const additionalCards = additionalCardsQuery.data ?? [];
   const transactions = transactionsQuery.data ?? [];
 
   return (
@@ -150,6 +158,7 @@ function Index() {
         userId={userId}
         categories={categories}
         accounts={accounts}
+        additionalCards={additionalCards}
         members={membersQuery.data ?? []}
         profiles={profilesQuery.data ?? []}
       />
@@ -163,6 +172,9 @@ function Index() {
             userId={userId}
             categories={categories}
             accounts={accounts}
+            additionalCards={additionalCards}
+            members={membersQuery.data ?? []}
+            profiles={profilesQuery.data ?? []}
             onSaved={() => setManualOpen(false)}
           />
         </DialogContent>
@@ -173,6 +185,7 @@ function Index() {
         transactions={transactions}
         categories={categories}
         accounts={accounts}
+        additionalCards={additionalCards}
         members={membersQuery.data ?? []}
         profiles={profilesQuery.data ?? []}
         currentUserId={userId}

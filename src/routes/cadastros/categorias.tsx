@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,15 +33,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { CategoryTree } from "@/components/finance/CategoryTree";
 import {
   buildCategoryTree,
   categoryOptions,
   descendantCategoryIds,
-  type CategoryOption,
 } from "@/lib/finance/categories";
-import { CATEGORY_ICON_OPTIONS, categoryIconFor } from "@/lib/finance/category-icons";
+import { CATEGORY_ICON_OPTIONS } from "@/lib/finance/category-icons";
 import { fetchCategories } from "@/lib/finance/data";
-import type { CategoryRow } from "@/lib/finance/types";
+import { categoryTypeLabel, type CategoryRow, type CategoryType } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 
@@ -57,7 +58,6 @@ export const Route = createFileRoute("/cadastros/categorias")({
 });
 
 type CreateStep = "choose" | "category" | "subcategory";
-type CategoryType = "expense" | "income" | "transfer";
 
 /** Every ancestor id of `categoryId`, walking up from immediate parent to root. */
 function ancestorChain(categories: CategoryRow[], categoryId: string): string[] {
@@ -86,11 +86,23 @@ function CategoriasRoute() {
   const categoryTree = buildCategoryTree(categories);
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const hasSeededExpansion = useRef(false);
+
+  useEffect(() => {
+    const loaded = categoriesQuery.data;
+    if (hasSeededExpansion.current || !loaded || loaded.length === 0) return;
+    hasSeededExpansion.current = true;
+    const parentsWithChildren = new Set(
+      loaded.filter((category) => category.parent_id).map((category) => category.parent_id!),
+    );
+    setExpandedCategories(parentsWithChildren);
+  }, [categoriesQuery.data]);
 
   // Create flow: "choose" is always the first thing shown.
   const [createOpen, setCreateOpen] = useState(false);
   const [createStep, setCreateStep] = useState<CreateStep>("choose");
   const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<CategoryType | null>(null);
   const [newParentId, setNewParentId] = useState("");
   const [newIcon, setNewIcon] = useState("");
 
@@ -119,6 +131,7 @@ function CategoriasRoute() {
   function openCreateDialog() {
     setCreateStep("choose");
     setNewName("");
+    setNewType(null);
     setNewParentId("");
     setNewIcon("");
     setCreateOpen(true);
@@ -129,10 +142,14 @@ function CategoriasRoute() {
     if (!open) {
       setCreateStep("choose");
       setNewName("");
+      setNewType(null);
       setNewParentId("");
       setNewIcon("");
     }
   }
+
+  const newParentCategory =
+    createStep === "subcategory" ? categories.find((c) => c.id === newParentId) : undefined;
 
   const createCategory = useMutation({
     mutationFn: async () => {
@@ -140,12 +157,15 @@ function CategoriasRoute() {
       if (createStep === "subcategory" && !newParentId) {
         throw new Error("Escolha a categoria à qual esta subcategoria vai pertencer.");
       }
+      if (createStep === "category" && !newType) {
+        throw new Error("Escolha se a categoria é de despesa ou receita.");
+      }
       const parent =
         createStep === "subcategory" ? categories.find((c) => c.id === newParentId) : null;
       const { error } = await supabase.from("categories").insert({
         organization_id: orgId,
         name: newName,
-        type: parent?.type ?? "expense",
+        type: createStep === "subcategory" ? parent!.type : newType,
         parent_id: createStep === "subcategory" ? newParentId : null,
         icon: newIcon || null,
       });
@@ -249,19 +269,33 @@ function CategoriasRoute() {
         </CardHeader>
         <CardContent>
           <div className="rounded-lg border border-slate-200 bg-white p-2">
-            {categoryTree.map((category) => (
-              <CategoryTreeItem
-                key={category.id}
-                category={category}
-                expanded={expandedCategories}
-                onToggle={toggleCategory}
-                onEdit={startEditCategory}
-                onDelete={confirmDeleteCategory}
-              />
-            ))}
-            {categoryTree.length === 0 ? (
-              <p className="p-3 text-sm text-muted-foreground">Nenhuma categoria criada.</p>
-            ) : null}
+            <CategoryTree
+              nodes={categoryTree}
+              expanded={expandedCategories}
+              onToggle={toggleCategory}
+              renderActions={(category) => (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => startEditCategory(category)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-red-700"
+                    onClick={() => confirmDeleteCategory(category)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            />
           </div>
         </CardContent>
       </Card>
@@ -306,6 +340,23 @@ function CategoriasRoute() {
                 <DialogTitle>Nova categoria</DialogTitle>
               </DialogHeader>
               <div>
+                <Label>Tipo</Label>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  className="mt-1 justify-start"
+                  value={newType ?? ""}
+                  onValueChange={(value) => setNewType(value ? (value as CategoryType) : null)}
+                >
+                  <ToggleGroupItem value="expense" className="px-4">
+                    {categoryTypeLabel.expense}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="income" className="px-4">
+                    {categoryTypeLabel.income}
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              <div>
                 <Label>Nome</Label>
                 <Input
                   autoFocus
@@ -321,7 +372,7 @@ function CategoriasRoute() {
                 <Button
                   type="button"
                   onClick={() => createCategory.mutate()}
-                  disabled={!newName || createCategory.isPending}
+                  disabled={!newName || !newType || createCategory.isPending}
                 >
                   Criar categoria
                 </Button>
@@ -346,6 +397,13 @@ function CategoriasRoute() {
                     ))}
                   </SelectContent>
                 </Select>
+                {newParentCategory ? (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Esta subcategoria será classificada como{" "}
+                    <strong>{categoryTypeLabel[newParentCategory.type]}</strong>, seguindo a
+                    categoria {newParentCategory.name}.
+                  </p>
+                ) : null}
               </div>
               <div>
                 <Label>Nome</Label>
@@ -392,9 +450,9 @@ function CategoriasRoute() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="expense">Despesa</SelectItem>
-                <SelectItem value="income">Receita</SelectItem>
-                <SelectItem value="transfer">Transferência</SelectItem>
+                <SelectItem value="expense">{categoryTypeLabel.expense}</SelectItem>
+                <SelectItem value="income">{categoryTypeLabel.income}</SelectItem>
+                <SelectItem value="transfer">{categoryTypeLabel.transfer}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -459,94 +517,6 @@ function CategoriasRoute() {
         </AlertDialogContent>
       </AlertDialog>
     </AppShell>
-  );
-}
-
-function CategoryTreeItem({
-  category,
-  expanded,
-  onToggle,
-  onEdit,
-  onDelete,
-}: {
-  category: CategoryOption;
-  expanded: Set<string>;
-  onToggle: (categoryId: string) => void;
-  onEdit: (category: CategoryRow) => void;
-  onDelete: (category: CategoryRow) => void;
-}) {
-  const hasChildren = category.children.length > 0;
-  const isExpanded = expanded.has(category.id);
-
-  return (
-    <div>
-      <div
-        className="flex items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-slate-50"
-        style={{ paddingLeft: `${category.depth * 18 + 8}px` }}
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          disabled={!hasChildren}
-          onClick={() => onToggle(category.id)}
-        >
-          {hasChildren && isExpanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-        </Button>
-        <CategoryIconBadge icon={category.icon} type={category.type} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{category.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{category.path}</p>
-        </div>
-        <span className="hidden rounded bg-slate-100 px-2 py-1 text-xs text-muted-foreground sm:inline">
-          {category.type}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => onEdit(category)}
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-red-700"
-          onClick={() => onDelete(category)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
-      {hasChildren && isExpanded
-        ? category.children.map((child) => (
-            <CategoryTreeItem
-              key={child.id}
-              category={child}
-              expanded={expanded}
-              onToggle={onToggle}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))
-        : null}
-    </div>
-  );
-}
-
-function CategoryIconBadge({ icon, type }: { icon: string | null | undefined; type: string }) {
-  const Icon = categoryIconFor(icon, type);
-  return (
-    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-      <Icon className="h-3.5 w-3.5" />
-    </span>
   );
 }
 

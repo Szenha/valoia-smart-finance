@@ -1,6 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import type { AccountRow, CategoryRow, TxnRow } from "@/lib/finance/types";
+import type {
+  AccountRow,
+  AdditionalCardRow,
+  CategoryRow,
+  HouseholdMemberRow,
+  ProfileRow,
+  TxnRow,
+} from "@/lib/finance/types";
 import { QuickAddFields } from "./QuickAddFields";
 import { useQuickAddForm, type QuickAddFormValues } from "./useQuickAddForm";
 
@@ -10,6 +17,9 @@ type Props = {
   userId: string | null;
   categories: CategoryRow[];
   accounts: AccountRow[];
+  additionalCards?: AdditionalCardRow[];
+  members?: HouseholdMemberRow[];
+  profiles?: ProfileRow[];
   onClose: () => void;
 };
 
@@ -30,13 +40,30 @@ export function TransactionEditDialog({
   userId,
   categories,
   accounts,
+  additionalCards = [],
+  members,
+  profiles,
   onClose,
 }: Props) {
+  // Reconstrói qual cartão adicional estava selecionado, se algum, a partir
+  // de account_id + spent_by_member_id — o form só guarda o additional_card_id.
+  const initialAdditionalCard = transaction.spent_by_member_id
+    ? additionalCards.find(
+        (card) =>
+          card.member_user_id === transaction.spent_by_member_id &&
+          accounts.find((a) => a.id === card.financial_account_id)?.account_key ===
+            transaction.account_id,
+      )
+    : undefined;
+
   const api = useQuickAddForm({
     orgId,
     userId,
     categories,
     accounts,
+    additionalCards,
+    members,
+    profiles,
     editingTransactionId: transaction.id,
     initialValues: {
       transaction_type: transactionTypeOf(transaction),
@@ -49,6 +76,7 @@ export function TransactionEditDialog({
       payment_method: transaction.payment_method as QuickAddFormValues["payment_method"],
       installments_count: 1,
       original_text: transaction.original_text ?? "",
+      additional_card_id: initialAdditionalCard?.id ?? null,
     },
     onSaved: onClose,
   });

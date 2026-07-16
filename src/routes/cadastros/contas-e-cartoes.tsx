@@ -1,11 +1,19 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, RefreshCcw, Trash2 } from "lucide-react";
+import { Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
+import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,14 +24,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  addAdditionalCard,
   countAccountTransactions,
   deleteAccount,
   fetchAccountBalances,
   fetchAccounts,
+  fetchAdditionalCards,
   fetchCardSummary,
   fetchHouseholdMembers,
   fetchMemberProfiles,
+  removeAdditionalCard,
 } from "@/lib/finance/data";
+import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import {
   accountKindIcon,
   accountKindLabel,
@@ -31,6 +43,7 @@ import {
   memberDisplayName,
   type AccountKind,
   type AccountRow,
+  type AdditionalCardRow,
 } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -99,6 +112,11 @@ function ContasECartoesRoute() {
     queryKey: ["card-summary", orgId],
     enabled: !!orgId,
     queryFn: () => fetchCardSummary(orgId!),
+  });
+  const additionalCardsQuery = useQuery({
+    queryKey: ["additional-cards", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchAdditionalCards(orgId!),
   });
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -211,6 +229,33 @@ function ContasECartoesRoute() {
     await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
   }
 
+  const [addingHolderFor, setAddingHolderFor] = useState<AccountRow | null>(null);
+  const [holderMemberId, setHolderMemberId] = useState("");
+  const [holderLabel, setHolderLabel] = useState("");
+
+  const addHolder = useMutation({
+    mutationFn: async () => {
+      if (!orgId || !addingHolderFor || !holderMemberId) return;
+      await addAdditionalCard(orgId, addingHolderFor.id, holderMemberId, holderLabel || null);
+    },
+    onSuccess: async () => {
+      setAddingHolderFor(null);
+      setHolderMemberId("");
+      setHolderLabel("");
+      await queryClient.invalidateQueries({ queryKey: ["additional-cards", orgId] });
+    },
+  });
+
+  const removeHolder = useMutation({
+    mutationFn: async (holderId: string) => {
+      if (!orgId) return;
+      await removeAdditionalCard(orgId, holderId);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["additional-cards", orgId] });
+    },
+  });
+
   if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
 
   const balanceByAccountId = new Map(
@@ -223,6 +268,13 @@ function ContasECartoesRoute() {
   const consolidatedBalance = checkingBalances.reduce((sum, row) => sum + row.current_balance, 0);
   const profileById = new Map((profilesQuery.data ?? []).map((profile) => [profile.id, profile]));
   const members = membersQuery.data ?? [];
+  const memberById = new Map(members.map((member) => [member.user_id, member]));
+  const additionalCardsByAccountId = new Map<string, AdditionalCardRow[]>();
+  for (const holder of additionalCardsQuery.data ?? []) {
+    const list = additionalCardsByAccountId.get(holder.financial_account_id) ?? [];
+    list.push(holder);
+    additionalCardsByAccountId.set(holder.financial_account_id, list);
+  }
 
   return (
     <AppShell
@@ -493,6 +545,72 @@ function ContasECartoesRoute() {
                       </span>
                     </div>
 
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-slate-500">
+                          Cartões adicionais · mesmo limite
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => {
+                            setAddingHolderFor(account);
+                            setHolderMemberId("");
+                            setHolderLabel("");
+                          }}
+                        >
+                          <Plus className="mr-1 h-3.5 w-3.5" />
+                          Adicionar
+                        </Button>
+                      </div>
+                      {(additionalCardsByAccountId.get(account.id) ?? []).length > 0 ? (
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          {(additionalCardsByAccountId.get(account.id) ?? []).map((holder) => {
+                            const holderName = resolveMemberName(
+                              memberById.get(holder.member_user_id),
+                              profileById.get(holder.member_user_id),
+                              holder.member_user_id,
+                            );
+                            return (
+                              <div
+                                key={holder.id}
+                                className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5"
+                              >
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <MemberAvatar
+                                    name={holderName}
+                                    color={resolveMemberColor(
+                                      holder.member_user_id,
+                                      memberById.get(holder.member_user_id)?.color ?? null,
+                                    )}
+                                  />
+                                  <span className="truncate text-xs text-slate-600">
+                                    {holder.label ?? `${account.name} — ${holderName}`}
+                                  </span>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0 text-slate-400 hover:text-red-600"
+                                  aria-label="Remover cartão adicional"
+                                  onClick={() => removeHolder.mutate(holder.id)}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          Nenhum cartão adicional vinculado.
+                        </p>
+                      )}
+                    </div>
+
                     <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
                       <p className="text-xs text-muted-foreground">
                         {formatCurrency(cardSummary?.future_installments_total ?? 0)} em parcelas
@@ -597,6 +715,82 @@ function ContasECartoesRoute() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!addingHolderFor} onOpenChange={(open) => !open && setAddingHolderFor(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo cartão adicional</DialogTitle>
+          </DialogHeader>
+          {addingHolderFor ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Vinculado a <strong>{addingHolderFor.name}</strong> — usa o mesmo limite do cartão
+                principal.
+              </p>
+              <div>
+                <Label>Membro</Label>
+                <Select value={holderMemberId} onValueChange={setHolderMemberId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o membro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members
+                      .filter(
+                        (member) =>
+                          member.user_id !== addingHolderFor.owner_user_id &&
+                          !(additionalCardsByAccountId.get(addingHolderFor.id) ?? []).some(
+                            (holder) => holder.member_user_id === member.user_id,
+                          ),
+                      )
+                      .map((member) => (
+                        <SelectItem key={member.user_id} value={member.user_id}>
+                          {member.user_id === currentUserId
+                            ? "Eu"
+                            : memberDisplayName(profileById.get(member.user_id), member.user_id)}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Apelido (opcional)</Label>
+                <Input
+                  value={holderLabel}
+                  onChange={(event) => setHolderLabel(event.target.value)}
+                  placeholder={
+                    holderMemberId
+                      ? `${addingHolderFor.name} — ${
+                          holderMemberId === currentUserId
+                            ? "Eu"
+                            : memberDisplayName(profileById.get(holderMemberId), holderMemberId)
+                        }`
+                      : `${addingHolderFor.name} — nome do membro`
+                  }
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setAddingHolderFor(null)}>
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => addHolder.mutate()}
+                  disabled={!holderMemberId || addHolder.isPending}
+                >
+                  Adicionar cartão adicional
+                </Button>
+              </DialogFooter>
+              {addHolder.error ? (
+                <p className="text-sm text-red-700">
+                  {addHolder.error instanceof Error
+                    ? addHolder.error.message
+                    : String(addHolder.error)}
+                </p>
+              ) : null}
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

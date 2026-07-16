@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { defaultPaymentMethod } from "@/lib/finance/transactionIcons";
+import { categoryTypeLabel } from "@/lib/finance/types";
 import { formatSeconds, PROCESSING_LABEL, type QuickAddFormValues } from "./useQuickAddForm";
 import type { useQuickAddForm } from "./useQuickAddForm";
 
@@ -113,9 +114,9 @@ export function QuickAddFields({ api, autoFocusInput, hideRecordButton }: Props)
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="expense">Despesa</SelectItem>
-            <SelectItem value="income">Receita</SelectItem>
-            <SelectItem value="transfer">Transferência</SelectItem>
+            <SelectItem value="expense">{categoryTypeLabel.expense}</SelectItem>
+            <SelectItem value="income">{categoryTypeLabel.income}</SelectItem>
+            <SelectItem value="transfer">{categoryTypeLabel.transfer}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -153,41 +154,50 @@ export function QuickAddFields({ api, autoFocusInput, hideRecordButton }: Props)
       <div className="md:col-span-2">
         <Label>Conta/cartão</Label>
         <Select
-          value={`${form.watch("account_id")}|${form.watch("account_kind")}`}
+          value={`${form.watch("account_id")}|${form.watch("account_kind")}|${form.watch("additional_card_id") ?? ""}`}
           onValueChange={(value) => {
-            const [accountId, accountKind] = value.split("|");
+            const [accountId, accountKind, additionalCardId] = value.split("|");
             form.setValue("account_id", accountId);
             form.setValue("account_kind", accountKind as QuickAddFormValues["account_kind"]);
             form.setValue("payment_method", defaultPaymentMethod(accountKind));
+            form.setValue("additional_card_id", additionalCardId || null);
           }}
         >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {api.myAccounts.length > 0 && (
+            {api.myPaymentOptions.length > 0 && (
               <SelectGroup>
                 <SelectLabel>Meus</SelectLabel>
-                {api.myAccounts.map((account) => (
-                  <SelectItem key={account.id} value={`${account.account_key}|${account.kind}`}>
-                    {account.name}
+                {api.myPaymentOptions.map((option) => (
+                  <SelectItem
+                    key={`${option.account.id}|${option.additionalCardId ?? ""}`}
+                    value={`${option.accountId}|${option.accountKind}|${option.additionalCardId ?? ""}`}
+                  >
+                    {option.displayLabel}
                   </SelectItem>
                 ))}
               </SelectGroup>
             )}
-            {api.myAccounts.length > 0 && api.householdAccounts.length > 0 && <SelectSeparator />}
-            {api.householdAccounts.length > 0 && (
+            {api.myPaymentOptions.length > 0 && api.householdPaymentOptions.length > 0 && (
+              <SelectSeparator />
+            )}
+            {api.householdPaymentOptions.length > 0 && (
               <SelectGroup>
                 <SelectLabel>Da família</SelectLabel>
-                {api.householdAccounts.map((account) => (
-                  <SelectItem key={account.id} value={`${account.account_key}|${account.kind}`}>
-                    {account.name}
+                {api.householdPaymentOptions.map((option) => (
+                  <SelectItem
+                    key={`${option.account.id}|${option.additionalCardId ?? ""}`}
+                    value={`${option.accountId}|${option.accountKind}|${option.additionalCardId ?? ""}`}
+                  >
+                    {option.displayLabel}
                   </SelectItem>
                 ))}
               </SelectGroup>
             )}
             {api.orderedAccounts.length === 0 && (
-              <SelectItem value="manual-cash|checking">Dinheiro</SelectItem>
+              <SelectItem value="manual-cash|checking|">Dinheiro</SelectItem>
             )}
           </SelectContent>
         </Select>

@@ -9,27 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ReportsRouteImport } from './routes/reports'
-import { Route as PlanejamentoRouteImport } from './routes/planejamento'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LandingRouteImport } from './routes/landing'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConciliacaoRouteImport } from './routes/conciliacao'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ReportsIndexRouteImport } from './routes/reports/index'
+import { Route as ReportsRateioRouteImport } from './routes/reports/rateio'
+import { Route as PlanejamentoOrcamentoRouteImport } from './routes/planejamento/orcamento'
+import { Route as PlanejamentoMetasRouteImport } from './routes/planejamento/metas'
 import { Route as CadastrosMembrosRouteImport } from './routes/cadastros/membros'
 import { Route as CadastrosContasECartoesRouteImport } from './routes/cadastros/contas-e-cartoes'
 import { Route as CadastrosCategoriasRouteImport } from './routes/cadastros/categorias'
 
-const ReportsRoute = ReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlanejamentoRoute = PlanejamentoRouteImport.update({
-  id: '/planejamento',
-  path: '/planejamento',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -55,6 +47,26 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsIndexRoute = ReportsIndexRouteImport.update({
+  id: '/reports/',
+  path: '/reports/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRateioRoute = ReportsRateioRouteImport.update({
+  id: '/reports/rateio',
+  path: '/reports/rateio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlanejamentoOrcamentoRoute = PlanejamentoOrcamentoRouteImport.update({
+  id: '/planejamento/orcamento',
+  path: '/planejamento/orcamento',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlanejamentoMetasRoute = PlanejamentoMetasRouteImport.update({
+  id: '/planejamento/metas',
+  path: '/planejamento/metas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CadastrosMembrosRoute = CadastrosMembrosRouteImport.update({
   id: '/cadastros/membros',
   path: '/cadastros/membros',
@@ -77,11 +89,13 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
-  '/planejamento': typeof PlanejamentoRoute
-  '/reports': typeof ReportsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/planejamento/metas': typeof PlanejamentoMetasRoute
+  '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
+  '/reports/rateio': typeof ReportsRateioRoute
+  '/reports/': typeof ReportsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -89,11 +103,13 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
-  '/planejamento': typeof PlanejamentoRoute
-  '/reports': typeof ReportsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/planejamento/metas': typeof PlanejamentoMetasRoute
+  '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
+  '/reports/rateio': typeof ReportsRateioRoute
+  '/reports': typeof ReportsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -102,11 +118,13 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
-  '/planejamento': typeof PlanejamentoRoute
-  '/reports': typeof ReportsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/planejamento/metas': typeof PlanejamentoMetasRoute
+  '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
+  '/reports/rateio': typeof ReportsRateioRoute
+  '/reports/': typeof ReportsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -116,11 +134,13 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/landing'
     | '/login'
-    | '/planejamento'
-    | '/reports'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/planejamento/metas'
+    | '/planejamento/orcamento'
+    | '/reports/rateio'
+    | '/reports/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -128,11 +148,13 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/landing'
     | '/login'
-    | '/planejamento'
-    | '/reports'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/planejamento/metas'
+    | '/planejamento/orcamento'
+    | '/reports/rateio'
+    | '/reports'
   id:
     | '__root__'
     | '/'
@@ -140,11 +162,13 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/landing'
     | '/login'
-    | '/planejamento'
-    | '/reports'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/planejamento/metas'
+    | '/planejamento/orcamento'
+    | '/reports/rateio'
+    | '/reports/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -153,29 +177,17 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   LandingRoute: typeof LandingRoute
   LoginRoute: typeof LoginRoute
-  PlanejamentoRoute: typeof PlanejamentoRoute
-  ReportsRoute: typeof ReportsRoute
   CadastrosCategoriasRoute: typeof CadastrosCategoriasRoute
   CadastrosContasECartoesRoute: typeof CadastrosContasECartoesRoute
   CadastrosMembrosRoute: typeof CadastrosMembrosRoute
+  PlanejamentoMetasRoute: typeof PlanejamentoMetasRoute
+  PlanejamentoOrcamentoRoute: typeof PlanejamentoOrcamentoRoute
+  ReportsRateioRoute: typeof ReportsRateioRoute
+  ReportsIndexRoute: typeof ReportsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/reports': {
-      id: '/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ReportsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/planejamento': {
-      id: '/planejamento'
-      path: '/planejamento'
-      fullPath: '/planejamento'
-      preLoaderRoute: typeof PlanejamentoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -211,6 +223,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports/': {
+      id: '/reports/'
+      path: '/reports'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof ReportsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/rateio': {
+      id: '/reports/rateio'
+      path: '/reports/rateio'
+      fullPath: '/reports/rateio'
+      preLoaderRoute: typeof ReportsRateioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planejamento/orcamento': {
+      id: '/planejamento/orcamento'
+      path: '/planejamento/orcamento'
+      fullPath: '/planejamento/orcamento'
+      preLoaderRoute: typeof PlanejamentoOrcamentoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planejamento/metas': {
+      id: '/planejamento/metas'
+      path: '/planejamento/metas'
+      fullPath: '/planejamento/metas'
+      preLoaderRoute: typeof PlanejamentoMetasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cadastros/membros': {
       id: '/cadastros/membros'
       path: '/cadastros/membros'
@@ -241,11 +281,13 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LandingRoute: LandingRoute,
   LoginRoute: LoginRoute,
-  PlanejamentoRoute: PlanejamentoRoute,
-  ReportsRoute: ReportsRoute,
   CadastrosCategoriasRoute: CadastrosCategoriasRoute,
   CadastrosContasECartoesRoute: CadastrosContasECartoesRoute,
   CadastrosMembrosRoute: CadastrosMembrosRoute,
+  PlanejamentoMetasRoute: PlanejamentoMetasRoute,
+  PlanejamentoOrcamentoRoute: PlanejamentoOrcamentoRoute,
+  ReportsRateioRoute: ReportsRateioRoute,
+  ReportsIndexRoute: ReportsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

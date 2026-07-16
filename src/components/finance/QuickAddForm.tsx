@@ -1,6 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AccountRow, CategoryRow } from "@/lib/finance/types";
+import type {
+  AccountRow,
+  AdditionalCardRow,
+  CategoryRow,
+  HouseholdMemberRow,
+  ProfileRow,
+} from "@/lib/finance/types";
 import { QuickAddFields } from "./QuickAddFields";
 import { useQuickAddForm } from "./useQuickAddForm";
 
@@ -9,6 +15,9 @@ type Props = {
   userId: string | null;
   categories: CategoryRow[];
   accounts: AccountRow[];
+  additionalCards?: AdditionalCardRow[];
+  members?: HouseholdMemberRow[];
+  profiles?: ProfileRow[];
   /** Focus the voice/text field on mount — used when opened from the mobile FAB sheet. */
   autoFocusInput?: boolean;
   /** Called after a successful save — used by the FAB sheet to close itself. */
@@ -25,11 +34,23 @@ export function QuickAddForm({
   userId,
   categories,
   accounts,
+  additionalCards,
+  members,
+  profiles,
   autoFocusInput,
   onSaved,
   bare,
 }: Props) {
-  const api = useQuickAddForm({ orgId, userId, categories, accounts, onSaved });
+  const api = useQuickAddForm({
+    orgId,
+    userId,
+    categories,
+    accounts,
+    additionalCards,
+    members,
+    profiles,
+    onSaved,
+  });
 
   const formContent = (
     <form

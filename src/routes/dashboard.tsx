@@ -14,7 +14,7 @@ import {
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/finance/types";
+import { categoryTypeLabelPlural, formatCurrency } from "@/lib/finance/types";
 
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
@@ -170,8 +170,16 @@ function DashboardRoute() {
       <AnalyticsTabs value="dashboard" />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        <StatCard label="Receitas" value={formatCurrency(summary?.income ?? 0)} theme="green" />
-        <StatCard label="Despesas" value={formatCurrency(summary?.expenses ?? 0)} theme="coral" />
+        <StatCard
+          label={categoryTypeLabelPlural.income}
+          value={formatCurrency(summary?.income ?? 0)}
+          theme="green"
+        />
+        <StatCard
+          label={categoryTypeLabelPlural.expense}
+          value={formatCurrency(summary?.expenses ?? 0)}
+          theme="coral"
+        />
         <StatCard
           label="A receber"
           value={formatCurrency(receivableQuery.data ?? 0)}
