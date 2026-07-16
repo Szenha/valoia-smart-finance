@@ -104,6 +104,15 @@ export function VoiceCaptureFlow({
   const memberName = userId ? resolveMemberName(currentMember, currentProfile, userId) : "Eu";
   const memberColor = userId ? resolveMemberColor(userId, currentMember?.color ?? null) : "#059669";
   const account = accounts.find((a) => a.account_key === values.account_id);
+  // O account_key é compartilhado entre o cartão principal e seus adicionais
+  // (mesmo limite) — achar só por ele sempre devolve o cartão principal.
+  // Pra mostrar o cartão de fato atribuído (o adicional, quando for o caso),
+  // usa a mesma lista de opções com rótulo completo que a tela de edição usa.
+  const selectedPaymentOption = [...api.myPaymentOptions, ...api.householdPaymentOptions].find(
+    (option) =>
+      option.accountId === values.account_id &&
+      option.additionalCardId === (values.additional_card_id ?? null),
+  );
   // A cartão adicional foi selecionado (manual ou via casamento por voz) —
   // o gasto é de quem está vinculado a ele, não de quem está logado.
   const spentByMemberId = values.additional_card_id
@@ -258,7 +267,8 @@ export function VoiceCaptureFlow({
               <SummaryField
                 label="Conta/cartão"
                 value={
-                  account ? account.name : accountLabel(values.account_id, values.account_kind)
+                  selectedPaymentOption?.displayLabel ??
+                  (account ? account.name : accountLabel(values.account_id, values.account_kind))
                 }
               />
               <div className="col-span-2 flex items-center gap-2 pt-1">
