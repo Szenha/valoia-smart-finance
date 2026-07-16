@@ -91,6 +91,14 @@ function preferCurrentUser(
   return mine.length === 1 ? mine : candidates;
 }
 
+/** Last resort when narrowing by owner still leaves more than one account of
+ *  the same kind (e.g. duas contas corrente da mesma pessoa) — falls back to
+ *  whichever of those is marked "conta principal", if exactly one is. */
+function preferPrimary(candidates: PaymentOption[]): PaymentOption[] {
+  const primaries = candidates.filter((option) => option.account.is_primary);
+  return primaries.length === 1 ? primaries : candidates;
+}
+
 /**
  * Resolve qual conta/cartão (ou cartão adicional) um lançamento de voz deve
  * usar, a partir do que a fala mencionou. Determinístico — nenhuma chamada
@@ -102,10 +110,10 @@ function preferCurrentUser(
  *    nome/instituição da conta ou o apelido do cartão adicional — restrito
  *    ao tipo inferido pela forma de pagamento, se houver um. Mais de uma
  *    batida (ex: principal e adicional do mesmo cartão) é desempatada pelo
- *    usuário logado antes de desistir.
+ *    usuário logado e, se ainda empatado, pela conta marcada como principal.
  * 2. Senão, se a forma de pagamento aponta um tipo (débito/crédito/dinheiro/
  *    pix) e existe exatamente uma opção desse tipo (já desempatando pelo
- *    usuário logado), usa essa direto.
+ *    usuário logado e pela conta principal), usa essa direto.
  * 3. Em qualquer outro caso, devolve "ambiguous"/"none" para a tela de
  *    confirmação pedir a escolha ao usuário em vez de adivinhar.
  */
@@ -137,6 +145,7 @@ export function matchPaymentAccount(
       );
     });
     if (nameMatches.length > 1) nameMatches = preferCurrentUser(nameMatches, currentUserId);
+    if (nameMatches.length > 1) nameMatches = preferPrimary(nameMatches);
     if (nameMatches.length === 1) {
       return {
         status: "resolved",
@@ -158,6 +167,7 @@ export function matchPaymentAccount(
   if (impliedKind) {
     let byKind = options.filter((option) => option.accountKind === impliedKind);
     if (byKind.length > 1) byKind = preferCurrentUser(byKind, currentUserId);
+    if (byKind.length > 1) byKind = preferPrimary(byKind);
     if (byKind.length === 1) {
       return {
         status: "resolved",

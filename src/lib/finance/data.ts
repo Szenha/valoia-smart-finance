@@ -45,7 +45,7 @@ export async function fetchAccounts(orgId: string): Promise<AccountRow[]> {
   const { data, error } = await supabase
     .from("financial_accounts")
     .select(
-      "id, account_key, name, institution, kind, archived, initial_balance, initial_balance_date, closing_day, due_day, credit_limit, owner_user_id",
+      "id, account_key, name, institution, kind, archived, initial_balance, initial_balance_date, closing_day, due_day, credit_limit, owner_user_id, is_primary",
     )
     .eq("organization_id", orgId)
     .order("archived")

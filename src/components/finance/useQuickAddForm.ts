@@ -168,6 +168,9 @@ export function useQuickAddForm({
 
   const saveMutation = useMutation({
     mutationFn: async (values: QuickAddFormValues) => {
+      if (!values.account_id) {
+        throw new Error("Selecione a conta ou cartão utilizado antes de salvar.");
+      }
       const signedType =
         values.transaction_type === "expense"
           ? "MANUAL_DEBIT"

@@ -7,6 +7,7 @@ import { ReconciliationBoard } from "@/components/finance/ReconciliationBoard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   extractBatchFn,
   splitTextIntoBatches,
@@ -69,6 +70,7 @@ function periodLabel(period: string) {
 function ReconciliationRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
@@ -273,15 +275,17 @@ function ReconciliationRoute() {
       const total = transactions
         .filter((transaction) => transaction.amount > 0)
         .reduce((sum, transaction) => sum + transaction.amount, 0);
-      const ok = window.confirm(
-        `A IA encontrou ${transactions.length} item(ns) de extrato, totalizando ${new Intl.NumberFormat(
+      const ok = await confirm({
+        title: "Enviar para conciliação",
+        description: `A IA encontrou ${transactions.length} item(ns) de extrato, totalizando ${new Intl.NumberFormat(
           "pt-BR",
           {
             style: "currency",
             currency: "BRL",
           },
         ).format(total)} em compras. Enviar para conciliação?`,
-      );
+        confirmLabel: "Enviar",
+      });
       if (!ok) {
         setPdfMessage("Importação cancelada.");
         setPdfStatus("idle");
@@ -443,10 +447,13 @@ function ReconciliationRoute() {
     },
   });
 
-  function handleDeleteImport(statementImport: StatementImportRow) {
-    const ok = window.confirm(
-      `Excluir o extrato "${statementImport.filename}"? Isso também apaga ${statementImport.transaction_count} lançamento(s) importados dele. Essa ação não pode ser desfeita.`,
-    );
+  async function handleDeleteImport(statementImport: StatementImportRow) {
+    const ok = await confirm({
+      title: "Excluir extrato",
+      description: `Excluir o extrato "${statementImport.filename}"? Isso também apaga ${statementImport.transaction_count} lançamento(s) importados dele. Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      destructive: true,
+    });
     if (!ok) return;
     deleteImportMutation.mutate(statementImport.id);
   }

@@ -14,6 +14,7 @@ import { TransactionEditDialog } from "@/components/finance/TransactionEditDialo
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Select,
   SelectContent,
@@ -142,6 +143,7 @@ export function TransactionList({
   onCategoryChange,
   onDelete,
 }: Props) {
+  const confirm = useConfirm();
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const memberById = new Map(members.map((member) => [member.user_id, member]));
   const isAdmin = members.find((member) => member.user_id === currentUserId)?.role === "admin";
@@ -161,10 +163,12 @@ export function TransactionList({
   const categoryItems = leafCategoryOptions(categories);
   const accountOptions = Array.from(
     new Map(
-      transactions.map((t) => [
-        `${t.account_id}|${t.account_kind}`,
-        { accountId: t.account_id, accountKind: String(t.account_kind) },
-      ]),
+      transactions
+        .filter((t) => t.account_id)
+        .map((t) => [
+          `${t.account_id}|${t.account_kind}`,
+          { accountId: t.account_id, accountKind: String(t.account_kind) },
+        ]),
     ).values(),
   );
   const displayed = transactions.filter(
@@ -478,9 +482,14 @@ export function TransactionList({
                                   className="h-7 w-7 text-red-600 hover:text-red-700"
                                   disabled={consolidated || !canManage}
                                   aria-label="Excluir lançamento"
-                                  onClick={() => {
-                                    if (window.confirm("Excluir este lançamento?"))
-                                      onDelete(transaction);
+                                  onClick={async () => {
+                                    const ok = await confirm({
+                                      title: "Excluir lançamento",
+                                      description: "Excluir este lançamento?",
+                                      confirmLabel: "Excluir",
+                                      destructive: true,
+                                    });
+                                    if (ok) onDelete(transaction);
                                   }}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />

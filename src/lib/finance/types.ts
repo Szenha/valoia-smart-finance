@@ -27,6 +27,7 @@ export type AccountRow = {
   due_day: number | null;
   credit_limit: number | null;
   owner_user_id: string;
+  is_primary: boolean;
 };
 
 export type AdditionalCardRow = {
