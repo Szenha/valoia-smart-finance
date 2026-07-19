@@ -689,11 +689,13 @@ function MetasRoute() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Nenhuma</SelectItem>
-                        {accounts.map((account) => (
-                          <SelectItem key={account.id} value={account.account_key}>
-                            {account.name}
-                          </SelectItem>
-                        ))}
+                        {accounts
+                          .filter((account) => account.account_key)
+                          .map((account) => (
+                            <SelectItem key={account.id} value={account.account_key}>
+                              {account.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
