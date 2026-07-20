@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertDialog,
@@ -39,9 +39,10 @@ import {
   buildCategoryTree,
   categoryOptions,
   descendantCategoryIds,
+  findSiblingGroup,
 } from "@/lib/finance/categories";
 import { CATEGORY_ICON_OPTIONS } from "@/lib/finance/category-icons";
-import { fetchCategories } from "@/lib/finance/data";
+import { fetchCategories, updateCategorySortOrder } from "@/lib/finance/data";
 import { categoryTypeLabel, type CategoryRow, type CategoryType } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -234,6 +235,30 @@ function CategoriasRoute() {
     },
   });
 
+  const reorderCategories = useMutation({
+    mutationFn: async (updates: { id: string; sort_order: number }[]) =>
+      updateCategorySortOrder(updates),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["categories", orgId] });
+    },
+  });
+
+  function moveCategory(category: CategoryRow, direction: "up" | "down") {
+    const siblings = findSiblingGroup(categoryTree, category.id);
+    if (!siblings) return;
+    const index = siblings.findIndex((sibling) => sibling.id === category.id);
+    const swapWith = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || swapWith < 0 || swapWith >= siblings.length) return;
+    const reordered = [...siblings];
+    [reordered[index], reordered[swapWith]] = [reordered[swapWith], reordered[index]];
+    reorderCategories.mutate(
+      reordered.map((sibling, position) => ({
+        id: sibling.id,
+        sort_order: position,
+      })),
+    );
+  }
+
   async function confirmDeleteCategory(category: CategoryRow) {
     if (!orgId) return;
     const ids = descendantCategoryIds(categories, category.id);
@@ -273,28 +298,54 @@ function CategoriasRoute() {
               nodes={categoryTree}
               expanded={expandedCategories}
               onToggle={toggleCategory}
-              renderActions={(category) => (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => startEditCategory(category)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-red-700"
-                    onClick={() => confirmDeleteCategory(category)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
+              renderActions={(category) => {
+                const siblings = findSiblingGroup(categoryTree, category.id) ?? [];
+                const index = siblings.findIndex((sibling) => sibling.id === category.id);
+                return (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Mover para cima"
+                      disabled={index <= 0}
+                      onClick={() => moveCategory(category, "up")}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Mover para baixo"
+                      disabled={index < 0 || index >= siblings.length - 1}
+                      onClick={() => moveCategory(category, "down")}
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => startEditCategory(category)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-700"
+                      onClick={() => confirmDeleteCategory(category)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                );
+              }}
             />
           </div>
         </CardContent>

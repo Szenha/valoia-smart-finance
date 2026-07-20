@@ -12,6 +12,7 @@ export type CategoryRow = {
   color?: string | null;
   icon?: string | null;
   archived?: boolean | null;
+  sort_order?: number | null;
 };
 
 export type AccountRow = {
@@ -191,6 +192,60 @@ export const goalStatusLabel: Record<GoalStatus, string> = {
   active: "Em andamento",
   paused: "Pausada",
   closed: "Encerrada",
+};
+
+export type RecurringBillStatus = "active" | "paused" | "archived";
+export type RecurringBillFrequency = "monthly" | "yearly";
+export type RecurringBillOccurrenceStatus = "pending" | "paid" | "skipped";
+export type RecurringBillDueDateAdjustment = "none" | "previous_business_day" | "next_business_day";
+
+export type RecurringBillRow = {
+  id: string;
+  name: string;
+  category_id: string | null;
+  account_id: string | null;
+  expected_amount: number;
+  amount_is_variable: boolean;
+  recurrence_frequency: RecurringBillFrequency;
+  due_day: number;
+  due_date_adjustment: RecurringBillDueDateAdjustment;
+  reminder_days_before: number;
+  status: RecurringBillStatus;
+  start_date: string;
+  end_date: string | null;
+  notes: string | null;
+};
+
+export type RecurringBillOccurrenceRow = {
+  id: string;
+  recurring_bill_id: string;
+  bill_name: string;
+  category_id: string | null;
+  category_name: string | null;
+  account_id: string | null;
+  due_date: string;
+  expected_amount: number;
+  status: RecurringBillOccurrenceStatus;
+  paid_transaction_id: string | null;
+  paid_amount: number | null;
+  paid_at: string | null;
+};
+
+export const recurrenceFrequencyLabel: Record<RecurringBillFrequency, string> = {
+  monthly: "Mensal",
+  yearly: "Anual",
+};
+
+export const recurringBillStatusLabel: Record<RecurringBillStatus, string> = {
+  active: "Ativa",
+  paused: "Pausada",
+  archived: "Arquivada",
+};
+
+export const dueDateAdjustmentLabel: Record<RecurringBillDueDateAdjustment, string> = {
+  none: "Não ajustar (mantém a data mesmo em fim de semana)",
+  previous_business_day: "Antecipar para o dia útil anterior",
+  next_business_day: "Adiar para o próximo dia útil",
 };
 
 export type HouseholdMemberRow = {

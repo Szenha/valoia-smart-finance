@@ -16,6 +16,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
+import { CollapsibleFilters } from "@/components/finance/CollapsibleFilters";
 import {
   Select,
   SelectContent,
@@ -188,25 +189,27 @@ function ReportsRoute() {
     >
       <AnalyticsTabs value="reports" />
       <div className="flex justify-end">
-        <Select value={creatorFilter} onValueChange={setCreatorFilter}>
-          <SelectTrigger className="w-[220px] bg-white">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            {(membersQuery.data ?? []).map((member) => (
-              <SelectItem key={member.user_id} value={member.user_id}>
-                {member.user_id === currentUserQuery.data?.id
-                  ? "Eu"
-                  : resolveMemberName(
-                      member,
-                      (profilesQuery.data ?? []).find((p) => p.id === member.user_id),
-                      member.user_id,
-                    )}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CollapsibleFilters storageKey="calcum:reports-filters-collapsed">
+          <Select value={creatorFilter} onValueChange={setCreatorFilter}>
+            <SelectTrigger className="w-[220px] bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              {(membersQuery.data ?? []).map((member) => (
+                <SelectItem key={member.user_id} value={member.user_id}>
+                  {member.user_id === currentUserQuery.data?.id
+                    ? "Eu"
+                    : resolveMemberName(
+                        member,
+                        (profilesQuery.data ?? []).find((p) => p.id === member.user_id),
+                        member.user_id,
+                      )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CollapsibleFilters>
       </div>
 
       {isMobile ? (

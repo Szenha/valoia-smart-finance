@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  CalendarClock,
   ChevronsLeft,
   ChevronsRight,
   ClipboardCheck,
@@ -81,6 +82,7 @@ const navItems: NavItem[] = [
     children: [
       { label: "Orçamento", to: "/planejamento/orcamento", icon: PiggyBank },
       { label: "Metas e objetivos", to: "/planejamento/metas", icon: Target },
+      { label: "Contas fixas", to: "/planejamento/contas-fixas", icon: CalendarClock },
     ],
   },
   {
