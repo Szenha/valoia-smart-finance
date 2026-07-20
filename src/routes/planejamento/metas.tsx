@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -145,6 +146,7 @@ function num(value: string): number | null {
 
 function MetasRoute() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -476,10 +478,14 @@ function MetasRoute() {
                         size="icon"
                         className="ml-auto h-7 w-7 text-slate-400 hover:text-red-600"
                         aria-label="Excluir meta"
-                        onClick={() => {
-                          if (window.confirm(`Excluir a meta "${goal.name}"?`)) {
-                            removeGoal.mutate(goal.id);
-                          }
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: "Excluir meta",
+                            description: `Excluir a meta "${goal.name}"?`,
+                            confirmLabel: "Excluir",
+                            destructive: true,
+                          });
+                          if (ok) removeGoal.mutate(goal.id);
                         }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -683,11 +689,13 @@ function MetasRoute() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Nenhuma</SelectItem>
-                        {accounts.map((account) => (
-                          <SelectItem key={account.id} value={account.account_key}>
-                            {account.name}
-                          </SelectItem>
-                        ))}
+                        {accounts
+                          .filter((account) => account.account_key)
+                          .map((account) => (
+                            <SelectItem key={account.id} value={account.account_key}>
+                              {account.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>

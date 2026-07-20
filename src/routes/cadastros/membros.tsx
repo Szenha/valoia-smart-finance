@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -53,6 +54,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 function MembrosRoute() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -188,13 +190,19 @@ function MembrosRoute() {
     return null;
   }
 
-  function handleRemove(userId: string, role: string) {
+  async function handleRemove(userId: string, role: string) {
     const blocked = removeBlockedReason(userId, role);
     if (blocked) {
       setRemoveError(blocked);
       return;
     }
-    if (!window.confirm("Remover este membro da família?")) return;
+    const ok = await confirm({
+      title: "Remover membro",
+      description: "Remover este membro da família?",
+      confirmLabel: "Remover",
+      destructive: true,
+    });
+    if (!ok) return;
     removeMember.mutate(userId);
   }
 

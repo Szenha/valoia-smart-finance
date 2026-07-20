@@ -6,6 +6,22 @@ export type CategoryOption = CategoryRow & {
   children: CategoryOption[];
 };
 
+// Seções na ordem pedida: receitas primeiro, depois despesas. "transfer"
+// não tem seção própria na tela de categorias, então fica por último.
+const TYPE_ORDER: Record<string, number> = { income: 0, expense: 1, transfer: 2 };
+
+/** Dentro de um mesmo grupo de irmãs: sort_order manual quando presente
+ *  (subir/descer em /cadastros/categorias), senão ordem alfabética — esse
+ *  é o comportamento padrão até a primeira reordenação manual do grupo. */
+function compareSiblings(a: CategoryOption, b: CategoryOption): number {
+  const typeDiff = (TYPE_ORDER[a.type] ?? 99) - (TYPE_ORDER[b.type] ?? 99);
+  if (typeDiff !== 0) return typeDiff;
+  if (a.sort_order != null && b.sort_order != null) return a.sort_order - b.sort_order;
+  if (a.sort_order != null) return -1;
+  if (b.sort_order != null) return 1;
+  return a.name.localeCompare(b.name, "pt-BR");
+}
+
 export function buildCategoryTree(categories: CategoryRow[]): CategoryOption[] {
   const byId = new Map<string, CategoryOption>();
   const roots: CategoryOption[] = [];
@@ -23,14 +39,29 @@ export function buildCategoryTree(categories: CategoryRow[]): CategoryOption[] {
     }
   }
 
-  const sortByName = (items: CategoryOption[]) => {
-    items.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-    items.forEach((item) => sortByName(item.children));
+  const sortTree = (items: CategoryOption[]) => {
+    items.sort(compareSiblings);
+    items.forEach((item) => sortTree(item.children));
   };
 
-  sortByName(roots);
+  sortTree(roots);
   fillPaths(roots, "", 0);
   return roots;
+}
+
+/** Encontra o grupo de irmãs (array irmão, na mesma ordem exibida) que
+ *  contém categoryId — usado pelos botões subir/descer, que precisam saber
+ *  a posição atual e trocar com o vizinho. */
+export function findSiblingGroup(
+  tree: CategoryOption[],
+  categoryId: string,
+): CategoryOption[] | null {
+  if (tree.some((node) => node.id === categoryId)) return tree;
+  for (const node of tree) {
+    const found = findSiblingGroup(node.children, categoryId);
+    if (found) return found;
+  }
+  return null;
 }
 
 export function categoryOptions(categories: CategoryRow[]): CategoryOption[] {

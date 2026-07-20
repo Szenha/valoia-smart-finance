@@ -23,6 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   addAdditionalCard,
   countAccountTransactions,
@@ -75,10 +77,12 @@ const EMPTY_FORM = {
   dueDay: "",
   creditLimit: "",
   ownerUserId: "",
+  isPrimary: false,
 };
 
 function ContasECartoesRoute() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -130,6 +134,7 @@ function ContasECartoesRoute() {
   const [dueDay, setDueDay] = useState(EMPTY_FORM.dueDay);
   const [creditLimit, setCreditLimit] = useState(EMPTY_FORM.creditLimit);
   const [ownerUserId, setOwnerUserId] = useState(EMPTY_FORM.ownerUserId);
+  const [isPrimary, setIsPrimary] = useState(EMPTY_FORM.isPrimary);
 
   useEffect(() => {
     if (!editingId && currentUserId && !ownerUserId) setOwnerUserId(currentUserId);
@@ -147,6 +152,7 @@ function ContasECartoesRoute() {
     setDueDay(EMPTY_FORM.dueDay);
     setCreditLimit(EMPTY_FORM.creditLimit);
     setOwnerUserId(currentUserId ?? EMPTY_FORM.ownerUserId);
+    setIsPrimary(EMPTY_FORM.isPrimary);
   }
 
   function startEdit(account: AccountRow) {
@@ -161,12 +167,40 @@ function ContasECartoesRoute() {
     setDueDay(account.due_day != null ? String(account.due_day) : "");
     setCreditLimit(account.credit_limit != null ? String(account.credit_limit) : "");
     setOwnerUserId(account.owner_user_id);
+    setIsPrimary(account.is_primary);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  // Se essa for a única conta desse titular+tipo, ela é sempre a principal —
+  // sem isso, a primeira conta de alguém nunca fica marcada, e a ambiguidade
+  // já aparece assim que uma segunda é cadastrada.
+  const soleAccountOfKind =
+    kind !== "investment" &&
+    !!ownerUserId &&
+    (accountsQuery.data ?? []).filter(
+      (a) => a.owner_user_id === ownerUserId && a.kind === kind && a.id !== editingId,
+    ).length === 0;
+  const effectiveIsPrimary = soleAccountOfKind || isPrimary;
+  const currentPrimaryOfKind = (accountsQuery.data ?? []).find(
+    (a) => a.owner_user_id === ownerUserId && a.kind === kind && a.is_primary && a.id !== editingId,
+  );
 
   const saveAccount = useMutation({
     mutationFn: async () => {
       if (!orgId || !ownerUserId) return;
+      // Só uma conta principal por titular+tipo — marcar esta desmarca as
+      // demais do mesmo titular/tipo antes de gravar (o índice único no
+      // banco também garante isso, mas fazemos aqui pra não colidir com ele).
+      if (effectiveIsPrimary) {
+        const { error: unsetError } = await supabase
+          .from("financial_accounts")
+          .update({ is_primary: false })
+          .eq("organization_id", orgId)
+          .eq("owner_user_id", ownerUserId)
+          .eq("kind", kind)
+          .neq("account_key", accountKey);
+        if (unsetError) throw new Error(unsetError.message);
+      }
       const { error } = await supabase.from("financial_accounts").upsert(
         {
           organization_id: orgId,
@@ -181,6 +215,7 @@ function ContasECartoesRoute() {
           due_day: kind === "credit_card" && dueDay ? Number(dueDay) : null,
           credit_limit: kind === "credit_card" && creditLimit ? Number(creditLimit) : null,
           owner_user_id: ownerUserId,
+          is_primary: effectiveIsPrimary,
         },
         { onConflict: "organization_id,account_key" },
       );
@@ -214,7 +249,13 @@ function ContasECartoesRoute() {
         );
         return;
       }
-      if (!window.confirm(`Excluir "${account.name}" definitivamente?`)) return;
+      const ok = await confirm({
+        title: "Excluir conta",
+        description: `Excluir "${account.name}" definitivamente?`,
+        confirmLabel: "Excluir",
+        destructive: true,
+      });
+      if (!ok) return;
       await deleteAccount(orgId, account.id);
       await queryClient.invalidateQueries({ queryKey: ["accounts", orgId] });
       await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
@@ -312,7 +353,13 @@ function ContasECartoesRoute() {
             </div>
             <div>
               <Label>Tipo</Label>
-              <Select value={kind} onValueChange={(value) => setKind(value as AccountKind)}>
+              <Select
+                value={kind}
+                onValueChange={(value) => {
+                  setKind(value as AccountKind);
+                  if (value === "investment") setIsPrimary(false);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -340,6 +387,33 @@ function ContasECartoesRoute() {
                 </SelectContent>
               </Select>
             </div>
+            {kind !== "investment" ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 md:col-span-2">
+                <div>
+                  <Label className="mb-0.5 block">Conta principal</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {soleAccountOfKind
+                      ? "Única conta desse tipo para esse titular — sempre principal."
+                      : "Usada automaticamente quando um lançamento por voz não conseguir identificar sozinho qual conta desse titular usar (ex: mais de uma conta corrente)."}
+                  </p>
+                </div>
+                <Switch
+                  checked={effectiveIsPrimary}
+                  disabled={soleAccountOfKind}
+                  onCheckedChange={async (checked) => {
+                    if (checked && currentPrimaryOfKind) {
+                      const ok = await confirm({
+                        title: "Trocar conta principal",
+                        description: `Definir "${accountName || "esta conta"}" como principal vai desmarcar "${currentPrimaryOfKind.name}", que é a principal atual. Continuar?`,
+                        confirmLabel: "Definir como principal",
+                      });
+                      if (!ok) return;
+                    }
+                    setIsPrimary(checked);
+                  }}
+                />
+              </div>
+            ) : null}
             {kind === "checking" || kind === "investment" ? (
               <>
                 <div>
@@ -494,6 +568,11 @@ function ContasECartoesRoute() {
                         </span>
                         <div>
                           <strong>{account.name}</strong>
+                          {account.is_primary ? (
+                            <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                              Principal
+                            </span>
+                          ) : null}
                           <p className="text-muted-foreground">
                             {account.institution ?? "Sem instituição"} · Titular: {ownerLabel}
                           </p>

@@ -1,20 +1,29 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarClock } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import {
+  ensureRecurringBillOccurrences,
   fetchAccountBalances,
   fetchCardSummary,
   fetchHouseholdMembers,
   fetchMemberProfiles,
+  fetchRecurringBillsUpcoming,
+  markOccurrencePaid,
 } from "@/lib/finance/data";
+import { billOccurrenceState } from "@/lib/finance/recurring-bills";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { categoryTypeLabelPlural, formatCurrency } from "@/lib/finance/types";
+import { cn } from "@/lib/utils";
+
+const UPCOMING_BILLS_WINDOW_DAYS = 30;
 
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
@@ -40,6 +49,7 @@ function monthBounds() {
 }
 
 function DashboardRoute() {
+  const queryClient = useQueryClient();
   const currentUserQuery = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => {
@@ -138,6 +148,32 @@ function DashboardRoute() {
       });
       if (error) throw new Error(error.message);
       return (data ?? []) as { created_by: string | null; total: number; tx_count: number }[];
+    },
+  });
+  // Mesma RPC (ensure + fetch) reaproveitada pela aba Planejamento > Contas
+  // fixas — fonte única para o calendário de vencimentos.
+  const upcomingBillsQuery = useQuery({
+    queryKey: ["dashboard-upcoming-bills", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const start = new Date().toISOString().slice(0, 10);
+      const end = new Date(Date.now() + UPCOMING_BILLS_WINDOW_DAYS * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      await ensureRecurringBillOccurrences(orgId!, end);
+      return fetchRecurringBillsUpcoming(orgId!, start, end);
+    },
+  });
+  const payBillMutation = useMutation({
+    mutationFn: async (occurrence: { id: string; expected_amount: number }) =>
+      markOccurrencePaid(occurrence.id, {
+        paidAmount: occurrence.expected_amount,
+        paidAt: new Date().toISOString().slice(0, 10),
+        paidBy: currentUserQuery.data?.id ?? null,
+        transactionId: null,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-upcoming-bills", orgId] });
     },
   });
 
@@ -340,6 +376,61 @@ function DashboardRoute() {
                 <p className="text-sm text-muted-foreground">Nada pendente de revisão.</p>
               ) : null}
             </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-emerald-700" />
+              Contas a pagar
+            </CardTitle>
+            <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+              <Link to="/planejamento/contas-fixas">Ver todas</Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {(upcomingBillsQuery.data ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhum vencimento nos próximos {UPCOMING_BILLS_WINDOW_DAYS} dias.
+              </p>
+            ) : (
+              (upcomingBillsQuery.data ?? []).map((occurrence) => {
+                const state = billOccurrenceState(occurrence);
+                return (
+                  <div
+                    key={occurrence.id}
+                    className="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-b-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate">{occurrence.bill_name}</p>
+                      <p
+                        className={cn(
+                          "text-xs",
+                          state.tone === "warning" ? "text-amber-700" : "text-muted-foreground",
+                        )}
+                      >
+                        {state.label}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <strong>{formatCurrency(occurrence.expected_amount)}</strong>
+                      {occurrence.status === "pending" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          disabled={payBillMutation.isPending}
+                          onClick={() => payBillMutation.mutate(occurrence)}
+                        >
+                          Marcar paga
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </CardContent>
         </Card>
         <Card>

@@ -16,6 +16,8 @@ import type {
   HouseholdMemberRow,
   OrganizationRow,
   ProfileRow,
+  RecurringBillOccurrenceRow,
+  RecurringBillRow,
   TxnRow,
 } from "./types";
 
@@ -35,18 +37,33 @@ export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
 export async function fetchCategories(orgId: string): Promise<CategoryRow[]> {
   const { data, error } = await supabase
     .from("categories")
-    .select("id, name, type, parent_id, color, icon")
+    .select("id, name, type, parent_id, color, icon, sort_order")
     .eq("organization_id", orgId)
     .order("name");
   if (error) throw new Error(error.message);
   return (data ?? []) as CategoryRow[];
 }
 
+/** Grava a ordem manual de um grupo de categorias irmãs (mesmo parent_id,
+ *  e no nível raiz mesmo type) — usado pelos botões subir/descer em
+ *  /cadastros/categorias. */
+export async function updateCategorySortOrder(
+  updates: { id: string; sort_order: number }[],
+): Promise<void> {
+  const results = await Promise.all(
+    updates.map(({ id, sort_order }) =>
+      supabase.from("categories").update({ sort_order }).eq("id", id),
+    ),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw new Error(failed.error.message);
+}
+
 export async function fetchAccounts(orgId: string): Promise<AccountRow[]> {
   const { data, error } = await supabase
     .from("financial_accounts")
     .select(
-      "id, account_key, name, institution, kind, archived, initial_balance, initial_balance_date, closing_day, due_day, credit_limit, owner_user_id",
+      "id, account_key, name, institution, kind, archived, initial_balance, initial_balance_date, closing_day, due_day, credit_limit, owner_user_id, is_primary",
     )
     .eq("organization_id", orgId)
     .order("archived")
@@ -406,6 +423,147 @@ export async function addGoalProgress(
     recorded_at: recordedAt,
     note,
   });
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchRecurringBills(orgId: string): Promise<RecurringBillRow[]> {
+  const { data, error } = await supabase
+    .from("recurring_bills")
+    .select(
+      "id, name, category_id, account_id, expected_amount, amount_is_variable, recurrence_frequency, due_day, due_date_adjustment, reminder_days_before, status, start_date, end_date, notes",
+    )
+    .eq("organization_id", orgId)
+    .neq("status", "archived")
+    .order("name");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as RecurringBillRow[];
+}
+
+export type RecurringBillInput = {
+  name: string;
+  category_id: string | null;
+  account_id: string | null;
+  expected_amount: number;
+  amount_is_variable: boolean;
+  recurrence_frequency: RecurringBillRow["recurrence_frequency"];
+  due_day: number;
+  due_date_adjustment: RecurringBillRow["due_date_adjustment"];
+  reminder_days_before: number;
+  start_date: string;
+  end_date: string | null;
+  notes: string | null;
+};
+
+export async function createRecurringBill(
+  orgId: string,
+  createdBy: string | null,
+  input: RecurringBillInput,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("recurring_bills")
+    .insert({ organization_id: orgId, created_by: createdBy, ...input })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+export async function updateRecurringBill(
+  billId: string,
+  input: RecurringBillInput,
+): Promise<void> {
+  const { error } = await supabase
+    .from("recurring_bills")
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq("id", billId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setRecurringBillStatus(
+  billId: string,
+  status: RecurringBillRow["status"],
+): Promise<void> {
+  const { error } = await supabase
+    .from("recurring_bills")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", billId);
+  if (error) throw new Error(error.message);
+}
+
+/** Idempotente — pode ser chamada a cada carregamento de tela sem duplicar
+ *  ocorrências (unique constraint + on conflict do nothing no banco). */
+export async function ensureRecurringBillOccurrences(
+  orgId: string,
+  through: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("ensure_recurring_bill_occurrences", {
+    p_org_id: orgId,
+    p_through: through,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchRecurringBillsUpcoming(
+  orgId: string,
+  start: string,
+  end: string,
+): Promise<RecurringBillOccurrenceRow[]> {
+  const { data, error } = await supabase.rpc("recurring_bills_upcoming", {
+    p_org_id: orgId,
+    p_start: start,
+    p_end: end,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as RecurringBillOccurrenceRow[];
+}
+
+export async function markOccurrencePaid(
+  occurrenceId: string,
+  input: {
+    paidAmount: number;
+    paidAt: string;
+    paidBy: string | null;
+    transactionId: string | null;
+  },
+): Promise<void> {
+  const { error } = await supabase
+    .from("recurring_bill_occurrences")
+    .update({
+      status: "paid",
+      paid_amount: input.paidAmount,
+      paid_at: input.paidAt,
+      paid_by: input.paidBy,
+      paid_transaction_id: input.transactionId,
+    })
+    .eq("id", occurrenceId);
+  if (error) throw new Error(error.message);
+}
+
+export async function markOccurrenceSkipped(occurrenceId: string): Promise<void> {
+  const { error } = await supabase
+    .from("recurring_bill_occurrences")
+    .update({
+      status: "skipped",
+      paid_amount: null,
+      paid_at: null,
+      paid_by: null,
+      paid_transaction_id: null,
+    })
+    .eq("id", occurrenceId);
+  if (error) throw new Error(error.message);
+}
+
+export async function reopenOccurrence(occurrenceId: string): Promise<void> {
+  const { error } = await supabase
+    .from("recurring_bill_occurrences")
+    .update({
+      status: "pending",
+      paid_amount: null,
+      paid_at: null,
+      paid_by: null,
+      paid_transaction_id: null,
+    })
+    .eq("id", occurrenceId);
   if (error) throw new Error(error.message);
 }
 

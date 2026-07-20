@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 const ROUTE_BY_TAB = {
   orcamento: "/planejamento/orcamento",
   metas: "/planejamento/metas",
+  "contas-fixas": "/planejamento/contas-fixas",
 } as const;
 
 export function PlanejamentoTabs({ value }: { value: keyof typeof ROUTE_BY_TAB }) {
@@ -16,6 +17,7 @@ export function PlanejamentoTabs({ value }: { value: keyof typeof ROUTE_BY_TAB }
       <TabsList>
         <TabsTrigger value="orcamento">Orçamento</TabsTrigger>
         <TabsTrigger value="metas">Metas e objetivos</TabsTrigger>
+        <TabsTrigger value="contas-fixas">Contas fixas</TabsTrigger>
       </TabsList>
     </Tabs>
   );

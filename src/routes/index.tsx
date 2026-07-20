@@ -39,6 +39,7 @@ function Index() {
   const [userEmail, setUserEmail] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [heroCollapsed, setHeroCollapsed] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -129,28 +130,30 @@ function Index() {
       subtitle="Registro por voz, texto ou formulário"
       userEmail={userEmail}
     >
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/70 bg-white py-10 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.08)]">
-        <Button
-          type="button"
-          size="icon"
-          className="h-20 w-20 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90"
-          aria-label="Registrar por voz"
-          onClick={() => setVoiceOpen(true)}
-        >
-          <Mic className="h-8 w-8" />
-        </Button>
-        <p className="text-sm font-medium text-slate-600">Toque para falar</p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="mt-1 text-muted-foreground"
-          onClick={() => setManualOpen(true)}
-        >
-          <Pencil className="mr-1.5 h-3.5 w-3.5" />
-          Adicionar manualmente
-        </Button>
-      </div>
+      {!heroCollapsed ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/70 bg-white py-10 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.08)]">
+          <Button
+            type="button"
+            size="icon"
+            className="h-20 w-20 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90"
+            aria-label="Registrar por voz"
+            onClick={() => setVoiceOpen(true)}
+          >
+            <Mic className="h-8 w-8" />
+          </Button>
+          <p className="text-sm font-medium text-slate-600">Toque para falar</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-1 text-muted-foreground"
+            onClick={() => setManualOpen(true)}
+          >
+            <Pencil className="mr-1.5 h-3.5 w-3.5" />
+            Adicionar manualmente
+          </Button>
+        </div>
+      ) : null}
 
       <VoiceCaptureFlow
         open={voiceOpen}
@@ -192,6 +195,7 @@ function Index() {
         currentUserId={userId}
         onCategoryChange={handleCategoryChange}
         onDelete={handleDeleteTransaction}
+        onFiltersCollapsedChange={setHeroCollapsed}
       />
     </AppShell>
   );

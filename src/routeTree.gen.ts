@@ -18,6 +18,7 @@ import { Route as ReportsIndexRouteImport } from './routes/reports/index'
 import { Route as ReportsRateioRouteImport } from './routes/reports/rateio'
 import { Route as PlanejamentoOrcamentoRouteImport } from './routes/planejamento/orcamento'
 import { Route as PlanejamentoMetasRouteImport } from './routes/planejamento/metas'
+import { Route as PlanejamentoContasFixasRouteImport } from './routes/planejamento/contas-fixas'
 import { Route as CadastrosMembrosRouteImport } from './routes/cadastros/membros'
 import { Route as CadastrosContasECartoesRouteImport } from './routes/cadastros/contas-e-cartoes'
 import { Route as CadastrosCategoriasRouteImport } from './routes/cadastros/categorias'
@@ -67,6 +68,11 @@ const PlanejamentoMetasRoute = PlanejamentoMetasRouteImport.update({
   path: '/planejamento/metas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlanejamentoContasFixasRoute = PlanejamentoContasFixasRouteImport.update({
+  id: '/planejamento/contas-fixas',
+  path: '/planejamento/contas-fixas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CadastrosMembrosRoute = CadastrosMembrosRouteImport.update({
   id: '/cadastros/membros',
   path: '/cadastros/membros',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
   '/reports/rateio': typeof ReportsRateioRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
   '/reports/rateio': typeof ReportsRateioRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
   '/reports/rateio': typeof ReportsRateioRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
     | '/reports/rateio'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
     | '/reports/rateio'
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
     | '/reports/rateio'
@@ -180,6 +192,7 @@ export interface RootRouteChildren {
   CadastrosCategoriasRoute: typeof CadastrosCategoriasRoute
   CadastrosContasECartoesRoute: typeof CadastrosContasECartoesRoute
   CadastrosMembrosRoute: typeof CadastrosMembrosRoute
+  PlanejamentoContasFixasRoute: typeof PlanejamentoContasFixasRoute
   PlanejamentoMetasRoute: typeof PlanejamentoMetasRoute
   PlanejamentoOrcamentoRoute: typeof PlanejamentoOrcamentoRoute
   ReportsRateioRoute: typeof ReportsRateioRoute
@@ -251,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlanejamentoMetasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/planejamento/contas-fixas': {
+      id: '/planejamento/contas-fixas'
+      path: '/planejamento/contas-fixas'
+      fullPath: '/planejamento/contas-fixas'
+      preLoaderRoute: typeof PlanejamentoContasFixasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cadastros/membros': {
       id: '/cadastros/membros'
       path: '/cadastros/membros'
@@ -284,6 +304,7 @@ const rootRouteChildren: RootRouteChildren = {
   CadastrosCategoriasRoute: CadastrosCategoriasRoute,
   CadastrosContasECartoesRoute: CadastrosContasECartoesRoute,
   CadastrosMembrosRoute: CadastrosMembrosRoute,
+  PlanejamentoContasFixasRoute: PlanejamentoContasFixasRoute,
   PlanejamentoMetasRoute: PlanejamentoMetasRoute,
   PlanejamentoOrcamentoRoute: PlanejamentoOrcamentoRoute,
   ReportsRateioRoute: ReportsRateioRoute,

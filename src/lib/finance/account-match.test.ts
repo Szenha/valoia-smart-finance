@@ -17,6 +17,7 @@ function account(overrides: Partial<AccountRow>): AccountRow {
     due_day: null,
     credit_limit: null,
     owner_user_id: "owner",
+    is_primary: false,
     ...overrides,
   };
 }
@@ -103,6 +104,52 @@ describe("matchPaymentAccount", () => {
       assert.equal(result.candidates.length, 2);
       assert.equal(result.accountKind, "credit_card");
     }
+  });
+
+  test("usa a conta principal quando o titular tem mais de uma conta corrente e nenhum banco foi citado", () => {
+    const accounts = [
+      account({
+        id: "1",
+        account_key: "checking-1",
+        kind: "checking",
+        name: "Conta A",
+        owner_user_id: "maria",
+      }),
+      account({
+        id: "2",
+        account_key: "checking-2",
+        kind: "checking",
+        name: "Conta B",
+        owner_user_id: "maria",
+        is_primary: true,
+      }),
+    ];
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "pix", accountNameHint: null },
+      "maria",
+    );
+    assert.deepEqual(result, {
+      status: "resolved",
+      accountId: "checking-2",
+      accountKind: "checking",
+      additionalCardId: null,
+    });
+  });
+
+  test("sem conta principal marcada, duas contas corrente do mesmo titular seguem ambíguas", () => {
+    const accounts = [
+      account({ id: "1", account_key: "checking-1", kind: "checking", owner_user_id: "maria" }),
+      account({ id: "2", account_key: "checking-2", kind: "checking", owner_user_id: "maria" }),
+    ];
+    const result = matchPaymentAccount(
+      accounts,
+      [],
+      { paymentMethodHint: "pix", accountNameHint: null },
+      "maria",
+    );
+    assert.equal(result.status, "ambiguous");
   });
 
   test("casa pelo nome mencionado ('no Nubank') mesmo com vários cartões cadastrados", () => {

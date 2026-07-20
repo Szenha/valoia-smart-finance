@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertDialog,
@@ -39,9 +39,10 @@ import {
   buildCategoryTree,
   categoryOptions,
   descendantCategoryIds,
+  findSiblingGroup,
 } from "@/lib/finance/categories";
 import { CATEGORY_ICON_OPTIONS } from "@/lib/finance/category-icons";
-import { fetchCategories } from "@/lib/finance/data";
+import { fetchCategories, updateCategorySortOrder } from "@/lib/finance/data";
 import { categoryTypeLabel, type CategoryRow, type CategoryType } from "@/lib/finance/types";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
@@ -242,6 +243,30 @@ function CategoriasRoute() {
     },
   });
 
+  const reorderCategories = useMutation({
+    mutationFn: async (updates: { id: string; sort_order: number }[]) =>
+      updateCategorySortOrder(updates),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["categories", orgId] });
+    },
+  });
+
+  function moveCategory(category: CategoryRow, direction: "up" | "down") {
+    const siblings = findSiblingGroup(categoryTree, category.id);
+    if (!siblings) return;
+    const index = siblings.findIndex((sibling) => sibling.id === category.id);
+    const swapWith = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || swapWith < 0 || swapWith >= siblings.length) return;
+    const reordered = [...siblings];
+    [reordered[index], reordered[swapWith]] = [reordered[swapWith], reordered[index]];
+    reorderCategories.mutate(
+      reordered.map((sibling, position) => ({
+        id: sibling.id,
+        sort_order: position,
+      })),
+    );
+  }
+
   async function confirmDeleteCategory(category: CategoryRow) {
     if (!orgId) return;
     const ids = descendantCategoryIds(categories, category.id);
@@ -281,28 +306,54 @@ function CategoriasRoute() {
               nodes={categoryTree}
               expanded={expandedCategories}
               onToggle={toggleCategory}
-              renderActions={(category) => (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => startEditCategory(category)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-red-700"
-                    onClick={() => confirmDeleteCategory(category)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
+              renderActions={(category) => {
+                const siblings = findSiblingGroup(categoryTree, category.id) ?? [];
+                const index = siblings.findIndex((sibling) => sibling.id === category.id);
+                return (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Mover para cima"
+                      disabled={index <= 0}
+                      onClick={() => moveCategory(category, "up")}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Mover para baixo"
+                      disabled={index < 0 || index >= siblings.length - 1}
+                      onClick={() => moveCategory(category, "down")}
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => startEditCategory(category)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-700"
+                      onClick={() => confirmDeleteCategory(category)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                );
+              }}
             />
           </div>
         </CardContent>
@@ -528,32 +579,60 @@ function CategoriasRoute() {
   );
 }
 
+/** Remove acentos pra busca não depender de digitar "á", "ã" etc. certinho. */
+function normalizeSearch(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
 function IconPicker({ value, onChange }: { value: string; onChange: (icon: string) => void }) {
+  const [search, setSearch] = useState("");
+  const query = normalizeSearch(search.trim());
+  const filteredOptions = query
+    ? CATEGORY_ICON_OPTIONS.filter((option) => normalizeSearch(option.label).includes(query))
+    : CATEGORY_ICON_OPTIONS;
+  const selectedOption = CATEGORY_ICON_OPTIONS.find((option) => option.value === value);
+
   return (
     <div>
-      <Label>Ícone</Label>
-      <div className="mt-1 flex flex-wrap gap-2">
-        {CATEGORY_ICON_OPTIONS.map((option) => {
-          const Icon = option.icon;
-          const selected = value === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              title={option.label}
-              aria-label={option.label}
-              aria-pressed={selected}
-              onClick={() => onChange(selected ? "" : option.value)}
-              className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
-                selected
-                  ? "border-emerald-600 bg-emerald-50 text-emerald-700"
-                  : "border-slate-200 text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-            </button>
-          );
-        })}
+      <Label>Ícone{selectedOption ? ` — ${selectedOption.label}` : ""}</Label>
+      <Input
+        type="text"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Buscar ícone… ex: dentista, mercado, luz"
+        className="mt-1"
+      />
+      <div className="mt-2 flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+        {filteredOptions.length === 0 ? (
+          <p className="py-2 text-xs text-muted-foreground">
+            Nenhum ícone encontrado para "{search}".
+          </p>
+        ) : (
+          filteredOptions.map((option) => {
+            const Icon = option.icon;
+            const selected = value === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                title={option.label}
+                aria-label={option.label}
+                aria-pressed={selected}
+                onClick={() => onChange(selected ? "" : option.value)}
+                className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
+                  selected
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            );
+          })
+        )}
       </div>
     </div>
   );
