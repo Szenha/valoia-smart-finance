@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { leafCategoryOptions } from "@/lib/finance/categories";
+import { formatDateBR } from "@/lib/finance/date-utils";
 import {
   fetchAccounts,
   fetchCategories,
@@ -297,7 +298,7 @@ function RateioRoute() {
 
   function summaryText(): string {
     const lines = [
-      `Rateio de despesas — ${new Date(period.start).toLocaleDateString("pt-BR")} a ${new Date(period.end).toLocaleDateString("pt-BR")}`,
+      `Rateio de despesas — ${formatDateBR(period.start)} a ${formatDateBR(period.end)}`,
       `Total: ${formatCurrency(fromCents(totalCents))} (${filteredTransactions.length} lançamentos)`,
       "",
     ];
@@ -569,7 +570,7 @@ function RateioRoute() {
                 <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
                   <span className="truncate text-amber-900">
                     {t.description} · {formatCurrency(Math.abs(t.amount))} ·{" "}
-                    {new Date(t.posted_at).toLocaleDateString("pt-BR")}
+                    {formatDateBR(t.posted_at)}
                   </span>
                   <Select
                     value={payerOverrides.get(t.id) ?? ""}
@@ -758,7 +759,7 @@ function RateioRoute() {
                       >
                         <span className="truncate">
                           {t.description} · {categoryPathOf(categories, t.category_id)} ·{" "}
-                          {new Date(t.posted_at).toLocaleDateString("pt-BR")}
+                          {formatDateBR(t.posted_at)}
                         </span>
                         <span className="flex shrink-0 items-center gap-2">
                           {formatCurrency(Math.abs(t.amount))}
@@ -838,7 +839,7 @@ function RateioRoute() {
                         <ChevronRight className="h-3.5 w-3.5" />
                       )}
                       {split.name ||
-                        `Rateio de ${new Date(split.period_start).toLocaleDateString("pt-BR")} a ${new Date(split.period_end).toLocaleDateString("pt-BR")}`}
+                        `Rateio de ${formatDateBR(split.period_start)} a ${formatDateBR(split.period_end)}`}
                     </span>
                     <span className="text-muted-foreground">
                       {formatCurrency(split.total_amount)} ·{" "}

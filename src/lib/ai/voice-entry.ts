@@ -10,6 +10,10 @@ export type VoiceTransactionDraft = {
   transaction_type: "expense" | "income" | "transfer";
   date: string;
   account_hint: string | null;
+  /** Só para transferências: nome da conta de destino mencionado na fala
+   *  (ex: "transferi 500 do Nubank pro Inter" -> "Inter"). null quando não
+   *  há transferência ou nenhum destino foi mencionado. */
+  destination_account_hint: string | null;
   payment_method_hint: PaymentMethodHint;
   installments_count: number;
   confidence: number;
@@ -33,6 +37,7 @@ Responda APENAS JSON válido:
   "transaction_type": "expense" | "income" | "transfer",
   "date": "YYYY-MM-DD",
   "account_hint": string | null,
+  "destination_account_hint": string | null,
   "payment_method_hint": "debit" | "credit" | "cash" | "pix" | null,
   "installments_count": number,
   "confidence": number
@@ -46,7 +51,11 @@ Regras:
   ("hoje", "ontem", "semana passada"). Se não houver nenhuma pista de data na fala, use ${todayStr}.
   Nunca invente uma data antiga ou arbitrária — na dúvida, use ${todayStr}.
 - account_hint: só o NOME/instituição da conta ou cartão mencionado (ex: "Nubank", "Inter"),
-  sem a palavra "cartão"/"conta". null se não houver nome específico.
+  sem a palavra "cartão"/"conta". Em transferências, é a conta de ORIGEM (de onde saiu).
+  null se não houver nome específico.
+- destination_account_hint: só para transaction_type "transfer" — o NOME/instituição da conta
+  de DESTINO (pra onde foi o dinheiro), mesmo formato de account_hint. null se não for
+  transferência ou nenhum destino foi mencionado.
 - payment_method_hint: classifique a forma de pagamento mencionada:
   "debit" para "débito", "cash" para "dinheiro"/"espécie", "pix" para "pix",
   "credit" para "crédito"/"cartão" (sem especificar débito). null se não houver menção.
@@ -91,6 +100,7 @@ export function parseDraft(
     transaction_type: parsed.transaction_type ?? "expense",
     date: plausibleDate(parsed.date, todayStr),
     account_hint: parsed.account_hint ?? null,
+    destination_account_hint: parsed.destination_account_hint ?? null,
     payment_method_hint: parsed.payment_method_hint ?? null,
     installments_count: Number.isFinite(installments) && installments >= 1 ? installments : 1,
     confidence: Number.isFinite(parsed.confidence) ? Number(parsed.confidence) : 0.7,

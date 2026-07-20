@@ -13,6 +13,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LandingRouteImport } from './routes/landing'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConciliacaoRouteImport } from './routes/conciliacao'
+import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportsIndexRouteImport } from './routes/reports/index'
 import { Route as ReportsRateioRouteImport } from './routes/reports/rateio'
@@ -41,6 +42,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const ConciliacaoRoute = ConciliacaoRouteImport.update({
   id: '/conciliacao',
   path: '/conciliacao',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CalendarioRoute = CalendarioRouteImport.update({
+  id: '/calendario',
+  path: '/calendario',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -91,6 +97,7 @@ const CadastrosCategoriasRoute = CadastrosCategoriasRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/calendario': typeof CalendarioRoute
   '/conciliacao': typeof ConciliacaoRoute
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/calendario': typeof CalendarioRoute
   '/conciliacao': typeof ConciliacaoRoute
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
@@ -122,6 +130,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/calendario': typeof CalendarioRoute
   '/conciliacao': typeof ConciliacaoRoute
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/calendario'
     | '/conciliacao'
     | '/dashboard'
     | '/landing'
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/calendario'
     | '/conciliacao'
     | '/dashboard'
     | '/landing'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/calendario'
     | '/conciliacao'
     | '/dashboard'
     | '/landing'
@@ -185,6 +197,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CalendarioRoute: typeof CalendarioRoute
   ConciliacaoRoute: typeof ConciliacaoRoute
   DashboardRoute: typeof DashboardRoute
   LandingRoute: typeof LandingRoute
@@ -227,6 +240,13 @@ declare module '@tanstack/react-router' {
       path: '/conciliacao'
       fullPath: '/conciliacao'
       preLoaderRoute: typeof ConciliacaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calendario': {
+      id: '/calendario'
+      path: '/calendario'
+      fullPath: '/calendario'
+      preLoaderRoute: typeof CalendarioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -297,6 +317,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CalendarioRoute: CalendarioRoute,
   ConciliacaoRoute: ConciliacaoRoute,
   DashboardRoute: DashboardRoute,
   LandingRoute: LandingRoute,

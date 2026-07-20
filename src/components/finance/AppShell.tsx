@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   CalendarClock,
+  CalendarDays,
   Check,
   ChevronsLeft,
   ChevronsRight,
@@ -57,7 +58,14 @@ import { VoiceCaptureFlow } from "./VoiceCaptureFlow";
 
 const SIDEBAR_COLLAPSED_KEY = "calcum:sidebar-collapsed";
 
-type Section = "day" | "cadastros" | "membros" | "conciliacao" | "planejamento" | "analytics";
+type Section =
+  | "day"
+  | "cadastros"
+  | "membros"
+  | "conciliacao"
+  | "planejamento"
+  | "calendario"
+  | "analytics";
 
 type AppShellProps = {
   activeSection: Section;
@@ -107,6 +115,7 @@ const navItems: NavItem[] = [
       { label: "Contas fixas", to: "/planejamento/contas-fixas", icon: CalendarClock },
     ],
   },
+  { label: "Calendário", to: "/calendario", icon: CalendarDays, section: "calendario" },
   {
     label: "Análises",
     to: "/dashboard",

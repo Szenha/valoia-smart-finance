@@ -1,29 +1,49 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock } from "lucide-react";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarClock, HandCoins } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
+import { CategoryPieCard } from "@/components/finance/CategoryPieCard";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
+import { SettleBillDialog } from "@/components/finance/SettleBillDialog";
+import { StatTile } from "@/components/finance/StatTile";
 import {
   ensureRecurringBillOccurrences,
   fetchAccountBalances,
+  fetchAccounts,
+  fetchCalendarEventsUpcoming,
   fetchCardSummary,
+  fetchCategories,
+  fetchFamilyMembers,
   fetchHouseholdMembers,
   fetchMemberProfiles,
   fetchRecurringBillsUpcoming,
-  markOccurrencePaid,
 } from "@/lib/finance/data";
+import { categoryIconFor } from "@/lib/finance/category-icons";
+import { useCategoryDrilldown } from "@/lib/finance/category-drilldown";
+import { addDaysToDateOnly, localToday } from "@/lib/finance/date-utils";
+import { eventIconFor } from "@/lib/finance/event-icons";
 import { billOccurrenceState } from "@/lib/finance/recurring-bills";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
-import { categoryTypeLabelPlural, formatCurrency } from "@/lib/finance/types";
+import {
+  categoryTypeLabelPlural,
+  formatCurrency,
+  type CalendarEventOccurrence,
+  type RecurringBillOccurrenceRow,
+} from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
 const UPCOMING_BILLS_WINDOW_DAYS = 30;
+
+type UpcomingItem =
+  | { kind: "bill"; date: string; occurrence: RecurringBillOccurrenceRow }
+  | { kind: "event"; date: string; occurrence: CalendarEventOccurrence };
 
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
@@ -36,10 +56,6 @@ export const Route = createFileRoute("/dashboard")({
   head: () => ({ meta: [{ title: "Ticlio — Dashboard" }] }),
   component: DashboardRoute,
 });
-
-// Soft/pastel palette for the category donut, echoing the reference app's
-// muted chart style (a dominant neutral slice + gentle accent hues).
-const COLORS = ["#94a3b8", "#6ee7b7", "#fda4af", "#93c5fd", "#fcd34d", "#7dd3c0", "#c4b5fd"];
 
 function monthBounds() {
   const now = new Date();
@@ -121,8 +137,31 @@ function DashboardRoute() {
         p_end: bounds.end,
       });
       if (error) throw new Error(error.message);
-      return (data ?? []) as { category_name: string; total: number }[];
+      return (data ?? []) as { category_id: string | null; category_name: string; total: number }[];
     },
+  });
+  const incomeCategoryQuery = useQuery({
+    queryKey: ["dashboard-income-category", orgId, bounds.start, bounds.end],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("incomes_by_category", {
+        p_org_id: orgId!,
+        p_start: bounds.start,
+        p_end: bounds.end,
+      });
+      if (error) throw new Error(error.message);
+      return (data ?? []) as { category_id: string | null; category_name: string; total: number }[];
+    },
+  });
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCategories(orgId!),
+  });
+  const accountsQuery = useQuery({
+    queryKey: ["accounts", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchAccounts(orgId!),
   });
   const pendingQuery = useQuery({
     queryKey: ["dashboard-pending", orgId],
@@ -156,26 +195,45 @@ function DashboardRoute() {
     queryKey: ["dashboard-upcoming-bills", orgId],
     enabled: !!orgId,
     queryFn: async () => {
-      const start = new Date().toISOString().slice(0, 10);
-      const end = new Date(Date.now() + UPCOMING_BILLS_WINDOW_DAYS * 86_400_000)
-        .toISOString()
-        .slice(0, 10);
+      const start = localToday();
+      const end = addDaysToDateOnly(start, UPCOMING_BILLS_WINDOW_DAYS);
       await ensureRecurringBillOccurrences(orgId!, end);
       return fetchRecurringBillsUpcoming(orgId!, start, end);
     },
   });
-  const payBillMutation = useMutation({
-    mutationFn: async (occurrence: { id: string; expected_amount: number }) =>
-      markOccurrencePaid(occurrence.id, {
-        paidAmount: occurrence.expected_amount,
-        paidAt: new Date().toISOString().slice(0, 10),
-        paidBy: currentUserQuery.data?.id ?? null,
-        transactionId: null,
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["dashboard-upcoming-bills", orgId] });
+  // Mesma janela de 30 dias das contas, mesclada na mesma lista "Próximos
+  // eventos" — compromissos da família (Calendário) não têm "pago"/"pulado",
+  // só aparecem e levam pra edição no Calendário quando clicados.
+  const upcomingEventsQuery = useQuery({
+    queryKey: ["dashboard-upcoming-events", orgId],
+    enabled: !!orgId,
+    queryFn: () => {
+      const start = localToday();
+      const end = addDaysToDateOnly(start, UPCOMING_BILLS_WINDOW_DAYS);
+      return fetchCalendarEventsUpcoming(orgId!, start, end);
     },
   });
+  const familyMembersQuery = useQuery({
+    queryKey: ["family-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchFamilyMembers(orgId!),
+  });
+  const [settlingOccurrence, setSettlingOccurrence] = useState<RecurringBillOccurrenceRow | null>(
+    null,
+  );
+
+  const upcomingItems: UpcomingItem[] = [
+    ...(upcomingBillsQuery.data ?? []).map(
+      (occurrence): UpcomingItem => ({ kind: "bill", date: occurrence.due_date, occurrence }),
+    ),
+    ...(upcomingEventsQuery.data ?? []).map(
+      (occurrence): UpcomingItem => ({
+        kind: "event",
+        date: occurrence.occurrence_date,
+        occurrence,
+      }),
+    ),
+  ].sort((a, b) => a.date.localeCompare(b.date));
 
   const summary = summaryQuery.data;
   const delta = summary ? summary.expenses - summary.previous_expenses : 0;
@@ -198,29 +256,39 @@ function DashboardRoute() {
     0,
   );
   const netWorth = checkingTotal + investmentTotal - totalCommitted;
-  const categoryTotal = (categoryQuery.data ?? []).reduce((sum, row) => sum + Number(row.total), 0);
+  const categories = categoriesQuery.data ?? [];
+  const expenseCategories = categories.filter((category) => category.type === "expense");
+  const incomeCategories = categories.filter((category) => category.type === "income");
+  const categoryDrilldown = useCategoryDrilldown(expenseCategories, categoryQuery.data ?? []);
+  const incomeCategoryDrilldown = useCategoryDrilldown(
+    incomeCategories,
+    incomeCategoryQuery.data ?? [],
+  );
 
   return (
     <AppShell activeSection="analytics" title="Dashboard" subtitle="Resumo do mês atual">
       <AnalyticsTabs value="dashboard" />
 
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Visão geral do mês
+      </h2>
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        <StatCard
+        <StatTile
           label={categoryTypeLabelPlural.income}
           value={formatCurrency(summary?.income ?? 0)}
           theme="green"
         />
-        <StatCard
+        <StatTile
           label={categoryTypeLabelPlural.expense}
           value={formatCurrency(summary?.expenses ?? 0)}
           theme="coral"
         />
-        <StatCard
+        <StatTile
           label="A receber"
           value={formatCurrency(receivableQuery.data ?? 0)}
           theme="blue"
         />
-        <StatCard
+        <StatTile
           label="Comprometido no cartão"
           value={formatCurrency(totalCommitted)}
           theme="amber"
@@ -232,149 +300,113 @@ function DashboardRoute() {
           <CardHeader>
             <CardTitle>Patrimônio total</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="border-b border-slate-100 pb-3">
-              <span className="text-sm font-medium text-muted-foreground">Patrimônio líquido</span>
+          <CardContent className="space-y-3">
+            <div className="flex items-baseline gap-2">
               <p
-                className={`text-2xl font-bold ${netWorth < 0 ? "text-red-700" : "text-emerald-700"}`}
+                className={`text-2xl font-bold sm:text-3xl ${netWorth < 0 ? "text-red-700" : "text-emerald-700"}`}
               >
                 {formatCurrency(netWorth)}
               </p>
-              <p className="text-xs text-muted-foreground">
-                Contas correntes + investimentos − dívida no cartão
-              </p>
+              <span className="text-xs text-muted-foreground">patrimônio líquido</span>
             </div>
-            <div className="grid gap-3 text-sm sm:grid-cols-3">
-              <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-muted-foreground">Contas correntes</p>
-                <strong className={checkingTotal < 0 ? "text-red-700" : "text-emerald-700"}>
-                  {formatCurrency(checkingTotal)}
-                </strong>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-muted-foreground">Investimentos</p>
-                <strong className={investmentTotal < 0 ? "text-red-700" : "text-emerald-700"}>
-                  {formatCurrency(investmentTotal)}
-                </strong>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-muted-foreground">Cartões (dívida)</p>
-                <strong className={totalCommitted > 0 ? "text-red-700" : "text-emerald-700"}>
-                  {formatCurrency(-totalCommitted)}
-                </strong>
-              </div>
+            <div className="grid grid-cols-3 gap-2">
+              <PatrimonyStat
+                label="Contas correntes"
+                total={checkingTotal}
+                items={checkingBalances.map((row) => ({
+                  key: row.account_id,
+                  name: row.name,
+                  value: formatCurrency(row.current_balance),
+                }))}
+              />
+              <PatrimonyStat
+                label="Investimentos"
+                total={investmentTotal}
+                items={investmentBalances.map((row) => ({
+                  key: row.account_id,
+                  name: row.name,
+                  value: formatCurrency(row.current_balance),
+                }))}
+              />
+              <PatrimonyStat
+                label="Cartões (dívida)"
+                total={-totalCommitted}
+                items={(cardSummaryQuery.data ?? []).map((card) => ({
+                  key: card.account_id,
+                  name: card.name,
+                  value: formatCurrency(-card.current_invoice_total),
+                }))}
+              />
             </div>
-            {allBalances.length > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {allBalances.map((row) => (
-                  <div
-                    key={row.account_id}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm"
-                  >
-                    <span>
-                      {row.name}{" "}
-                      <span className="text-xs text-muted-foreground">
-                        ({row.kind === "investment" ? "Investimento" : "Conta corrente"})
-                      </span>
-                    </span>
-                    <strong
-                      className={row.current_balance < 0 ? "text-red-700" : "text-emerald-700"}
-                    >
-                      {formatCurrency(row.current_balance)}
-                    </strong>
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </CardContent>
         </Card>
       ) : null}
 
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Detalhamento
+      </h2>
       <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Despesas por categoria</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="relative h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryQuery.data ?? []}
-                    dataKey="total"
-                    nameKey="category_name"
-                    innerRadius={55}
-                    outerRadius={92}
-                    paddingAngle={2}
-                  >
-                    {(categoryQuery.data ?? []).map((_, index) => (
-                      <Cell key={index} fill={COLORS[index % COLORS.length]} stroke="none" />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-xs text-muted-foreground">Total</span>
-                <strong className="text-lg">{formatCurrency(categoryTotal)}</strong>
-              </div>
-            </div>
-            <div className="mt-2 space-y-1.5">
-              {(categoryQuery.data ?? []).map((row, index) => {
-                const percent = categoryTotal > 0 ? (Number(row.total) / categoryTotal) * 100 : 0;
-                return (
-                  <div key={row.category_name} className="flex items-center gap-2 text-sm">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{row.category_name}</span>
-                    <span className="shrink-0 text-muted-foreground">{percent.toFixed(0)}%</span>
-                    <strong className="w-24 shrink-0 text-right">
-                      {formatCurrency(row.total)}
-                    </strong>
-                  </div>
-                );
-              })}
-              {(categoryQuery.data ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">Sem despesas categorizadas no mês.</p>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
+        <CategoryPieCard
+          title="Despesas por categoria"
+          drilldown={categoryDrilldown}
+          emptyLabel="Sem despesas categorizadas no mês."
+          error={categoryQuery.error}
+        />
+        <CategoryPieCard
+          title="Receitas por categoria"
+          drilldown={incomeCategoryDrilldown}
+          emptyLabel="Sem receitas categorizadas no mês."
+          error={incomeCategoryQuery.error}
+        />
         <Card>
           <CardHeader>
             <CardTitle>Comparação com mês anterior</CardTitle>
           </CardHeader>
           <CardContent>
-            {hasPreviousMonthData ? (
-              <p className={delta > 0 ? "text-red-700" : "text-emerald-700"}>
-                {delta > 0 ? "Aumento" : "Redução"} de {formatCurrency(Math.abs(delta))} em
-                despesas.
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
+            <div className="grid grid-cols-2 gap-3">
+              <StatTile
+                label={delta > 0 ? "Aumento em despesas" : "Redução em despesas"}
+                value={hasPreviousMonthData ? formatCurrency(Math.abs(delta)) : "—"}
+                theme={delta > 0 ? "coral" : "green"}
+                compact
+              />
+              <StatTile
+                label="Saldo do mês"
+                value={formatCurrency(summary?.balance ?? 0)}
+                theme="blue"
+                compact
+              />
+            </div>
+            {!hasPreviousMonthData ? (
+              <p className="mt-2 text-xs text-muted-foreground">
                 Ainda não há dados do mês anterior para comparar.
               </p>
-            )}
-            <div className="mt-4 flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
-              <span className="text-muted-foreground">Saldo do mês</span>
-              <strong>{formatCurrency(summary?.balance ?? 0)}</strong>
-            </div>
-            <div className="mt-6 space-y-3">
+            ) : null}
+            <div className="mt-6 space-y-1">
               <h3 className="font-medium">
                 Pendentes de revisão
                 {summary?.pending_review ? ` (${summary.pending_review})` : ""}
               </h3>
-              {(pendingQuery.data ?? []).map((transaction) => (
-                <div key={transaction.id} className="flex justify-between border-b py-2 text-sm">
-                  <span>{transaction.description}</span>
-                  <strong>{formatCurrency(Number(transaction.amount))}</strong>
-                </div>
-              ))}
-              {(pendingQuery.data ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nada pendente de revisão.</p>
-              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Lançamentos sem categoria — toque num deles para ir categorizar em Transações.
+              </p>
+              <div className="space-y-0 pt-2">
+                {(pendingQuery.data ?? []).map((transaction) => (
+                  <Link
+                    key={transaction.id}
+                    to="/"
+                    className="flex items-center justify-between gap-2 border-b py-2 text-sm hover:bg-slate-50"
+                  >
+                    <span className="min-w-0 truncate">{transaction.description}</span>
+                    <strong className="shrink-0">
+                      {formatCurrency(Number(transaction.amount))}
+                    </strong>
+                  </Link>
+                ))}
+                {(pendingQuery.data ?? []).length === 0 ? (
+                  <p className="py-1 text-sm text-muted-foreground">Nada pendente de revisão.</p>
+                ) : null}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -382,52 +414,98 @@ function DashboardRoute() {
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2">
               <CalendarClock className="h-4 w-4 text-emerald-700" />
-              Contas a pagar
+              Próximos eventos
             </CardTitle>
             <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
-              <Link to="/planejamento/contas-fixas">Ver todas</Link>
+              <Link to="/calendario">Ver calendário</Link>
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {(upcomingBillsQuery.data ?? []).length === 0 ? (
+            {upcomingItems.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Nenhum vencimento nos próximos {UPCOMING_BILLS_WINDOW_DAYS} dias.
+                Nenhuma conta ou compromisso nos próximos {UPCOMING_BILLS_WINDOW_DAYS} dias.
               </p>
             ) : (
-              (upcomingBillsQuery.data ?? []).map((occurrence) => {
-                const state = billOccurrenceState(occurrence);
-                return (
-                  <div
-                    key={occurrence.id}
-                    className="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-b-0"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate">{occurrence.bill_name}</p>
-                      <p
-                        className={cn(
-                          "text-xs",
-                          state.tone === "warning" ? "text-amber-700" : "text-muted-foreground",
-                        )}
-                      >
-                        {state.label}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <strong>{formatCurrency(occurrence.expected_amount)}</strong>
-                      {occurrence.status === "pending" ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          disabled={payBillMutation.isPending}
-                          onClick={() => payBillMutation.mutate(occurrence)}
+              upcomingItems.map((item) => {
+                if (item.kind === "bill") {
+                  const occurrence = item.occurrence;
+                  const state = billOccurrenceState(occurrence);
+                  const billColor = occurrence.category_color ?? "#64748b";
+                  const BillIcon = categoryIconFor(occurrence.category_icon, "expense");
+                  return (
+                    <div
+                      key={`bill-${occurrence.id}`}
+                      className="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-b-0"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                          style={{ backgroundColor: `${billColor}1f`, color: billColor }}
                         >
-                          Marcar paga
-                        </Button>
-                      ) : null}
+                          <BillIcon className="h-3.5 w-3.5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate">{occurrence.bill_name}</p>
+                          <p
+                            className={cn(
+                              "text-xs",
+                              state.tone === "warning" ? "text-amber-700" : "text-muted-foreground",
+                            )}
+                          >
+                            {state.label}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <strong>{formatCurrency(occurrence.expected_amount)}</strong>
+                        {occurrence.status === "pending" ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label="Dar baixa"
+                            title="Dar baixa"
+                            onClick={() => setSettlingOccurrence(occurrence)}
+                          >
+                            <HandCoins className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
+                  );
+                }
+                const occurrence = item.occurrence;
+                const familyMember = occurrence.family_member_id
+                  ? (familyMembersQuery.data ?? []).find(
+                      (m) => m.id === occurrence.family_member_id,
+                    )
+                  : null;
+                const memberColor = familyMember?.color ?? occurrence.color ?? "#64748b";
+                const EventIcon = eventIconFor(occurrence.icon);
+                const memberName = familyMember?.name ?? null;
+                return (
+                  <Link
+                    key={`event-${occurrence.event_id}-${occurrence.occurrence_date}`}
+                    to="/calendario"
+                    className="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-b-0 hover:bg-slate-50"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                        style={{ backgroundColor: `${memberColor}1f`, color: memberColor }}
+                      >
+                        <EventIcon className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate">{occurrence.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {memberName ? `${memberName} · ` : ""}
+                          {occurrence.start_time ? occurrence.start_time.slice(0, 5) : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
                 );
               })
             )}
@@ -518,59 +596,62 @@ function DashboardRoute() {
           </Card>
         ) : null}
       </section>
+
+      <SettleBillDialog
+        orgId={orgId ?? ""}
+        userId={currentUserQuery.data?.id ?? null}
+        accounts={accountsQuery.data ?? []}
+        categories={categoriesQuery.data ?? []}
+        occurrence={settlingOccurrence}
+        onClose={() => setSettlingOccurrence(null)}
+        onSettled={async () => {
+          setSettlingOccurrence(null);
+          await queryClient.invalidateQueries({ queryKey: ["dashboard-upcoming-bills", orgId] });
+        }}
+      />
     </AppShell>
   );
 }
 
-type StatTheme = "green" | "coral" | "blue" | "amber";
-
-const STAT_THEME: Record<StatTheme, { bg: string; label: string; value: string; spark: string }> = {
-  green: {
-    bg: "bg-emerald-50",
-    label: "text-emerald-700",
-    value: "text-emerald-900",
-    spark: "#10b981",
-  },
-  coral: { bg: "bg-rose-50", label: "text-rose-700", value: "text-rose-900", spark: "#f43f5e" },
-  blue: { bg: "bg-sky-50", label: "text-sky-700", value: "text-sky-900", spark: "#0284c7" },
-  amber: { bg: "bg-amber-50", label: "text-amber-700", value: "text-amber-900", spark: "#d97706" },
-};
-
-// Purely decorative bump-curve, echoing the reference app's sparkline behind
-// each metric card — not driven by real data.
-function DecorativeSparkline({ color }: { color: string }) {
-  return (
-    <svg
-      viewBox="0 0 120 40"
-      preserveAspectRatio="none"
-      className="pointer-events-none absolute inset-x-0 bottom-0 h-10 w-full opacity-25"
+/** Mini indicador do card Patrimônio (Contas correntes/Investimentos/
+ *  Cartões) — o total sempre visível, o detalhe por conta só aparece num
+ *  popover ao clicar, pra não empilhar uma lista inteira de contas sempre
+ *  aberta na tela (era o que deixava o card grande demais). Popover em vez
+ *  de hover pra funcionar no toque também. */
+function PatrimonyStat({
+  label,
+  total,
+  items,
+}: {
+  label: string;
+  total: number;
+  items: { key: string; name: string; value: string }[];
+}) {
+  const trigger = (
+    <button
+      type="button"
+      disabled={items.length === 0}
+      className="w-full rounded-lg bg-slate-50 p-3 text-left text-sm transition-colors enabled:hover:bg-slate-100"
     >
-      <path
-        d="M0,32 C15,32 20,10 35,10 C50,10 55,30 70,30 C85,30 90,4 120,4"
-        fill="none"
-        stroke={color}
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-    </svg>
+      <p className="truncate text-xs text-muted-foreground">{label}</p>
+      <strong className={total < 0 ? "text-red-700" : "text-emerald-700"}>
+        {formatCurrency(total)}
+      </strong>
+    </button>
   );
-}
-
-function StatCard({ label, value, theme }: { label: string; value: string; theme: StatTheme }) {
-  const { bg, label: labelClass, value: valueClass, spark } = STAT_THEME[theme];
+  if (items.length === 0) return trigger;
   return (
-    <div className={`relative overflow-hidden rounded-2xl p-4 ${bg}`}>
-      <DecorativeSparkline color={spark} />
-      <p
-        className={`relative truncate text-[10px] font-semibold uppercase tracking-wide ${labelClass}`}
-      >
-        {label}
-      </p>
-      <p
-        className={`relative mt-1 truncate text-lg font-bold leading-tight lg:text-2xl ${valueClass}`}
-      >
-        {value}
-      </p>
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent className="w-64 space-y-2" align="center">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        {items.map((item) => (
+          <div key={item.key} className="flex items-center justify-between gap-2 text-sm">
+            <span className="min-w-0 truncate">{item.name}</span>
+            <strong className="shrink-0">{item.value}</strong>
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }

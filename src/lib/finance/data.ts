@@ -1,8 +1,13 @@
 import { supabase } from "@/lib/supabase/client";
+import { defaultPaymentMethod } from "./transactionIcons";
 import type {
   AccountBalanceRow,
+  AccountKind,
   AccountRow,
   AdditionalCardRow,
+  CalendarEventOccurrence,
+  CalendarEventRow,
+  FamilyMemberRow,
   CardSummaryRow,
   CategoryRow,
   ExpenseSplitFilters,
@@ -25,7 +30,7 @@ export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
   const { data, error } = await supabase
     .from("transactions")
     .select(
-      "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id",
+      "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id, transfer_group_id",
     )
     .eq("organization_id", orgId)
     .order("posted_at", { ascending: false })
@@ -539,6 +544,66 @@ export async function markOccurrencePaid(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Dar baixa numa ocorrência de conta fixa. Vinculando a um lançamento já
+ * existente, só liga a baixa a ele (sem duplicar). Sem vínculo ("baixa
+ * manual"), cria a movimentação de verdade na conta informada — antes essa
+ * baixa só atualizava o status da ocorrência e nunca alimentava
+ * Transações, então o gasto ficava invisível no resto do app (saldo de
+ * conta, relatórios etc).
+ */
+export async function settleRecurringBillOccurrence(
+  orgId: string,
+  occurrenceId: string,
+  input: {
+    billName: string;
+    paidAmount: number;
+    paidAt: string;
+    paidBy: string | null;
+    linkedTransactionId: string | null;
+    accountKey: string | null;
+    accountKind: AccountKind | null;
+    categoryId: string | null;
+  },
+): Promise<void> {
+  let transactionId = input.linkedTransactionId;
+  if (!transactionId) {
+    if (!input.accountKey || !input.accountKind) {
+      throw new Error("Selecione a conta usada no pagamento.");
+    }
+    const { data, error } = await supabase
+      .from("transactions")
+      .insert({
+        organization_id: orgId,
+        description: input.billName,
+        type: "MANUAL_DEBIT",
+        account_id: input.accountKey,
+        account_kind: input.accountKind,
+        payment_method: defaultPaymentMethod(input.accountKind),
+        entry_source: "manual",
+        currency: "BRL",
+        created_by: input.paidBy,
+        category_id: input.categoryId,
+        amount: -Math.abs(input.paidAmount),
+        posted_at: new Date(input.paidAt).toISOString(),
+        classification_method: input.categoryId ? "manual" : null,
+        classification_confidence: input.categoryId ? 1 : null,
+        needs_review: !input.categoryId,
+        fit_id: `MANUAL-${crypto.randomUUID()}`,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    transactionId = data.id as string;
+  }
+  await markOccurrencePaid(occurrenceId, {
+    paidAmount: input.paidAmount,
+    paidAt: input.paidAt,
+    paidBy: input.paidBy,
+    transactionId,
+  });
+}
+
 export async function markOccurrenceSkipped(occurrenceId: string): Promise<void> {
   const { error } = await supabase
     .from("recurring_bill_occurrences")
@@ -564,6 +629,119 @@ export async function reopenOccurrence(occurrenceId: string): Promise<void> {
       paid_transaction_id: null,
     })
     .eq("id", occurrenceId);
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchCalendarEvents(orgId: string): Promise<CalendarEventRow[]> {
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select(
+      "id, family_member_id, title, icon, notes, recurrence, event_date, weekday, start_time, end_time, series_start_date, series_end_date",
+    )
+    .eq("organization_id", orgId)
+    .order("title");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CalendarEventRow[];
+}
+
+export type CalendarEventInput = {
+  family_member_id: string | null;
+  title: string;
+  icon: string | null;
+  notes: string | null;
+  recurrence: CalendarEventRow["recurrence"];
+  event_date: string | null;
+  weekday: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  series_start_date: string;
+  series_end_date: string | null;
+};
+
+export async function createCalendarEvent(
+  orgId: string,
+  createdBy: string | null,
+  input: CalendarEventInput,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .insert({ organization_id: orgId, created_by: createdBy, ...input })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+export async function updateCalendarEvent(
+  eventId: string,
+  input: CalendarEventInput,
+): Promise<void> {
+  const { error } = await supabase
+    .from("calendar_events")
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq("id", eventId);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteCalendarEvent(eventId: string): Promise<void> {
+  const { error } = await supabase.from("calendar_events").delete().eq("id", eventId);
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchCalendarEventsUpcoming(
+  orgId: string,
+  start: string,
+  end: string,
+): Promise<CalendarEventOccurrence[]> {
+  const { data, error } = await supabase.rpc("calendar_events_upcoming", {
+    p_org_id: orgId,
+    p_start: start,
+    p_end: end,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CalendarEventOccurrence[];
+}
+
+export async function fetchFamilyMembers(orgId: string): Promise<FamilyMemberRow[]> {
+  const { data, error } = await supabase
+    .from("family_members")
+    .select("id, name, color, archived")
+    .eq("organization_id", orgId)
+    .eq("archived", false)
+    .order("name");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as FamilyMemberRow[];
+}
+
+export async function createFamilyMember(
+  orgId: string,
+  input: { name: string; color: string },
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("family_members")
+    .insert({ organization_id: orgId, ...input })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+export async function updateFamilyMember(
+  memberId: string,
+  input: { name: string; color: string },
+): Promise<void> {
+  const { error } = await supabase
+    .from("family_members")
+    .update({ ...input, updated_at: new Date().toISOString() })
+    .eq("id", memberId);
+  if (error) throw new Error(error.message);
+}
+
+export async function archiveFamilyMember(memberId: string): Promise<void> {
+  const { error } = await supabase
+    .from("family_members")
+    .update({ archived: true, updated_at: new Date().toISOString() })
+    .eq("id", memberId);
   if (error) throw new Error(error.message);
 }
 

@@ -198,7 +198,7 @@ function MembrosRoute() {
     }
     const ok = await confirm({
       title: "Remover membro",
-      description: "Remover este membro da família?",
+      description: "Remover este membro do workspace?",
       confirmLabel: "Remover",
       destructive: true,
     });
@@ -207,10 +207,10 @@ function MembrosRoute() {
   }
 
   return (
-    <AppShell activeSection="membros" title="Membros" subtitle="Quem faz parte da sua família">
+    <AppShell activeSection="membros" title="Membros" subtitle="Quem tem acesso ao seu workspace">
       <Card>
         <CardHeader>
-          <CardTitle>Membros da família</CardTitle>
+          <CardTitle>Membros do workspace</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {members.map((member) => {

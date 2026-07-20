@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { formatDateBR } from "@/lib/finance/date-utils";
 import { accountLabel, formatCurrency, type TxnRow } from "@/lib/finance/types";
 import type { MatchSuggestion, StatementItemRow } from "@/lib/reconciliation/types";
 
@@ -159,7 +160,7 @@ export function ReconciliationBoard({
                   </Badge>
                   <p className="mt-1 font-medium">{item.description}</p>
                   <p className="text-sm text-muted-foreground">
-                    {new Date(item.posted_at).toLocaleDateString("pt-BR")} ·{" "}
+                    {formatDateBR(item.posted_at)} ·{" "}
                     {accountLabel(item.account_id, String(item.account_kind))}
                   </p>
                   <strong className={item.amount < 0 ? "text-red-700" : "text-emerald-700"}>
@@ -172,7 +173,7 @@ export function ReconciliationBoard({
                       <p className="font-medium">Sugestão: {suggestion?.reason}</p>
                       <p>{suggestedTransaction.description}</p>
                       <p className="text-muted-foreground">
-                        {new Date(suggestedTransaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
+                        {formatDateBR(suggestedTransaction.posted_at)} ·{" "}
                         {formatCurrency(Number(suggestedTransaction.amount))}
                       </p>
                     </>

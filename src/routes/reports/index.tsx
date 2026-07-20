@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   ArrowUpRight,
+  ChevronRight,
+  Coins,
   Repeat,
   Scale,
   Tags,
@@ -16,6 +18,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
+import { CategoryBreadcrumb } from "@/components/finance/CategoryBreadcrumb";
 import { CollapsibleFilters } from "@/components/finance/CollapsibleFilters";
 import {
   Select,
@@ -25,11 +28,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { fetchHouseholdMembers, fetchMemberProfiles } from "@/lib/finance/data";
+import { useCategoryDrilldown } from "@/lib/finance/category-drilldown";
+import { fetchCategories, fetchHouseholdMembers, fetchMemberProfiles } from "@/lib/finance/data";
 import { resolveMemberName } from "@/lib/finance/member-visuals";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { categoryTypeLabelPlural, formatCurrency } from "@/lib/finance/types";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/reports/")({
   beforeLoad: async () => {
@@ -79,6 +84,11 @@ function ReportsRoute() {
     enabled: !!orgId && memberIds.length > 0,
     queryFn: () => fetchMemberProfiles(memberIds),
   });
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCategories(orgId!),
+  });
   // Mobile defaults to the current month only — dense multi-month tables/
   // charts are reserved for desktop, where there's room to compare them.
   const bounds = isMobile ? currentMonthBounds() : currentYearBounds();
@@ -97,6 +107,20 @@ function ReportsRoute() {
     enabled: !!orgId,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("expenses_by_category_for_user", {
+        p_org_id: orgId!,
+        p_start: bounds.start,
+        p_end: bounds.end,
+        p_created_by: createdBy,
+      });
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+  });
+  const incomeCategoryQuery = useQuery({
+    queryKey: ["reports-income-category", orgId, creatorFilter],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("incomes_by_category_for_user", {
         p_org_id: orgId!,
         p_start: bounds.start,
         p_end: bounds.end,
@@ -179,6 +203,14 @@ function ReportsRoute() {
   const householdWideNote = filteredByMember
     ? "Sempre mostra o total da família, não é afetado pelo filtro de pessoa acima."
     : undefined;
+  const categories = categoriesQuery.data ?? [];
+  const expenseCategories = categories.filter((category) => category.type === "expense");
+  const incomeCategories = categories.filter((category) => category.type === "income");
+  const categoryDrilldown = useCategoryDrilldown(expenseCategories, categoryQuery.data ?? []);
+  const incomeCategoryDrilldown = useCategoryDrilldown(
+    incomeCategories,
+    incomeCategoryQuery.data ?? [],
+  );
 
   return (
     <AppShell
@@ -237,10 +269,15 @@ function ReportsRoute() {
             </CardContent>
           </Card>
           <BudgetComparison rows={budgetQuery.data ?? []} note={householdWideNote} />
-          <ReportTable
+          <CategoryBreakdownCard
             title="Despesas por categoria (mês atual)"
-            rows={categoryQuery.data ?? []}
-            labelKey="category_name"
+            drilldown={categoryDrilldown}
+            error={categoryQuery.error}
+          />
+          <CategoryBreakdownCard
+            title="Receitas por categoria (mês atual)"
+            drilldown={incomeCategoryDrilldown}
+            error={incomeCategoryQuery.error}
           />
           <p className="text-center text-xs text-muted-foreground">
             Comparações entre meses, por conta e recorrências ficam disponíveis no desktop.
@@ -263,9 +300,15 @@ function ReportsRoute() {
             />
             <ReportEntryCard
               icon={Tags}
-              title="Por categoria"
+              title="Despesas por categoria"
               description="Despesas do ano agrupadas por categoria"
               anchor="#report-category"
+            />
+            <ReportEntryCard
+              icon={Coins}
+              title="Receitas por categoria"
+              description="Receitas do ano agrupadas por categoria"
+              anchor="#report-income-category"
             />
             <ReportEntryCard
               icon={WalletCards}
@@ -321,12 +364,20 @@ function ReportsRoute() {
             <div id="report-budget">
               <BudgetComparison rows={budgetQuery.data ?? []} note={householdWideNote} />
             </div>
-            <ReportTable
-              id="report-category"
-              title="Despesas por categoria"
-              rows={categoryQuery.data ?? []}
-              labelKey="category_name"
-            />
+            <div id="report-category">
+              <CategoryBreakdownCard
+                title="Despesas por categoria"
+                drilldown={categoryDrilldown}
+                error={categoryQuery.error}
+              />
+            </div>
+            <div id="report-income-category">
+              <CategoryBreakdownCard
+                title="Receitas por categoria"
+                drilldown={incomeCategoryDrilldown}
+                error={incomeCategoryQuery.error}
+              />
+            </div>
             <ReportTable
               id="report-account"
               title="Despesas por conta/cartão"
@@ -473,6 +524,82 @@ function BudgetComparison({ rows, note }: { rows: ReportRow[]; note?: string }) 
             </p>
           ) : null}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Substitui o ReportTable genérico pra "Despesas por categoria": mostra só
+ *  o nome do último nível (nunca "Saída > Casa > Funcionárias") e permite
+ *  trocar a granularidade clicando num grupo (drill-down) ou no breadcrumb
+ *  (drill-up) — ver useCategoryDrilldown. */
+function CategoryBreakdownCard({
+  title,
+  drilldown,
+  error,
+}: {
+  title: string;
+  drilldown: ReturnType<typeof useCategoryDrilldown>;
+  error?: unknown;
+}) {
+  const total = drilldown.buckets.reduce((sum, bucket) => sum + bucket.total, 0);
+  return (
+    <Card>
+      <CardHeader className="space-y-2">
+        <CardTitle>{title}</CardTitle>
+        <CategoryBreadcrumb
+          path={drilldown.path}
+          onRoot={drilldown.drillToRoot}
+          onStep={drilldown.drillToStep}
+        />
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            Não foi possível carregar: {error instanceof Error ? error.message : String(error)}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {drilldown.buckets.map((bucket) => {
+              const percent = total > 0 ? (bucket.total / total) * 100 : 0;
+              return (
+                <button
+                  type="button"
+                  key={bucket.categoryId ?? "none"}
+                  onClick={() => drilldown.drillInto(bucket)}
+                  disabled={!bucket.drillable}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 border-b py-2 text-left text-sm",
+                    bucket.drillable && "hover:bg-slate-50",
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: bucket.color ?? "#94a3b8" }}
+                    />
+                    <span className="max-w-[60%] truncate">{bucket.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {percent.toFixed(0)}%
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <strong>{formatCurrency(bucket.total)}</strong>
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5",
+                        bucket.drillable ? "text-slate-400" : "text-transparent",
+                      )}
+                    />
+                  </span>
+                </button>
+              );
+            })}
+            {drilldown.buckets.length === 0 ? (
+              <p className="py-2 text-sm text-muted-foreground">Nenhuma despesa no período.</p>
+            ) : null}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

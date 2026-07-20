@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowDownCircle,
+  ArrowLeftRight,
   ArrowUpCircle,
   CheckCircle2,
   LayoutGrid,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { CollapsibleFilters } from "@/components/finance/CollapsibleFilters";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
+import { StatTile } from "@/components/finance/StatTile";
 import { TransactionEditDialog } from "@/components/finance/TransactionEditDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import { categoryIconFor } from "@/lib/finance/category-icons";
+import { formatDateBR } from "@/lib/finance/date-utils";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import {
   entrySourceIcon,
@@ -175,6 +178,7 @@ export function TransactionList({
   const [selectedCreator, setSelectedCreator] = useState("all");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedEntrySource, setSelectedEntrySource] = useState("all");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<TxnRow | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
@@ -213,20 +217,26 @@ export function TransactionList({
       (selectedAccount === "all" || transaction.account_id === selectedAccount) &&
       (selectedCreator === "all" || transaction.created_by === selectedCreator) &&
       (selectedPaymentMethod === "all" || transaction.payment_method === selectedPaymentMethod) &&
-      (selectedEntrySource === "all" || transaction.entry_source === selectedEntrySource),
+      (selectedEntrySource === "all" || transaction.entry_source === selectedEntrySource) &&
+      (selectedCategory === "all" || transaction.category_id === selectedCategory),
   );
-  const income = displayed.reduce((sum, t) => (t.amount > 0 ? sum + t.amount : sum), 0);
-  const expenses = displayed.reduce((sum, t) => (t.amount < 0 ? sum + Math.abs(t.amount) : sum), 0);
+  // Transferência é um par débito/crédito entre contas, não receita/despesa
+  // de verdade — excluída do resumo pra não inflar "Entradas"/"Saídas".
+  const income = displayed.reduce(
+    (sum, t) => (t.type !== "MANUAL_TRANSFER" && t.amount > 0 ? sum + t.amount : sum),
+    0,
+  );
+  const expenses = displayed.reduce(
+    (sum, t) => (t.type !== "MANUAL_TRANSFER" && t.amount < 0 ? sum + Math.abs(t.amount) : sum),
+    0,
+  );
 
   return (
     <TooltipProvider>
       <Card>
-        <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Transações</CardTitle>
-            <p className="text-sm text-muted-foreground">{displayed.length} lançamento(s)</p>
-          </div>
-          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="shrink-0">Transações</CardTitle>
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
             <ToggleGroup
               type="single"
               variant="outline"
@@ -244,71 +254,88 @@ export function TransactionList({
               storageKey="calcum:transactions-filters-collapsed"
               onCollapsedChange={onFiltersCollapsedChange}
             >
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-                <Select value={selectedCreator} onValueChange={setSelectedCreator}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    {members.map((member) => (
-                      <SelectItem key={member.user_id} value={member.user_id}>
-                        {memberLabel(member.user_id, currentUserId, profileById, memberById)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                  <SelectTrigger className="w-full sm:w-[220px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as contas</SelectItem>
-                    {accountOptions.map((account) => (
-                      <SelectItem
-                        key={`${account.accountId}|${account.accountKind}`}
-                        value={account.accountId}
-                      >
-                        {accountLabel(account.accountId, account.accountKind)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as formas</SelectItem>
-                    {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
-                      <SelectItem key={method} value={method}>
-                        {paymentMethodLabel[method]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={selectedEntrySource} onValueChange={setSelectedEntrySource}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as origens</SelectItem>
-                    {(Object.keys(entrySourceLabel) as EntrySource[]).map((source) => (
-                      <SelectItem key={source} value={source}>
-                        {entrySourceLabel[source]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select value={selectedCreator} onValueChange={setSelectedCreator}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {members.map((member) => (
+                    <SelectItem key={member.user_id} value={member.user_id}>
+                      {memberLabel(member.user_id, currentUserId, profileById, memberById)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as contas</SelectItem>
+                  {accountOptions.map((account) => (
+                    <SelectItem
+                      key={`${account.accountId}|${account.accountKind}`}
+                      value={account.accountId}
+                    >
+                      {accountLabel(account.accountId, account.accountKind)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as formas</SelectItem>
+                  {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
+                    <SelectItem key={method} value={method}>
+                      {paymentMethodLabel[method]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedEntrySource} onValueChange={setSelectedEntrySource}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as origens</SelectItem>
+                  {(Object.keys(entrySourceLabel) as EntrySource[]).map((source) => (
+                    <SelectItem key={source} value={source}>
+                      {entrySourceLabel[source]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as categorias</SelectItem>
+                  {categoryItems.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.path}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </CollapsibleFilters>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 flex flex-wrap gap-6 border-b pb-4 text-sm">
-            <strong className="text-emerald-700">Entradas {formatCurrency(income)}</strong>
-            <strong className="text-red-700">Saídas {formatCurrency(expenses)}</strong>
-            <strong>Saldo {formatCurrency(income - expenses)}</strong>
+          <div className="mb-4 grid grid-cols-2 gap-3 border-b pb-4 lg:grid-cols-4">
+            <StatTile label="Lançamentos" value={String(displayed.length)} theme="blue" compact />
+            <StatTile label="Entradas" value={formatCurrency(income)} theme="green" compact />
+            <StatTile label="Saídas" value={formatCurrency(expenses)} theme="coral" compact />
+            <StatTile
+              label="Saldo"
+              value={formatCurrency(income - expenses)}
+              theme="amber"
+              compact
+            />
           </div>
           <div
             className={
@@ -334,8 +361,13 @@ export function TransactionList({
                 profileById,
                 memberById,
               );
+              const isTransfer = transaction.type === "MANUAL_TRANSFER";
               const isIncome = transaction.amount >= 0;
-              const TypeIcon = isIncome ? ArrowUpCircle : ArrowDownCircle;
+              const TypeIcon = isTransfer
+                ? ArrowLeftRight
+                : isIncome
+                  ? ArrowUpCircle
+                  : ArrowDownCircle;
               const CategoryIcon = categoryIconFor(category?.icon, category?.type ?? "expense");
               const AccountKindIcon = accountKindIcon(String(transaction.account_kind));
               const PaymentMethodIcon = paymentMethodIcon(transaction.payment_method);
@@ -351,7 +383,22 @@ export function TransactionList({
                 ? { borderLeftColor: `${category.color}59` }
                 : undefined;
               const leftBorderClass = borderForCategory(category, categoryIndex);
-              const amountColorClass = isIncome ? "text-emerald-700" : "text-rose-700";
+              const amountColorClass = isTransfer
+                ? "text-slate-600"
+                : isIncome
+                  ? "text-emerald-700"
+                  : "text-rose-700";
+              const typeIconWrapperClass = isTransfer
+                ? "bg-slate-100 text-slate-600"
+                : isIncome
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-rose-50 text-rose-600";
+              const typeIndicatorClass = isTransfer
+                ? "text-slate-500"
+                : isIncome
+                  ? "text-emerald-600"
+                  : "text-red-600";
+              const typeLabel = isTransfer ? "Transferência" : isIncome ? "Entrada" : "Saída";
               const amountClass = `text-right text-base font-semibold tabular-nums ${amountColorClass}`;
               const listAmountClass = `text-right text-sm font-semibold tabular-nums ${amountColorClass}`;
 
@@ -456,12 +503,12 @@ export function TransactionList({
                   <Tooltip>
                     <TooltipTrigger
                       type="button"
-                      aria-label={isIncome ? "Entrada" : "Saída"}
-                      className={isIncome ? "text-emerald-600" : "text-red-600"}
+                      aria-label={typeLabel}
+                      className={typeIndicatorClass}
                     >
                       <TypeIcon className={INDICATOR_ICON_SIZE_CLASS} />
                     </TooltipTrigger>
-                    <TooltipContent>{isIncome ? "Entrada" : "Saída"}</TooltipContent>
+                    <TooltipContent>{typeLabel}</TooltipContent>
                   </Tooltip>
                 </div>
               );
@@ -566,7 +613,7 @@ export function TransactionList({
                   >
                     <span
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                        isIncome ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+                        typeIconWrapperClass
                       }`}
                     >
                       <TypeIcon className="h-3.5 w-3.5" />
@@ -577,7 +624,7 @@ export function TransactionList({
                           {transaction.description || "-"}
                         </p>
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {new Date(transaction.posted_at).toLocaleDateString("pt-BR")}
+                          {formatDateBR(transaction.posted_at)}
                         </span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -649,7 +696,7 @@ export function TransactionList({
                           </strong>
                         </div>
                         <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                          {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
+                          {formatDateBR(transaction.posted_at)} ·{" "}
                           <AccountKindIcon className="h-3 w-3" />
                           {accountKindLabel[String(transaction.account_kind)] ??
                             transaction.account_kind}
@@ -702,6 +749,7 @@ export function TransactionList({
           additionalCards={additionalCards}
           members={members}
           profiles={profiles}
+          transactions={transactions}
           onClose={() => setEditingTransaction(null)}
         />
       ) : null}

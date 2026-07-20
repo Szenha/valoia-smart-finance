@@ -106,7 +106,18 @@ function Index() {
 
   async function handleDeleteTransaction(txn: TxnRow) {
     if (!orgId) return;
-    await supabase.from("transactions").delete().eq("id", txn.id).eq("organization_id", orgId);
+    // Transferência é sempre um par de linhas ligadas por transfer_group_id
+    // (débito na origem, crédito no destino) — excluir só uma deixaria a
+    // outra ponta órfã, com um valor que nunca existiu isoladamente.
+    if (txn.transfer_group_id) {
+      await supabase
+        .from("transactions")
+        .delete()
+        .eq("transfer_group_id", txn.transfer_group_id)
+        .eq("organization_id", orgId);
+    } else {
+      await supabase.from("transactions").delete().eq("id", txn.id).eq("organization_id", orgId);
+    }
     await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
   }
 

@@ -86,6 +86,9 @@ export type TxnRow = {
   original_text?: string | null;
   consolidation_status?: "aberto" | "consolidado" | string | null;
   period_closure_id?: string | null;
+  /** Liga as duas pernas (débito na origem, crédito no destino) de uma
+   *  transferência — null para lançamentos normais de receita/despesa. */
+  transfer_group_id?: string | null;
 };
 
 export type ExpenseSplitFilters = {
@@ -222,6 +225,8 @@ export type RecurringBillOccurrenceRow = {
   bill_name: string;
   category_id: string | null;
   category_name: string | null;
+  category_icon: string | null;
+  category_color: string | null;
   account_id: string | null;
   due_date: string;
   expected_amount: number;
@@ -246,6 +251,47 @@ export const dueDateAdjustmentLabel: Record<RecurringBillDueDateAdjustment, stri
   none: "Não ajustar (mantém a data mesmo em fim de semana)",
   previous_business_day: "Antecipar para o dia útil anterior",
   next_business_day: "Adiar para o próximo dia útil",
+};
+
+/** Pessoa do grupo só pra fins de calendário/cor — não exige login nem
+ *  vínculo com organization_members, ao contrário de HouseholdMemberRow.
+ *  Cor é atributo do membro, não do evento. */
+export type FamilyMemberRow = {
+  id: string;
+  name: string;
+  color: string;
+  archived: boolean;
+};
+
+export type CalendarEventRecurrence = "once" | "weekly";
+
+export type CalendarEventRow = {
+  id: string;
+  family_member_id: string | null;
+  title: string;
+  icon: string | null;
+  notes: string | null;
+  recurrence: CalendarEventRecurrence;
+  event_date: string | null;
+  weekday: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  series_start_date: string;
+  series_end_date: string | null;
+};
+
+/** Uma ocorrência já expandida (data concreta) de um evento — retorno da
+ *  RPC calendar_events_upcoming, mesmo formato pra 'once' e 'weekly'. `color`
+ *  já vem resolvida do family_member (join feito no banco), nunca do evento. */
+export type CalendarEventOccurrence = {
+  event_id: string;
+  occurrence_date: string;
+  title: string;
+  icon: string | null;
+  color: string | null;
+  family_member_id: string | null;
+  start_time: string | null;
+  end_time: string | null;
 };
 
 export type HouseholdMemberRow = {

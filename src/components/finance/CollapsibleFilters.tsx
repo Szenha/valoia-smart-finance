@@ -36,7 +36,7 @@ export function CollapsibleFilters({ storageKey, children, onCollapsedChange }: 
   }
 
   return (
-    <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+    <div className="flex flex-wrap items-center gap-2">
       <Button
         type="button"
         variant="outline"

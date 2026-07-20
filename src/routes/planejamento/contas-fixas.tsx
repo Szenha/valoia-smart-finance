@@ -4,8 +4,6 @@ import {
   CalendarClock,
   CalendarDays,
   Check,
-  ChevronLeft,
-  ChevronRight,
   LayoutGrid,
   List,
   Pause,
@@ -18,7 +16,9 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
+import { MonthCalendar, monthCalendarDayKey } from "@/components/finance/MonthCalendar";
 import { PlanejamentoTabs } from "@/components/finance/PlanejamentoTabs";
+import { SettleBillDialog } from "@/components/finance/SettleBillDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,14 +45,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { leafCategoryOptions } from "@/lib/finance/categories";
 import {
+  addDaysToDateOnly,
+  addMonthsToDateOnly,
+  formatDateBR,
+  localToday,
+  monthsBetweenDateOnly,
+  startOfCurrentLocalMonth,
+  startOfMonthDateOnly,
+} from "@/lib/finance/date-utils";
+import {
   createRecurringBill,
   ensureRecurringBillOccurrences,
   fetchAccounts,
   fetchCategories,
   fetchRecurringBills,
   fetchRecurringBillsUpcoming,
-  fetchTransactions,
-  markOccurrencePaid,
   markOccurrenceSkipped,
   reopenOccurrence,
   setRecurringBillStatus,
@@ -88,76 +95,14 @@ export const Route = createFileRoute("/planejamento/contas-fixas")({
 
 const HORIZON_DAYS = 180;
 const CALENDAR_WINDOW_DAYS = 30;
-const MATCH_WINDOW_DAYS = 10;
-const WEEKDAY_LABELS = ["D", "S", "T", "Q", "Q", "S", "S"];
 const VIEW_MODE_KEY = "calcum:contas-fixas-view";
 
 type ViewMode = "list" | "cards" | "calendar";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDays(dateStr: string, days: number): string {
-  const date = new Date(dateStr);
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-function startOfMonth(dateStr: string): string {
-  const date = new Date(dateStr);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
-/** Grade de semanas (7 colunas) cobrindo o mês de monthDate, incluindo dias
- *  de meses vizinhos para completar a primeira/última semana. */
-function monthGrid(monthDate: Date): Date[][] {
-  const year = monthDate.getFullYear();
-  const month = monthDate.getMonth();
-  const firstWeekday = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: Date[] = [];
-  for (let i = 0; i < firstWeekday; i += 1) {
-    cells.push(new Date(year, month, i - firstWeekday + 1));
-  }
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(new Date(year, month, day));
-  }
-  while (cells.length % 7 !== 0) {
-    cells.push(
-      new Date(year, month, daysInMonth + (cells.length - firstWeekday - daysInMonth) + 1),
-    );
-  }
-  const weeks: Date[][] = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-  return weeks;
-}
-
-function dateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
 
 function num(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function addMonths(dateStr: string, months: number): string {
-  const date = new Date(dateStr);
-  date.setMonth(date.getMonth() + months);
-  return date.toISOString().slice(0, 10);
-}
-
-/** Inverso de addMonths, usado para preencher "prever por quantos meses"
- *  ao editar uma conta fixa que já tem end_date gravado. */
-function monthsBetween(startStr: string, endStr: string): number {
-  const start = new Date(startStr);
-  const end = new Date(endStr);
-  return Math.max(
-    0,
-    (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()),
-  );
 }
 
 type FormState = {
@@ -186,7 +131,7 @@ function emptyForm(): FormState {
     dueDay: "5",
     dueDateAdjustment: "previous_business_day",
     reminderDaysBefore: "3",
-    startDate: today(),
+    startDate: localToday(),
     projectionMonths: "",
     notes: "",
   };
@@ -227,26 +172,17 @@ function ContasFixasRoute() {
     queryKey: ["recurring-bill-occurrences", orgId],
     enabled: !!orgId,
     queryFn: async () => {
-      const through = addDays(today(), HORIZON_DAYS);
+      const through = addDaysToDateOnly(localToday(), HORIZON_DAYS);
       await ensureRecurringBillOccurrences(orgId!, through);
-      return fetchRecurringBillsUpcoming(orgId!, startOfMonth(today()), through);
+      return fetchRecurringBillsUpcoming(orgId!, startOfMonthDateOnly(localToday()), through);
     },
   });
-  const transactionsQuery = useQuery({
-    queryKey: ["transactions", orgId],
-    enabled: !!orgId,
-    queryFn: () => fetchTransactions(orgId!),
-  });
-
   const [createOpen, setCreateOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<RecurringBillRow | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [payOccurrence, setPayOccurrence] = useState<RecurringBillOccurrenceRow | null>(null);
-  const [paidAmount, setPaidAmount] = useState("");
-  const [paidAt, setPaidAt] = useState(today());
-  const [linkedTransactionId, setLinkedTransactionId] = useState("none");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date(startOfMonth(today())));
+  const [calendarMonth, setCalendarMonth] = useState(() => startOfCurrentLocalMonth());
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -279,7 +215,7 @@ function ContasFixasRoute() {
       reminderDaysBefore: String(bill.reminder_days_before),
       startDate: bill.start_date.slice(0, 10),
       projectionMonths: bill.end_date
-        ? String(monthsBetween(bill.start_date.slice(0, 10), bill.end_date.slice(0, 10)))
+        ? String(monthsBetweenDateOnly(bill.start_date.slice(0, 10), bill.end_date.slice(0, 10)))
         : "",
       notes: bill.notes ?? "",
     });
@@ -301,7 +237,7 @@ function ContasFixasRoute() {
         reminder_days_before: Number(form.reminderDaysBefore) || 0,
         start_date: form.startDate,
         end_date: form.projectionMonths
-          ? addMonths(form.startDate, Number(form.projectionMonths))
+          ? addMonthsToDateOnly(form.startDate, Number(form.projectionMonths))
           : null,
         notes: form.notes || null,
       };
@@ -328,24 +264,6 @@ function ContasFixasRoute() {
     },
   });
 
-  const payMutation = useMutation({
-    mutationFn: async () => {
-      if (!payOccurrence) return;
-      const amount = num(paidAmount);
-      if (amount == null) return;
-      await markOccurrencePaid(payOccurrence.id, {
-        paidAmount: amount,
-        paidAt,
-        paidBy: currentUserId,
-        transactionId: linkedTransactionId === "none" ? null : linkedTransactionId,
-      });
-    },
-    onSuccess: async () => {
-      setPayOccurrence(null);
-      await queryClient.invalidateQueries({ queryKey: ["recurring-bill-occurrences", orgId] });
-    },
-  });
-
   const skipMutation = useMutation({
     mutationFn: async (occurrenceId: string) => markOccurrenceSkipped(occurrenceId),
     onSuccess: async () => {
@@ -368,13 +286,13 @@ function ContasFixasRoute() {
   const bills = billsQuery.data ?? [];
   const occurrences = occurrencesQuery.data ?? [];
 
-  const calendarCutoff = addDays(today(), CALENDAR_WINDOW_DAYS);
+  const calendarCutoff = addDaysToDateOnly(localToday(), CALENDAR_WINDOW_DAYS);
   const upcomingItems = occurrences
-    .filter((o) => o.due_date >= today() && o.due_date <= calendarCutoff)
+    .filter((o) => o.due_date >= localToday() && o.due_date <= calendarCutoff)
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
 
   const futureOccurrences = occurrences
-    .filter((o) => o.due_date >= today())
+    .filter((o) => o.due_date >= localToday())
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
   const nextOccurrenceByBill = new Map<string, RecurringBillOccurrenceRow>();
   for (const occurrence of futureOccurrences) {
@@ -389,9 +307,9 @@ function ContasFixasRoute() {
     list.push(occurrence);
     occurrencesByDay.set(occurrence.due_date, list);
   }
-  const earliestCalendarMonth = startOfMonth(today());
-  const latestCalendarMonth = startOfMonth(addDays(today(), HORIZON_DAYS));
-  const calendarMonthKey = startOfMonth(dateKey(calendarMonth));
+  const earliestCalendarMonth = startOfMonthDateOnly(localToday());
+  const latestCalendarMonth = startOfMonthDateOnly(addDaysToDateOnly(localToday(), HORIZON_DAYS));
+  const calendarMonthKey = startOfMonthDateOnly(monthCalendarDayKey(calendarMonth));
   const canGoPrevMonth = calendarMonthKey > earliestCalendarMonth;
   const canGoNextMonth = calendarMonthKey < latestCalendarMonth;
 
@@ -399,25 +317,8 @@ function ContasFixasRoute() {
     setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
   }
 
-  function candidateTransactions(occurrence: RecurringBillOccurrenceRow) {
-    const dueTime = new Date(occurrence.due_date).getTime();
-    const windowMs = MATCH_WINDOW_DAYS * 86_400_000;
-    return (transactionsQuery.data ?? [])
-      .filter((t) => Number(t.amount) < 0)
-      .filter((t) => Math.abs(new Date(t.posted_at).getTime() - dueTime) <= windowMs)
-      .sort(
-        (a, b) =>
-          Math.abs(new Date(a.posted_at).getTime() - dueTime) -
-          Math.abs(new Date(b.posted_at).getTime() - dueTime),
-      )
-      .slice(0, 15);
-  }
-
   function openPay(occurrence: RecurringBillOccurrenceRow) {
     setPayOccurrence(occurrence);
-    setPaidAmount(String(occurrence.expected_amount));
-    setPaidAt(today());
-    setLinkedTransactionId("none");
   }
 
   function billStatusBadgeClass(status: RecurringBillRow["status"]) {
@@ -543,7 +444,7 @@ function ContasFixasRoute() {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(occurrence.due_date).toLocaleDateString("pt-BR")}
+                      {formatDateBR(occurrence.due_date)}
                       {occurrence.category_name ? ` · ${occurrence.category_name}` : ""}
                     </p>
                   </div>
@@ -661,7 +562,7 @@ function ContasFixasRoute() {
 
                     {next && nextState ? (
                       <div className="flex items-center justify-between rounded-lg bg-slate-50 p-2 text-xs">
-                        <span>{new Date(next.due_date).toLocaleDateString("pt-BR")}</span>
+                        <span>{formatDateBR(next.due_date)}</span>
                         <Badge variant="outline" className={occurrenceBadgeClass(nextState.tone)}>
                           {nextState.label}
                         </Badge>
@@ -714,90 +615,33 @@ function ContasFixasRoute() {
               })}
             </div>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  disabled={!canGoPrevMonth}
-                  aria-label="Mês anterior"
-                  onClick={() => shiftCalendarMonth(-1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <strong className="text-sm capitalize">
-                  {calendarMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
-                </strong>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  disabled={!canGoNextMonth}
-                  aria-label="Próximo mês"
-                  onClick={() => shiftCalendarMonth(1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
-                {WEEKDAY_LABELS.map((label, index) => (
-                  <div key={index}>{label}</div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-1">
-                {monthGrid(calendarMonth)
-                  .flat()
-                  .map((date) => {
-                    const key = dateKey(date);
-                    const inMonth = date.getMonth() === calendarMonth.getMonth();
-                    const dayOccurrences = occurrencesByDay.get(key) ?? [];
-                    const isToday = key === today();
-                    return (
-                      <div
-                        key={key}
-                        className={cn(
-                          "min-h-[64px] rounded-md border p-1 text-xs",
-                          inMonth ? "border-slate-200 bg-white" : "border-transparent bg-slate-50",
-                          isToday && "ring-1 ring-emerald-500",
-                        )}
-                      >
-                        <span className={cn(inMonth ? "text-slate-500" : "text-slate-300")}>
-                          {date.getDate()}
-                        </span>
-                        <div className="mt-0.5 space-y-0.5">
-                          {dayOccurrences.slice(0, 3).map((occurrence) => {
-                            const state = billOccurrenceState(occurrence);
-                            return (
-                              <button
-                                key={occurrence.id}
-                                type="button"
-                                title={`${occurrence.bill_name} · ${formatCurrency(occurrence.expected_amount)}`}
-                                onClick={() =>
-                                  occurrence.status === "pending" && openPay(occurrence)
-                                }
-                                className={cn(
-                                  "block w-full truncate rounded px-1 py-0.5 text-left text-[10px]",
-                                  state.tone === "good" && "bg-emerald-100 text-emerald-800",
-                                  state.tone === "warning" && "bg-amber-100 text-amber-800",
-                                  state.tone === "neutral" && "bg-slate-100 text-slate-700",
-                                )}
-                              >
-                                {occurrence.bill_name}
-                              </button>
-                            );
-                          })}
-                          {dayOccurrences.length > 3 ? (
-                            <p className="text-[10px] text-muted-foreground">
-                              +{dayOccurrences.length - 3}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
+            <MonthCalendar
+              month={calendarMonth}
+              onShiftMonth={shiftCalendarMonth}
+              canGoPrev={canGoPrevMonth}
+              canGoNext={canGoNextMonth}
+              itemsByDay={occurrencesByDay}
+              getItemKey={(occurrence) => occurrence.id}
+              todayKey={localToday()}
+              renderItem={(occurrence) => {
+                const state = billOccurrenceState(occurrence);
+                return (
+                  <button
+                    type="button"
+                    title={`${occurrence.bill_name} · ${formatCurrency(occurrence.expected_amount)}`}
+                    onClick={() => occurrence.status === "pending" && openPay(occurrence)}
+                    className={cn(
+                      "block w-full truncate rounded px-1 py-0.5 text-left text-[10px]",
+                      state.tone === "good" && "bg-emerald-100 text-emerald-800",
+                      state.tone === "warning" && "bg-amber-100 text-amber-800",
+                      state.tone === "neutral" && "bg-slate-100 text-slate-700",
+                    )}
+                  >
+                    {occurrence.bill_name}
+                  </button>
+                );
+              }}
+            />
           )}
         </CardContent>
       </Card>
@@ -997,72 +841,18 @@ function ContasFixasRoute() {
         </DialogContent>
       </Dialog>
 
-      {/* Marcar ocorrência como paga */}
-      <Dialog open={!!payOccurrence} onOpenChange={(open) => !open && setPayOccurrence(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Marcar como paga</DialogTitle>
-            <DialogDescription>{payOccurrence?.bill_name}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Valor pago</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  autoFocus
-                  value={paidAmount}
-                  onChange={(event) => setPaidAmount(event.target.value)}
-                />
-              </div>
-              <div>
-                <Label>Data do pagamento</Label>
-                <Input
-                  type="date"
-                  value={paidAt}
-                  onChange={(event) => setPaidAt(event.target.value)}
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Vincular a um lançamento existente (opcional)</Label>
-              <Select value={linkedTransactionId} onValueChange={setLinkedTransactionId}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum — baixa manual</SelectItem>
-                  {payOccurrence
-                    ? candidateTransactions(payOccurrence).map((transaction) => (
-                        <SelectItem key={transaction.id} value={transaction.id}>
-                          {new Date(transaction.posted_at).toLocaleDateString("pt-BR")} ·{" "}
-                          {transaction.description} · {formatCurrency(Number(transaction.amount))}
-                        </SelectItem>
-                      ))
-                    : null}
-                </SelectContent>
-              </Select>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Vincular evita duplicar o lançamento: a baixa passa a apontar para a transação que
-                já existe, em vez de criar um registro novo.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setPayOccurrence(null)}>
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={() => payMutation.mutate()}
-              disabled={!paidAmount || payMutation.isPending}
-            >
-              Confirmar pagamento
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SettleBillDialog
+        orgId={orgId}
+        userId={currentUserId}
+        accounts={accounts}
+        categories={categories}
+        occurrence={payOccurrence}
+        onClose={() => setPayOccurrence(null)}
+        onSettled={async () => {
+          setPayOccurrence(null);
+          await queryClient.invalidateQueries({ queryKey: ["recurring-bill-occurrences", orgId] });
+        }}
+      />
     </AppShell>
   );
 }

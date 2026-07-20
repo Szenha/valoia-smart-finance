@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { categoryPath } from "@/lib/finance/categories";
+import { formatDateBR } from "@/lib/finance/date-utils";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import { paymentMethodLabel, type PaymentMethod } from "@/lib/finance/transactionIcons";
 import {
@@ -260,10 +261,7 @@ export function VoiceCaptureFlow({
                 value={values.description || "—"}
                 className="col-span-2"
               />
-              <SummaryField
-                label="Data"
-                value={new Date(values.posted_at).toLocaleDateString("pt-BR")}
-              />
+              <SummaryField label="Data" value={formatDateBR(values.posted_at)} />
               <SummaryField
                 label="Conta/cartão"
                 value={

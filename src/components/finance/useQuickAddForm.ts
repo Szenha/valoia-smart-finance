@@ -8,6 +8,7 @@ import { extractVoiceTextFn, type PaymentMethodHint } from "@/lib/ai/voice-entry
 import { buildPaymentOptions, matchPaymentAccount } from "@/lib/finance/account-match";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
+import { dateOnlyStringToLocalDate, localToday } from "@/lib/finance/date-utils";
 import { ensureAccountFromTransaction } from "@/lib/finance/data";
 import { computeInstallmentSchedule } from "@/lib/finance/installments";
 import { resolveMemberName } from "@/lib/finance/member-visuals";
@@ -30,6 +31,9 @@ const schema = z.object({
   account_id: z.string().min(1, "Selecione a conta ou cartão utilizado"),
   account_kind: z.enum(["checking", "credit_card", "investment"]),
   payment_method: z.enum(["debit", "credit_card", "pix", "other"]),
+  // Só para transaction_type "transfer" — conta que recebe o valor. A conta
+  // de origem continua sendo account_id, como em qualquer lançamento.
+  destination_account_id: z.string().optional(),
   installments_count: z.coerce.number().int().min(1).max(60),
   original_text: z.string().optional(),
   // Setado quando a conta/cartão escolhido é um cartão adicional — grava
@@ -52,10 +56,6 @@ export const PROCESSING_LABEL: Record<Exclude<ProcessingStage, "idle">, string> 
   transcribing: "Transcrevendo áudio…",
   interpreting: "Interpretando lançamento…",
 };
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function fileToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -85,6 +85,15 @@ type Options = {
    *  instead of inserting a new one — installments/plan creation is skipped
    *  since editing an existing installment's plan is out of scope here. */
   editingTransactionId?: string;
+  /** transfer_group_id da transação sendo editada, quando ela é uma perna de
+   *  transferência — permite achar e atualizar a outra perna junto. */
+  editingTransferGroupId?: string | null;
+  /** Qual perna da transferência editingTransactionId é: "source" (linha
+   *  negativa, saiu da conta) ou "destination" (linha positiva, entrou na
+   *  conta). Determina o sinal aplicado a cada linha do par ao salvar —
+   *  reponte de conta não é suportado em transferência existente, só
+   *  valor/descrição/data/categoria. */
+  editingTransferRole?: "source" | "destination";
   initialValues?: Partial<QuickAddFormValues>;
 };
 
@@ -104,6 +113,8 @@ export function useQuickAddForm({
   profiles = [],
   onSaved,
   editingTransactionId,
+  editingTransferGroupId,
+  editingTransferRole,
   initialValues,
 }: Options) {
   const queryClient = useQueryClient();
@@ -156,7 +167,7 @@ export function useQuickAddForm({
       amount: 0,
       description: "",
       category_id: "",
-      posted_at: today(),
+      posted_at: localToday(),
       account_id: orderedAccounts[0]?.account_key ?? "manual-cash",
       account_kind: orderedAccounts[0]?.kind ?? "checking",
       payment_method: defaultPaymentMethod(orderedAccounts[0]?.kind ?? "checking"),
@@ -171,12 +182,104 @@ export function useQuickAddForm({
       if (!values.account_id) {
         throw new Error("Selecione a conta ou cartão utilizado antes de salvar.");
       }
-      const signedType =
-        values.transaction_type === "expense"
-          ? "MANUAL_DEBIT"
-          : values.transaction_type === "income"
-            ? "MANUAL_CREDIT"
-            : "MANUAL_TRANSFER";
+
+      if (values.transaction_type === "transfer") {
+        // Transferência editando por partida existente: em v1 não dá pra
+        // reapontar as contas (exigiria apagar e recriar o par), só
+        // valor/descrição/data/categoria — as duas linhas são atualizadas
+        // juntas, cada uma preservando o sinal (débito/crédito) que já tinha.
+        if (editingTransactionId && editingTransferGroupId && editingTransferRole) {
+          const sharedFields = {
+            description: values.description,
+            posted_at: new Date(values.posted_at).toISOString(),
+            category_id: values.category_id || null,
+            classification_method: values.category_id ? "manual" : null,
+            classification_confidence: values.category_id ? 1 : null,
+            needs_review: !values.category_id,
+          };
+          const thisRowAmount =
+            editingTransferRole === "source" ? -Math.abs(values.amount) : Math.abs(values.amount);
+          const otherRowAmount = -thisRowAmount;
+
+          const { error: thisRowError } = await supabase
+            .from("transactions")
+            .update({ ...sharedFields, amount: thisRowAmount })
+            .eq("id", editingTransactionId)
+            .eq("organization_id", orgId);
+          if (thisRowError) throw new Error(thisRowError.message);
+
+          const { error: otherRowError } = await supabase
+            .from("transactions")
+            .update({ ...sharedFields, amount: otherRowAmount })
+            .eq("transfer_group_id", editingTransferGroupId)
+            .neq("id", editingTransactionId)
+            .eq("organization_id", orgId);
+          if (otherRowError) throw new Error(otherRowError.message);
+          return;
+        }
+
+        // Nova transferência: grava duas linhas ligadas por
+        // transfer_group_id — débito (-valor) na origem, crédito (+valor)
+        // no destino — num único insert atômico, igual ao padrão já usado
+        // para parcelas logo abaixo.
+        if (!values.destination_account_id) {
+          throw new Error("Selecione a conta de destino da transferência.");
+        }
+        if (values.destination_account_id === values.account_id) {
+          throw new Error("A conta de destino deve ser diferente da conta de origem.");
+        }
+        if (!accounts.some((account) => account.account_key === values.account_id)) {
+          await ensureAccountFromTransaction(
+            orgId,
+            values.account_id,
+            values.account_kind,
+            userId ?? undefined,
+          );
+        }
+        const destinationAccount = accounts.find(
+          (account) => account.account_key === values.destination_account_id,
+        );
+        const destinationKind = destinationAccount?.kind ?? values.account_kind;
+        const transferGroupId = crypto.randomUUID();
+        const postedAtIso = new Date(values.posted_at).toISOString();
+        const sharedTransferFields = {
+          organization_id: orgId,
+          description: values.description,
+          type: "MANUAL_TRANSFER",
+          entry_source: usedAiDraft ? "voice_ai" : "manual",
+          currency: "BRL",
+          created_by: userId,
+          category_id: values.category_id || null,
+          original_text: values.original_text || null,
+          classification_method: values.category_id ? "manual" : null,
+          classification_confidence: values.category_id ? 1 : null,
+          needs_review: !values.category_id,
+          posted_at: postedAtIso,
+          transfer_group_id: transferGroupId,
+        };
+        const { error } = await supabase.from("transactions").insert([
+          {
+            ...sharedTransferFields,
+            account_id: values.account_id,
+            account_kind: values.account_kind,
+            payment_method: values.payment_method,
+            amount: -Math.abs(values.amount),
+            fit_id: `MANUAL-${crypto.randomUUID()}`,
+          },
+          {
+            ...sharedTransferFields,
+            account_id: values.destination_account_id,
+            account_kind: destinationKind,
+            payment_method: defaultPaymentMethod(destinationKind),
+            amount: Math.abs(values.amount),
+            fit_id: `MANUAL-${crypto.randomUUID()}`,
+          },
+        ]);
+        if (error) throw new Error(error.message);
+        return;
+      }
+
+      const signedType = values.transaction_type === "expense" ? "MANUAL_DEBIT" : "MANUAL_CREDIT";
       const sign = values.transaction_type === "expense" ? -1 : 1;
 
       if (!accounts.some((account) => account.account_key === values.account_id)) {
@@ -236,7 +339,7 @@ export function useQuickAddForm({
       if (values.installments_count > 1) {
         const account = accounts.find((a) => a.account_key === values.account_id);
         const schedule = computeInstallmentSchedule(
-          new Date(values.posted_at),
+          dateOnlyStringToLocalDate(values.posted_at),
           values.amount,
           values.installments_count,
           account?.closing_day ?? null,
@@ -283,7 +386,7 @@ export function useQuickAddForm({
           amount: 0,
           description: "",
           category_id: "",
-          posted_at: today(),
+          posted_at: localToday(),
           account_id: form.getValues("account_id"),
           account_kind: form.getValues("account_kind"),
           payment_method: form.getValues("payment_method"),
@@ -325,11 +428,15 @@ export function useQuickAddForm({
 
   /** Applies the AI draft's payment-method/account-name hints to the account
    *  fields, or clears the account so the user must pick explicitly when
-   *  more than one account of the inferred kind exists. Returns a status
-   *  suffix describing what happened, or "" when there was nothing to say. */
+   *  more than one account of the inferred kind exists. For transfers, also
+   *  resolves destination_account_hint against destination_account_id, the
+   *  same way. Returns a status suffix describing what happened, or "" when
+   *  there was nothing to say. */
   function applyAccountMatch(draft: {
+    transaction_type?: QuickAddFormValues["transaction_type"];
     payment_method_hint: PaymentMethodHint;
     account_hint: string | null;
+    destination_account_hint?: string | null;
   }): string {
     const match = matchPaymentAccount(
       accounts,
@@ -337,20 +444,33 @@ export function useQuickAddForm({
       { paymentMethodHint: draft.payment_method_hint, accountNameHint: draft.account_hint },
       userId,
     );
+    let note = "";
     if (match.status === "resolved") {
       form.setValue("account_id", match.accountId);
       form.setValue("account_kind", match.accountKind);
       form.setValue("payment_method", defaultPaymentMethod(match.accountKind));
       form.setValue("additional_card_id", match.additionalCardId);
-      return "";
-    }
-    if (match.status === "ambiguous") {
+    } else if (match.status === "ambiguous") {
       form.setValue("account_id", "");
       form.setValue("additional_card_id", null);
       const kindLabel = match.accountKind === "credit_card" ? "cartão" : "conta";
-      return ` Selecione qual ${kindLabel} foi usado.`;
+      note = ` Selecione qual ${kindLabel} de origem foi usado.`;
     }
-    return "";
+
+    if (draft.transaction_type === "transfer" && draft.destination_account_hint) {
+      const destinationMatch = matchPaymentAccount(
+        accounts,
+        additionalCards,
+        { paymentMethodHint: null, accountNameHint: draft.destination_account_hint },
+        userId,
+      );
+      if (destinationMatch.status === "resolved") {
+        form.setValue("destination_account_id", destinationMatch.accountId);
+      } else if (destinationMatch.status === "ambiguous" && !note) {
+        note = " Selecione qual conta de destino foi usada.";
+      }
+    }
+    return note;
   }
 
   async function interpretNativeText() {
