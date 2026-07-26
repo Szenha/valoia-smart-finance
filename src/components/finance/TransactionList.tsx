@@ -89,26 +89,8 @@ const CATEGORY_THEMES = [
   { bg: "bg-lime-50", text: "text-lime-700", border: "border-lime-200" },
   { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
 ];
-// border-l-* (não border-*) — só a lateral esquerda deve ganhar a cor da
-// categoria; as outras três bordas ficam no cinza neutro padrão.
-const CATEGORY_LEFT_BORDER_COLORS = [
-  "border-l-emerald-300",
-  "border-l-sky-300",
-  "border-l-amber-300",
-  "border-l-rose-300",
-  "border-l-violet-300",
-  "border-l-cyan-300",
-  "border-l-lime-300",
-  "border-l-orange-300",
-];
-
 function themeForCategory(index: number) {
   return CATEGORY_THEMES[index % CATEGORY_THEMES.length];
-}
-
-function borderForCategory(category: CategoryRow | undefined, index: number) {
-  if (category?.color) return "";
-  return CATEGORY_LEFT_BORDER_COLORS[index % CATEGORY_LEFT_BORDER_COLORS.length];
 }
 
 const DESCRIPTION_MAX_CHARS = 44;
@@ -212,6 +194,12 @@ export function TransactionList({
         ]),
     ).values(),
   );
+  const advancedFilterCount = [
+    selectedCreator !== "all",
+    selectedAccount !== "all",
+    selectedPaymentMethod !== "all",
+    selectedEntrySource !== "all",
+  ].filter(Boolean).length;
   const displayed = transactions.filter(
     (transaction) =>
       (selectedAccount === "all" || transaction.account_id === selectedAccount) &&
@@ -253,6 +241,101 @@ export function TransactionList({
             <CollapsibleFilters
               storageKey="calcum:transactions-filters-collapsed"
               onCollapsedChange={onFiltersCollapsedChange}
+              activeAdvancedCount={advancedFilterCount}
+              mobilePrimary={
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as categorias</SelectItem>
+                    {categoryItems.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.path}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+              mobileAdvanced={
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Quem
+                    </label>
+                    <Select value={selectedCreator} onValueChange={setSelectedCreator}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {members.map((member) => (
+                          <SelectItem key={member.user_id} value={member.user_id}>
+                            {memberLabel(member.user_id, currentUserId, profileById, memberById)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Conta
+                    </label>
+                    <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as contas</SelectItem>
+                        {accountOptions.map((account) => (
+                          <SelectItem
+                            key={`${account.accountId}|${account.accountKind}`}
+                            value={account.accountId}
+                          >
+                            {accountLabel(account.accountId, account.accountKind)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Forma de pagamento
+                    </label>
+                    <Select value={selectedPaymentMethod} onValueChange={setSelectedPaymentMethod}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as formas</SelectItem>
+                        {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((method) => (
+                          <SelectItem key={method} value={method}>
+                            {paymentMethodLabel[method]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Origem
+                    </label>
+                    <Select value={selectedEntrySource} onValueChange={setSelectedEntrySource}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as origens</SelectItem>
+                        {(Object.keys(entrySourceLabel) as EntrySource[]).map((source) => (
+                          <SelectItem key={source} value={source}>
+                            {entrySourceLabel[source]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              }
             >
               <Select value={selectedCreator} onValueChange={setSelectedCreator}>
                 <SelectTrigger className="w-[150px]">
@@ -379,10 +462,6 @@ export function TransactionList({
               const categoryPillClass = category?.color
                 ? "border border-transparent"
                 : `${categoryTheme.bg} ${categoryTheme.text} border ${categoryTheme.border}`;
-              const leftBorderStyle = category?.color
-                ? { borderLeftColor: `${category.color}59` }
-                : undefined;
-              const leftBorderClass = borderForCategory(category, categoryIndex);
               const amountColorClass = isTransfer
                 ? "text-slate-600"
                 : isIncome
@@ -608,8 +687,7 @@ export function TransactionList({
                 return (
                   <div
                     key={transaction.id}
-                    className={`flex items-center gap-2.5 overflow-hidden rounded-lg border border-l-4 border-slate-200 bg-white px-3 py-2 ${leftBorderClass}`}
-                    style={leftBorderStyle}
+                    className="flex items-center gap-2.5 overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-2"
                   >
                     <span
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
@@ -674,8 +752,7 @@ export function TransactionList({
               return (
                 <div
                   key={transaction.id}
-                  className={`overflow-hidden rounded-2xl border border-l-4 border-slate-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.08)] ${leftBorderClass}`}
-                  style={leftBorderStyle}
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.08)]"
                 >
                   <div className="p-3">
                     <div className="flex items-start gap-3">

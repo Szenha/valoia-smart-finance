@@ -155,9 +155,9 @@ function Index() {
           <p className="text-sm font-medium text-slate-600">Toque para falar</p>
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="mt-1 text-muted-foreground"
+            className="mt-1"
             onClick={() => setManualOpen(true)}
           >
             <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -179,7 +179,7 @@ function Index() {
       />
 
       <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogTitle>Lançamento manual</DialogTitle>
           <QuickAddForm
             bare

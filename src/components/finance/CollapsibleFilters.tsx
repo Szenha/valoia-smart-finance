@@ -1,19 +1,49 @@
 import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@/components/ui/drawer";
 
 type Props = {
   /** Chave de localStorage — única por tela, para lembrar a preferência
    *  entre visitas (mesmo padrão de AppShell/sidebar e Contas fixas/view). */
   storageKey: string;
+  /** Conjunto completo de filtros, usado tal qual no desktop (colapsa/expande
+   *  inline, atrás do botão "Filtros"). */
   children: ReactNode;
   /** Avisa a tela pai quando o estado muda — usado em Transações para
    *  recolher também o bloco do microfone junto com os filtros. */
   onCollapsedChange?: (collapsed: boolean) => void;
+  /** Filtro sempre visível no mobile (o mais usado da tela) — quando
+   *  informado, o mobile deixa de empilhar todos os selects e passa a
+   *  mostrar só este + um ícone que abre os demais numa gaveta. Sem esse
+   *  prop, o mobile usa o mesmo colapsa-tudo do desktop. */
+  mobilePrimary?: ReactNode;
+  /** Filtros extras, abertos numa gaveta (Drawer) no mobile a partir do
+   *  ícone ao lado do filtro primário. */
+  mobileAdvanced?: ReactNode;
+  /** Quantos filtros avançados estão com um valor não-padrão — mostrado
+   *  como contador no ícone da gaveta. */
+  activeAdvancedCount?: number;
 };
 
-export function CollapsibleFilters({ storageKey, children, onCollapsedChange }: Props) {
+export function CollapsibleFilters({
+  storageKey,
+  children,
+  onCollapsedChange,
+  mobilePrimary,
+  mobileAdvanced,
+  activeAdvancedCount,
+}: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -35,8 +65,8 @@ export function CollapsibleFilters({ storageKey, children, onCollapsedChange }: 
     });
   }
 
-  return (
-    <div className="flex flex-wrap items-center gap-2">
+  const desktopBar = (
+    <div className={`flex flex-wrap items-center gap-2 ${mobilePrimary ? "hidden md:flex" : ""}`}>
       <Button
         type="button"
         variant="outline"
@@ -54,5 +84,45 @@ export function CollapsibleFilters({ storageKey, children, onCollapsedChange }: 
       </Button>
       {!collapsed ? children : null}
     </div>
+  );
+
+  if (!mobilePrimary) return desktopBar;
+
+  return (
+    <>
+      {desktopBar}
+      <div className="flex items-center gap-2 md:hidden">
+        <div className="min-w-0 flex-1">{mobilePrimary}</div>
+        <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <DrawerTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="relative shrink-0 text-muted-foreground"
+              aria-label="Mais filtros"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {activeAdvancedCount ? (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                  {activeAdvancedCount}
+                </span>
+              ) : null}
+            </Button>
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader>
+              <DrawerTitle>Mais filtros</DrawerTitle>
+            </DrawerHeader>
+            <div className="flex flex-col gap-4 px-4 pb-4">{mobileAdvanced}</div>
+            <DrawerFooter>
+              <DrawerClose asChild>
+                <Button type="button">Aplicar</Button>
+              </DrawerClose>
+            </DrawerFooter>
+          </DrawerContent>
+        </Drawer>
+      </div>
+    </>
   );
 }

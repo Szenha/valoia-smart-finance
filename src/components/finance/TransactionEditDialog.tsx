@@ -118,7 +118,7 @@ export function TransactionEditDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogTitle>Editar lançamento</DialogTitle>
         <Tabs defaultValue="detalhes">
           <TabsList>
