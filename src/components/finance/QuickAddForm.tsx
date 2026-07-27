@@ -7,6 +7,7 @@ import type {
   HouseholdMemberRow,
   ProfileRow,
 } from "@/lib/finance/types";
+import { PostSaveConfirmation } from "./PostSaveConfirmation";
 import { QuickAddFields } from "./QuickAddFields";
 import { useQuickAddForm } from "./useQuickAddForm";
 
@@ -52,7 +53,14 @@ export function QuickAddForm({
     onSaved,
   });
 
-  const formContent = (
+  const formContent = api.confirmation ? (
+    <PostSaveConfirmation
+      confirmation={api.confirmation}
+      categories={categories}
+      onClose={api.dismissConfirmation}
+      onUndo={api.undoConfirmation}
+    />
+  ) : (
     <form
       onSubmit={api.form.handleSubmit((values) => api.saveMutation.mutate(values))}
       className="grid gap-4"

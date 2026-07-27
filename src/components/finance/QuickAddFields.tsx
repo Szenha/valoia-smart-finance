@@ -1,4 +1,5 @@
 import { Loader2, Mic, Sparkles, Square } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -119,9 +120,24 @@ export function TranscriptionField({
   );
 }
 
+/** Agrupamento visual com rótulo curto — só organiza campos relacionados
+ *  num bloco, não introduz nenhuma lógica própria. */
+function FieldGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+    </div>
+  );
+}
+
 /** The full field set of the quick-add form — shared between the standalone
  *  manual form (QuickAddForm) and the "Editar" stage of VoiceCaptureFlow, so
- *  the ~20 fields/Selects only exist in one place. */
+ *  the ~20 fields/Selects only exist in one place. Fields are organized into
+ *  small labeled groups (valor/tipo · categoria/data · pagamento) instead of
+ *  one flat grid, so the form reads as sections instead of a wall of inputs. */
 export function QuickAddFields({
   api,
   autoFocusInput,
@@ -133,136 +149,97 @@ export function QuickAddFields({
   const isTransfer = form.watch("transaction_type") === "transfer";
 
   return (
-    <div className="grid gap-4 md:grid-cols-6">
+    <div className="grid gap-4">
       {hideTranscription ? null : (
-        <div className="md:col-span-6">
-          <TranscriptionField
-            api={api}
-            autoFocusInput={autoFocusInput}
-            hideRecordButton={hideRecordButton}
-          />
-        </div>
+        <TranscriptionField
+          api={api}
+          autoFocusInput={autoFocusInput}
+          hideRecordButton={hideRecordButton}
+        />
       )}
 
-      <div className="md:col-span-1">
-        <Label>Tipo</Label>
-        <Select
-          value={form.watch("transaction_type")}
-          onValueChange={(value) =>
-            form.setValue("transaction_type", value as QuickAddFormValues["transaction_type"])
-          }
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="expense">{categoryTypeLabel.expense}</SelectItem>
-            <SelectItem value="income">{categoryTypeLabel.income}</SelectItem>
-            <SelectItem value="transfer">{categoryTypeLabel.transfer}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="md:col-span-1">
-        <Label>Valor</Label>
-        <Input type="number" step="0.01" {...form.register("amount")} />
-      </div>
-      <div className="md:col-span-2">
-        <Label>Descrição</Label>
-        <Input {...form.register("description")} onBlur={api.suggestCategory} />
-      </div>
-      <div className="md:col-span-1">
-        <Label>Data</Label>
-        <Input type="date" {...form.register("posted_at")} />
-      </div>
-      <div className="md:col-span-1">
-        <Label>Categoria</Label>
-        <Select
-          value={form.watch("category_id") || "none"}
-          onValueChange={(value) => form.setValue("category_id", value === "none" ? "" : value)}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Sem categoria</SelectItem>
-            {api.categoryItems.map((category) => (
-              <SelectItem key={category.id} value={category.id}>
-                {category.path}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="md:col-span-2">
-        <Label>{isTransfer ? "Conta de origem" : "Conta/cartão"}</Label>
-        <Select
-          disabled={disableAccountFields}
-          value={`${form.watch("account_id")}|${form.watch("account_kind")}|${form.watch("additional_card_id") ?? ""}`}
-          onValueChange={(value) => {
-            const [accountId, accountKind, additionalCardId] = value.split("|");
-            form.setValue("account_id", accountId);
-            form.setValue("account_kind", accountKind as QuickAddFormValues["account_kind"]);
-            form.setValue("payment_method", defaultPaymentMethod(accountKind));
-            form.setValue("additional_card_id", additionalCardId || null);
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {api.myPaymentOptions.length > 0 && (
-              <SelectGroup>
-                <SelectLabel>Meus</SelectLabel>
-                {api.myPaymentOptions.map((option) => (
-                  <SelectItem
-                    key={`${option.account.id}|${option.additionalCardId ?? ""}`}
-                    value={`${option.accountId}|${option.accountKind}|${option.additionalCardId ?? ""}`}
-                  >
-                    {option.displayLabel}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-            {api.myPaymentOptions.length > 0 && api.householdPaymentOptions.length > 0 && (
-              <SelectSeparator />
-            )}
-            {api.householdPaymentOptions.length > 0 && (
-              <SelectGroup>
-                <SelectLabel>Da família</SelectLabel>
-                {api.householdPaymentOptions.map((option) => (
-                  <SelectItem
-                    key={`${option.account.id}|${option.additionalCardId ?? ""}`}
-                    value={`${option.accountId}|${option.accountKind}|${option.additionalCardId ?? ""}`}
-                  >
-                    {option.displayLabel}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-            {api.orderedAccounts.length === 0 && (
-              <SelectItem value="manual-cash|checking|">Dinheiro</SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-      </div>
-      {isTransfer ? (
-        <div className="md:col-span-2">
-          <Label>Conta de destino</Label>
+      <FieldGroup label="Valor e tipo">
+        <div>
+          <Label>Tipo</Label>
           <Select
-            disabled={disableAccountFields}
-            value={form.watch("destination_account_id") || ""}
-            onValueChange={(value) => form.setValue("destination_account_id", value)}
+            value={form.watch("transaction_type")}
+            onValueChange={(value) =>
+              form.setValue("transaction_type", value as QuickAddFormValues["transaction_type"])
+            }
           >
             <SelectTrigger>
-              <SelectValue placeholder="Selecione a conta de destino" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="expense">{categoryTypeLabel.expense}</SelectItem>
+              <SelectItem value="income">{categoryTypeLabel.income}</SelectItem>
+              <SelectItem value="transfer">{categoryTypeLabel.transfer}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Valor</Label>
+          <Input type="number" inputMode="decimal" step="0.01" {...form.register("amount")} />
+        </div>
+        <div className="sm:col-span-2">
+          <Label>Descrição</Label>
+          <Input {...form.register("description")} onBlur={api.suggestCategory} />
+        </div>
+      </FieldGroup>
+
+      <FieldGroup label="Categoria e data">
+        <div>
+          <Label>Categoria</Label>
+          <Select
+            value={form.watch("category_id") || "none"}
+            onValueChange={(value) => form.setValue("category_id", value === "none" ? "" : value)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sem categoria</SelectItem>
+              {api.categoryItems.map((category) => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.path}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Data</Label>
+          <Input type="date" {...form.register("posted_at")} />
+        </div>
+      </FieldGroup>
+
+      <FieldGroup label="Pagamento">
+        <div className="sm:col-span-2">
+          <Label>{isTransfer ? "Conta de origem" : "Conta/cartão"}</Label>
+          <Select
+            disabled={disableAccountFields}
+            value={`${form.watch("account_id")}|${form.watch("account_kind")}|${form.watch("additional_card_id") ?? ""}`}
+            onValueChange={(value) => {
+              const [accountId, accountKind, additionalCardId] = value.split("|");
+              form.setValue("account_id", accountId);
+              form.setValue("account_kind", accountKind as QuickAddFormValues["account_kind"]);
+              form.setValue("payment_method", defaultPaymentMethod(accountKind));
+              form.setValue("additional_card_id", additionalCardId || null);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {api.myPaymentOptions.length > 0 && (
                 <SelectGroup>
                   <SelectLabel>Meus</SelectLabel>
                   {api.myPaymentOptions.map((option) => (
-                    <SelectItem key={option.account.id} value={option.accountId}>
-                      {option.account.name}
+                    <SelectItem
+                      key={`${option.account.id}|${option.additionalCardId ?? ""}`}
+                      value={`${option.accountId}|${option.accountKind}|${option.additionalCardId ?? ""}`}
+                    >
+                      {option.displayLabel}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -274,51 +251,103 @@ export function QuickAddFields({
                 <SelectGroup>
                   <SelectLabel>Da família</SelectLabel>
                   {api.householdPaymentOptions.map((option) => (
-                    <SelectItem key={option.account.id} value={option.accountId}>
-                      {option.account.name}
+                    <SelectItem
+                      key={`${option.account.id}|${option.additionalCardId ?? ""}`}
+                      value={`${option.accountId}|${option.accountKind}|${option.additionalCardId ?? ""}`}
+                    >
+                      {option.displayLabel}
                     </SelectItem>
                   ))}
                 </SelectGroup>
               )}
+              {api.orderedAccounts.length === 0 && (
+                <SelectItem value="manual-cash|checking|">Dinheiro</SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>
-      ) : null}
-      {!isTransfer && form.watch("account_kind") === "checking" ? (
-        <div className="md:col-span-2">
-          <Label>Forma de pagamento</Label>
-          <Select
-            value={form.watch("payment_method")}
-            onValueChange={(value) =>
-              form.setValue("payment_method", value as QuickAddFormValues["payment_method"])
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="debit">Débito</SelectItem>
-              <SelectItem value="pix">Pix</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      ) : null}
-      {!isTransfer && form.watch("account_kind") === "credit_card" ? (
-        <div className="md:col-span-2">
-          <Label>Parcelas</Label>
-          <Input type="number" min={1} max={60} {...form.register("installments_count")} />
-          {form.watch("installments_count") > 1 && form.watch("amount") > 0 ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {form.watch("installments_count")}x de{" "}
-              {(form.watch("amount") / form.watch("installments_count")).toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              })}{" "}
-              (aprox.)
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+        {isTransfer ? (
+          <div className="sm:col-span-2">
+            <Label>Conta de destino</Label>
+            <Select
+              disabled={disableAccountFields}
+              value={form.watch("destination_account_id") || ""}
+              onValueChange={(value) => form.setValue("destination_account_id", value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione a conta de destino" />
+              </SelectTrigger>
+              <SelectContent>
+                {api.myPaymentOptions.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Meus</SelectLabel>
+                    {api.myPaymentOptions.map((option) => (
+                      <SelectItem key={option.account.id} value={option.accountId}>
+                        {option.account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {api.myPaymentOptions.length > 0 && api.householdPaymentOptions.length > 0 && (
+                  <SelectSeparator />
+                )}
+                {api.householdPaymentOptions.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Da família</SelectLabel>
+                    {api.householdPaymentOptions.map((option) => (
+                      <SelectItem key={option.account.id} value={option.accountId}>
+                        {option.account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {!isTransfer && form.watch("account_kind") === "checking" ? (
+          <div>
+            <Label>Forma de pagamento</Label>
+            <Select
+              value={form.watch("payment_method")}
+              onValueChange={(value) =>
+                form.setValue("payment_method", value as QuickAddFormValues["payment_method"])
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="debit">Débito</SelectItem>
+                <SelectItem value="pix">Pix</SelectItem>
+                <SelectItem value="cash">Dinheiro</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {!isTransfer && form.watch("account_kind") === "credit_card" ? (
+          <div>
+            <Label>Parcelas</Label>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={60}
+              {...form.register("installments_count")}
+            />
+            {form.watch("installments_count") > 1 && form.watch("amount") > 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {form.watch("installments_count")}x de{" "}
+                {(form.watch("amount") / form.watch("installments_count")).toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}{" "}
+                (aprox.)
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </FieldGroup>
     </div>
   );
 }

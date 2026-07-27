@@ -18,6 +18,7 @@ import {
   fetchCalendarEventsUpcoming,
   fetchCardSummary,
   fetchCategories,
+  fetchDashboardMonthSummary,
   fetchFamilyMembers,
   fetchHouseholdMembers,
   fetchMemberProfiles,
@@ -115,17 +116,7 @@ function DashboardRoute() {
   const summaryQuery = useQuery({
     queryKey: ["dashboard-summary", orgId],
     enabled: !!orgId,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("dashboard_month_summary", { p_org_id: orgId! });
-      if (error) throw new Error(error.message);
-      return data?.[0] as {
-        income: number;
-        expenses: number;
-        balance: number;
-        previous_expenses: number;
-        pending_review: number;
-      };
-    },
+    queryFn: () => fetchDashboardMonthSummary(orgId!),
   });
   const categoryQuery = useQuery({
     queryKey: ["dashboard-category", orgId, bounds.start, bounds.end],
@@ -276,23 +267,15 @@ function DashboardRoute() {
         <StatTile
           label={categoryTypeLabelPlural.income}
           value={formatCurrency(summary?.income ?? 0)}
-          theme="green"
+          tone="income"
         />
         <StatTile
           label={categoryTypeLabelPlural.expense}
           value={formatCurrency(summary?.expenses ?? 0)}
-          theme="coral"
+          tone="expense"
         />
-        <StatTile
-          label="A receber"
-          value={formatCurrency(receivableQuery.data ?? 0)}
-          theme="blue"
-        />
-        <StatTile
-          label="Comprometido no cartão"
-          value={formatCurrency(totalCommitted)}
-          theme="amber"
-        />
+        <StatTile label="A receber" value={formatCurrency(receivableQuery.data ?? 0)} />
+        <StatTile label="Comprometido no cartão" value={formatCurrency(totalCommitted)} />
       </section>
 
       {allBalances.length > 0 || totalCommitted > 0 ? (
@@ -367,13 +350,13 @@ function DashboardRoute() {
               <StatTile
                 label={delta > 0 ? "Aumento em despesas" : "Redução em despesas"}
                 value={hasPreviousMonthData ? formatCurrency(Math.abs(delta)) : "—"}
-                theme={delta > 0 ? "coral" : "green"}
+                tone={delta > 0 ? "expense" : "income"}
                 compact
               />
               <StatTile
                 label="Saldo do mês"
                 value={formatCurrency(summary?.balance ?? 0)}
-                theme="blue"
+                tone={(summary?.balance ?? 0) >= 0 ? "income" : "expense"}
                 compact
               />
             </div>

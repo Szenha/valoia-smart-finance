@@ -61,7 +61,7 @@ export function IconPicker({
                 onClick={() => onChange(selected ? "" : option.value)}
                 className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
                   selected
-                    ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                    ? "border-primary bg-primary/10 text-primary"
                     : "border-slate-200 text-slate-500 hover:bg-slate-50"
                 }`}
               >

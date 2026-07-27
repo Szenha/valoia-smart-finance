@@ -13,7 +13,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
-  Mic,
+  MoreHorizontal,
   Pencil,
   PiggyBank,
   Plus,
@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
+import { AddEntryChooser } from "@/components/finance/AddEntryChooser";
+import { QuickAddForm } from "@/components/finance/QuickAddForm";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -128,9 +130,24 @@ const navItems: NavItem[] = [
   },
 ];
 
+// Mobile é intencionalmente reduzido, não o desktop espremido: só as duas
+// seções mais usadas em mobilidade ficam na barra inferior (Início e
+// Análises); o resto continua 100% acessível, só agrupado em "Mais".
+// Relatórios não precisa entrar em "Mais" — já é alcançável pela
+// AnalyticsTabs dentro da própria página de Análises.
+const MOBILE_PRIMARY_SECTIONS: Section[] = ["day", "analytics"];
+const MOBILE_NAV_ITEMS = navItems.filter((item) => MOBILE_PRIMARY_SECTIONS.includes(item.section));
+const MOBILE_MORE_ITEMS = navItems
+  .filter((item) => !MOBILE_PRIMARY_SECTIONS.includes(item.section))
+  .flatMap((item) => (item.children && item.children.length > 0 ? item.children : [item]));
+
 export function AppShell({ activeSection, title, subtitle, userEmail, children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [voiceSheetOpen, setVoiceSheetOpen] = useState(false);
+  const [manualSheetOpen, setManualSheetOpen] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreSectionActive = !MOBILE_PRIMARY_SECTIONS.includes(activeSection);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -442,45 +459,97 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
         </main>
       </div>
 
-      {/* Mobile bottom navigation — same navItems as the desktop sidebar,
-          minus whichever section is currently active: you're already there,
-          so showing it back at you just eats space that 6 items don't have
-          on a phone-width screen. The desktop sidebar is a separate block
-          above and keeps showing all items with the active one highlighted —
-          this only changes the mobile bar. */}
+      {/* Mobile bottom navigation — reduzida a só o essencial pra mobilidade
+          (Início e Análises), diferente da sidebar desktop que mostra as 6
+          seções completas. As demais seções (Cadastros, Membros,
+          Conciliação, Planejamento, Calendário, Relatórios) continuam
+          totalmente acessíveis via "Mais" — nenhuma rota fica escondida,
+          só agrupada. O botão central de adicionar é o FAB logo abaixo. */}
       <nav
         className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 flex items-stretch gap-1 rounded-full border border-slate-200/70 bg-white/95 p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_28px_-10px_rgba(0,0,0,0.18)] backdrop-blur lg:hidden"
         aria-label="Navegação principal"
       >
-        {navItems
-          .filter((item) => item.section !== activeSection)
-          .map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.label}
-                to={item.to}
-                className="flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[10px] font-medium text-slate-500 transition-colors"
-              >
-                <Icon className="h-5 w-5" strokeWidth={2} />
-                <span className="truncate px-0.5">{item.label}</span>
-              </Link>
-            );
-          })}
+        {MOBILE_NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const active = item.section === activeSection;
+          return (
+            <Link
+              key={item.label}
+              to={item.to}
+              className={cn(
+                "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[10px] font-medium transition-colors",
+                active ? "text-primary" : "text-slate-500",
+              )}
+            >
+              <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
+              <span className="truncate px-0.5">{item.label}</span>
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          className={cn(
+            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[10px] font-medium transition-colors",
+            moreSectionActive ? "text-primary" : "text-slate-500",
+          )}
+        >
+          <MoreHorizontal className="h-5 w-5" strokeWidth={moreSectionActive ? 2.5 : 2} />
+          <span className="truncate px-0.5">Mais</span>
+        </button>
       </nav>
 
-      {/* Voice quick-add FAB — mobile only. Same 4-stage capture flow as the
-          hero button on "Transações", available from any page so the user
-          never has to navigate away to add something by voice. */}
+      <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogTitle>Mais</DialogTitle>
+          <div className="grid gap-1">
+            {MOBILE_MORE_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const active = location.pathname === item.to;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMoreOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium",
+                    active ? "bg-primary/10 text-primary" : "text-slate-700 hover:bg-slate-50",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* FAB de adicionar lançamento — mobile only. Abre a escolha voz/manual
+          com peso igual, disponível em qualquer página sem precisar navegar
+          até Transações primeiro. */}
       <Button
         type="button"
         size="icon"
         className="fixed right-4 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:hidden [bottom:calc(env(safe-area-inset-bottom)+5.5rem)]"
-        aria-label="Registrar por voz"
-        onClick={() => setVoiceSheetOpen(true)}
+        aria-label="Adicionar lançamento"
+        onClick={() => setChooserOpen(true)}
       >
-        <Mic className="h-6 w-6" />
+        <Plus className="h-6 w-6" />
       </Button>
+
+      <AddEntryChooser
+        open={chooserOpen}
+        onOpenChange={setChooserOpen}
+        onChooseVoice={() => {
+          setChooserOpen(false);
+          setVoiceSheetOpen(true);
+        }}
+        onChooseManual={() => {
+          setChooserOpen(false);
+          setManualSheetOpen(true);
+        }}
+      />
 
       {orgId ? (
         <VoiceCaptureFlow
@@ -494,6 +563,25 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           members={membersQuery.data ?? []}
           profiles={profilesQuery.data ?? []}
         />
+      ) : null}
+
+      {orgId ? (
+        <Dialog open={manualSheetOpen} onOpenChange={setManualSheetOpen}>
+          <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+            <DialogTitle>Lançamento manual</DialogTitle>
+            <QuickAddForm
+              bare
+              orgId={orgId}
+              userId={currentUserId}
+              categories={categoriesQuery.data ?? []}
+              accounts={accountsQuery.data ?? []}
+              additionalCards={additionalCardsQuery.data ?? []}
+              members={membersQuery.data ?? []}
+              profiles={profilesQuery.data ?? []}
+              onSaved={() => setManualSheetOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       <Dialog

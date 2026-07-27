@@ -1,5 +1,6 @@
 import {
   Banknote,
+  Coins,
   CreditCard,
   FileText,
   HelpCircle,
@@ -9,13 +10,14 @@ import {
   Upload,
   type LucideIcon,
 } from "lucide-react";
-export type PaymentMethod = "debit" | "credit_card" | "pix" | "other";
+export type PaymentMethod = "debit" | "credit_card" | "pix" | "cash" | "other";
 export type EntrySource = "manual" | "voice_ai" | "ofx_import" | "pdf_import";
 
 export const paymentMethodLabel: Record<PaymentMethod, string> = {
   debit: "Débito",
   credit_card: "Cartão de crédito",
   pix: "Pix",
+  cash: "Dinheiro",
   other: "Outro",
 };
 
@@ -23,6 +25,7 @@ const PAYMENT_METHOD_ICON: Record<PaymentMethod, LucideIcon> = {
   debit: Banknote,
   credit_card: CreditCard,
   pix: QrCode,
+  cash: Coins,
   other: HelpCircle,
 };
 

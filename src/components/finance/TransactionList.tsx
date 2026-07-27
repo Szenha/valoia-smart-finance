@@ -410,13 +410,13 @@ export function TransactionList({
         </CardHeader>
         <CardContent>
           <div className="mb-4 grid grid-cols-2 gap-3 border-b pb-4 lg:grid-cols-4">
-            <StatTile label="Lançamentos" value={String(displayed.length)} theme="blue" compact />
-            <StatTile label="Entradas" value={formatCurrency(income)} theme="green" compact />
-            <StatTile label="Saídas" value={formatCurrency(expenses)} theme="coral" compact />
+            <StatTile label="Lançamentos" value={String(displayed.length)} compact />
+            <StatTile label="Entradas" value={formatCurrency(income)} tone="income" compact />
+            <StatTile label="Saídas" value={formatCurrency(expenses)} tone="expense" compact />
             <StatTile
               label="Saldo"
               value={formatCurrency(income - expenses)}
-              theme="amber"
+              tone={income - expenses >= 0 ? "income" : "expense"}
               compact
             />
           </div>

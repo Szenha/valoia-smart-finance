@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
+import { PostSaveConfirmation } from "@/components/finance/PostSaveConfirmation";
 import { categoryPath } from "@/lib/finance/categories";
 import { formatDateBR } from "@/lib/finance/date-utils";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
@@ -20,7 +21,7 @@ import {
 import { formatSeconds, useQuickAddForm } from "./useQuickAddForm";
 import { QuickAddFields } from "./QuickAddFields";
 
-type Stage = "listening" | "processing" | "confirm" | "edit";
+type Stage = "listening" | "processing" | "confirm" | "edit" | "done";
 
 type Props = {
   open: boolean;
@@ -46,6 +47,7 @@ export function VoiceCaptureFlow({
   profiles,
 }: Props) {
   const [stage, setStage] = useState<Stage>("listening");
+  const [undoing, setUndoing] = useState(false);
   const wasBusyRef = useRef(false);
   const api = useQuickAddForm({
     orgId,
@@ -89,6 +91,15 @@ export function VoiceCaptureFlow({
       if (!api.pendingAudio) setStage("confirm");
     }
   }, [stage, api.processingStage, api.pendingAudio]);
+
+  // Depois de "Confirmar" salvar com sucesso, useQuickAddForm calcula a
+  // confirmação inteligente (nível 1 + insight opcional) — assim que ela
+  // fica disponível, troca pra o estágio "done". Transferências não geram
+  // confirmação (api.confirmation fica null) — nesse caso onSaved já fecha
+  // o modal direto, sem passar por "done".
+  useEffect(() => {
+    if (api.confirmation) setStage("done");
+  }, [api.confirmation]);
 
   function handleStopRecording() {
     void api.toggleRecording();
@@ -143,7 +154,7 @@ export function VoiceCaptureFlow({
         hideCloseButton
         className={
           isDarkStage
-            ? "fixed inset-0 top-0 left-0 h-dvh w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-none bg-[#0a0a0a] p-0 text-white sm:rounded-none"
+            ? "max-w-sm overflow-hidden rounded-2xl border-none bg-[#0a0a0a] p-0 text-white"
             : stage === "edit"
               ? "max-h-[90dvh] max-w-3xl overflow-y-auto"
               : "max-h-[90dvh] max-w-xl overflow-y-auto"
@@ -157,11 +168,13 @@ export function VoiceCaptureFlow({
               ? "Processando"
               : stage === "edit"
                 ? "Editar lançamento"
-                : "Confirme seu lançamento"}
+                : stage === "done"
+                  ? "Lançamento confirmado"
+                  : "Confirme seu lançamento"}
         </DialogTitle>
 
         {isDarkStage ? (
-          <div className="flex h-full flex-col items-center justify-between px-6 py-10">
+          <div className="flex min-h-[380px] flex-col items-center justify-between px-6 py-8">
             <div className="flex w-full items-center justify-start">
               <DialogClose asChild>
                 <Button
@@ -304,6 +317,18 @@ export function VoiceCaptureFlow({
               </p>
             ) : null}
           </div>
+        ) : stage === "done" && api.confirmation ? (
+          <PostSaveConfirmation
+            confirmation={api.confirmation}
+            categories={categories}
+            onClose={api.dismissConfirmation}
+            onUndo={async () => {
+              setUndoing(true);
+              await api.undoConfirmation();
+              setUndoing(false);
+            }}
+            undoing={undoing}
+          />
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">

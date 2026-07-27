@@ -51,6 +51,13 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-cat-1: var(--chart-cat-1);
+  --color-chart-cat-2: var(--chart-cat-2);
+  --color-chart-cat-3: var(--chart-cat-3);
+  --color-chart-cat-4: var(--chart-cat-4);
+  --color-chart-cat-5: var(--chart-cat-5);
+  --color-chart-cat-6: var(--chart-cat-6);
+  --color-chart-cat-7: var(--chart-cat-7);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -90,6 +97,17 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+  /* Paleta dedicada a categorias (pizza de despesas/receitas) — usada só
+     como fallback quando a categoria não tem cor própria cadastrada. Tons
+     dessaturados de propósito (mesma família de --primary), pra não
+     competir com os semânticos de receita/despesa. */
+  --chart-cat-1: oklch(0.72 0.06 145);
+  --chart-cat-2: oklch(0.72 0.07 25);
+  --chart-cat-3: oklch(0.68 0.06 250);
+  --chart-cat-4: oklch(0.78 0.07 85);
+  --chart-cat-5: oklch(0.68 0.06 190);
+  --chart-cat-6: oklch(0.72 0.06 300);
+  --chart-cat-7: oklch(0.65 0.03 60);
   --sidebar: oklch(0.984 0.003 247.858);
   --sidebar-foreground: oklch(0.129 0.042 264.695);
   --sidebar-primary: oklch(0.208 0.042 265.755);
@@ -125,6 +143,13 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+  --chart-cat-1: oklch(0.62 0.07 145);
+  --chart-cat-2: oklch(0.62 0.08 25);
+  --chart-cat-3: oklch(0.6 0.07 250);
+  --chart-cat-4: oklch(0.68 0.08 85);
+  --chart-cat-5: oklch(0.6 0.07 190);
+  --chart-cat-6: oklch(0.62 0.07 300);
+  --chart-cat-7: oklch(0.58 0.03 60);
   --sidebar: oklch(0.208 0.042 265.755);
   --sidebar-foreground: oklch(0.984 0.003 247.858);
   --sidebar-primary: oklch(0.488 0.243 264.376);

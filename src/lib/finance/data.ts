@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import type { BudgetVsActualRow } from "./post-save-insight";
 import { defaultPaymentMethod } from "./transactionIcons";
 import type {
   AccountBalanceRow,
@@ -37,6 +38,24 @@ export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
     .limit(500);
   if (error) throw new Error(error.message);
   return (data ?? []) as TxnRow[];
+}
+
+/** Lançamentos de despesa/receita desde uma data (inclusive), campos mínimos
+ *  — usado só pra somar "gasto hoje"/"gasto na semana" na confirmação
+ *  inteligente pós-lançamento (post-save-insight.ts), sem precisar carregar
+ *  a lista completa de transações (fetchTransactions tem limite de 500 e
+ *  ordena por mais recente, o que não garante cobrir a semana inteira). */
+export async function fetchExpensesSince(
+  orgId: string,
+  startDateOnly: string,
+): Promise<Pick<TxnRow, "amount" | "type" | "posted_at" | "category_id">[]> {
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("amount, type, posted_at, category_id")
+    .eq("organization_id", orgId)
+    .gte("posted_at", `${startDateOnly}T00:00:00.000Z`);
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
 
 export async function fetchCategories(orgId: string): Promise<CategoryRow[]> {
@@ -343,6 +362,44 @@ export async function fetchGoalsRealized(
   });
   if (error) throw new Error(error.message);
   return (data ?? []) as GoalRealizedRow[];
+}
+
+export type DashboardMonthSummary = {
+  income: number;
+  expenses: number;
+  balance: number;
+  previous_expenses: number;
+  pending_review: number;
+};
+
+/** dashboard_month_summary (supabase/migrations/20240101000030_transfer_double_entry.sql)
+ *  restrito ao mês corrente — mesma RPC já usada por routes/dashboard.tsx,
+ *  extraída aqui pra ser reaproveitada pelo resumo inicial mobile sem
+ *  duplicar a query inline. */
+export async function fetchDashboardMonthSummary(
+  orgId: string,
+): Promise<DashboardMonthSummary | null> {
+  const { data, error } = await supabase.rpc("dashboard_month_summary", { p_org_id: orgId });
+  if (error) throw new Error(error.message);
+  return (data?.[0] as DashboardMonthSummary) ?? null;
+}
+
+/** budget_vs_actual (supabase/migrations/20240101000013_hierarchical_budget_scopes.sql)
+ *  restrito a um único mês — usado pela confirmação inteligente pós-lançamento
+ *  (post-save-insight.ts) pra checar se a categoria do lançamento tem
+ *  orçamento mensal configurado, sem duplicar a lógica de rollup por
+ *  categoria-descendente que já vive na RPC. */
+export async function fetchBudgetVsActualForMonth(
+  orgId: string,
+  monthStartDateOnly: string,
+): Promise<BudgetVsActualRow[]> {
+  const { data, error } = await supabase.rpc("budget_vs_actual", {
+    p_org_id: orgId,
+    p_start: monthStartDateOnly,
+    p_end: monthStartDateOnly,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as BudgetVsActualRow[];
 }
 
 export type GoalInput = {

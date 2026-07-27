@@ -6,17 +6,16 @@ import type { useCategoryDrilldown } from "@/lib/finance/category-drilldown";
 import { formatCurrency } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
-// Soft/pastel palette for the category donut, echoing the reference app's
-// muted chart style — usada só como fallback quando a categoria não tem
-// cor própria cadastrada.
+// Paleta dedicada a categorias (--chart-cat-1..7 em styles.css) — usada só
+// como fallback quando a categoria não tem cor própria cadastrada.
 const FALLBACK_COLORS = [
-  "#94a3b8",
-  "#6ee7b7",
-  "#fda4af",
-  "#93c5fd",
-  "#fcd34d",
-  "#7dd3c0",
-  "#c4b5fd",
+  "var(--color-chart-cat-1)",
+  "var(--color-chart-cat-2)",
+  "var(--color-chart-cat-3)",
+  "var(--color-chart-cat-4)",
+  "var(--color-chart-cat-5)",
+  "var(--color-chart-cat-6)",
+  "var(--color-chart-cat-7)",
 ];
 
 type Props = {

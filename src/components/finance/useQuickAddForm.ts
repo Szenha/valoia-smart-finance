@@ -5,13 +5,30 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { transcribeAudioFn, type TranscriptionResult } from "@/lib/ai/transcribe-audio";
 import { extractVoiceTextFn, type PaymentMethodHint } from "@/lib/ai/voice-entry";
-import { buildPaymentOptions, matchPaymentAccount } from "@/lib/finance/account-match";
+import {
+  buildPaymentOptions,
+  matchPaymentAccount,
+  resolvePaymentMethod,
+} from "@/lib/finance/account-match";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
-import { dateOnlyStringToLocalDate, localToday } from "@/lib/finance/date-utils";
-import { ensureAccountFromTransaction } from "@/lib/finance/data";
+import {
+  dateOnlyStringToLocalDate,
+  localToday,
+  startOfMonthDateOnly,
+} from "@/lib/finance/date-utils";
+import {
+  ensureAccountFromTransaction,
+  fetchBudgetVsActualForMonth,
+  fetchExpensesSince,
+} from "@/lib/finance/data";
 import { computeInstallmentSchedule } from "@/lib/finance/installments";
 import { resolveMemberName } from "@/lib/finance/member-visuals";
+import {
+  computePostSaveInsight,
+  weekStartDateOnly,
+  type PostSaveInsight,
+} from "@/lib/finance/post-save-insight";
 import { defaultPaymentMethod } from "@/lib/finance/transactionIcons";
 import type {
   AccountRow,
@@ -19,8 +36,14 @@ import type {
   CategoryRow,
   HouseholdMemberRow,
   ProfileRow,
+  TxnRow,
 } from "@/lib/finance/types";
 import { supabase } from "@/lib/supabase/client";
+
+export type SavedConfirmation = {
+  transaction: TxnRow;
+  insight: PostSaveInsight | null;
+};
 
 const schema = z.object({
   transaction_type: z.enum(["expense", "income", "transfer"]),
@@ -30,7 +53,7 @@ const schema = z.object({
   posted_at: z.string().min(10),
   account_id: z.string().min(1, "Selecione a conta ou cartão utilizado"),
   account_kind: z.enum(["checking", "credit_card", "investment"]),
-  payment_method: z.enum(["debit", "credit_card", "pix", "other"]),
+  payment_method: z.enum(["debit", "credit_card", "pix", "cash", "other"]),
   // Só para transaction_type "transfer" — conta que recebe o valor. A conta
   // de origem continua sendo account_id, como em qualquer lançamento.
   destination_account_id: z.string().optional(),
@@ -124,6 +147,7 @@ export function useQuickAddForm({
   const [processingStage, setProcessingStage] = useState<ProcessingStage>("idle");
   const [pendingAudio, setPendingAudio] = useState<PendingAudio | null>(null);
   const [usedAiDraft, setUsedAiDraft] = useState(false);
+  const [confirmation, setConfirmation] = useState<SavedConfirmation | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
@@ -178,7 +202,7 @@ export function useQuickAddForm({
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (values: QuickAddFormValues) => {
+    mutationFn: async (values: QuickAddFormValues): Promise<TxnRow | null> => {
       if (!values.account_id) {
         throw new Error("Selecione a conta ou cartão utilizado antes de salvar.");
       }
@@ -215,7 +239,7 @@ export function useQuickAddForm({
             .neq("id", editingTransactionId)
             .eq("organization_id", orgId);
           if (otherRowError) throw new Error(otherRowError.message);
-          return;
+          return null;
         }
 
         // Nova transferência: grava duas linhas ligadas por
@@ -276,7 +300,9 @@ export function useQuickAddForm({
           },
         ]);
         if (error) throw new Error(error.message);
-        return;
+        // Transferência não gera confirmação inteligente (não é gasto nem
+        // receita — não faz sentido calcular "gasto hoje"/orçamento pra ela).
+        return null;
       }
 
       const signedType = values.transaction_type === "expense" ? "MANUAL_DEBIT" : "MANUAL_CREDIT";
@@ -315,7 +341,7 @@ export function useQuickAddForm({
           .eq("id", editingTransactionId)
           .eq("organization_id", orgId);
         if (error) throw new Error(error.message);
-        return;
+        return null;
       }
 
       const baseRow = {
@@ -366,20 +392,28 @@ export function useQuickAddForm({
           installment_plan_id: plan.id,
           installment_number: installment.number,
         }));
-        const { error } = await supabase.from("transactions").insert(rows);
+        const { data: inserted, error } = await supabase.from("transactions").insert(rows).select();
         if (error) throw new Error(error.message);
-        return;
+        // Confirmação mostra a 1ª parcela — "Desfazer" fica desabilitado
+        // pra linhas com installment_plan_id (apagar só uma deixaria as
+        // demais parcelas órfãs, ver PostSaveConfirmation).
+        return (inserted ?? []).find((row) => row.installment_number === 1) as TxnRow | null;
       }
 
-      const { error } = await supabase.from("transactions").insert({
-        ...baseRow,
-        amount: sign * Math.abs(values.amount),
-        posted_at: new Date(values.posted_at).toISOString(),
-        fit_id: `MANUAL-${crypto.randomUUID()}`,
-      });
+      const { data: inserted, error } = await supabase
+        .from("transactions")
+        .insert({
+          ...baseRow,
+          amount: sign * Math.abs(values.amount),
+          posted_at: new Date(values.posted_at).toISOString(),
+          fit_id: `MANUAL-${crypto.randomUUID()}`,
+        })
+        .select()
+        .single();
       if (error) throw new Error(error.message);
+      return inserted as TxnRow;
     },
-    onSuccess: async () => {
+    onSuccess: async (savedRow, values) => {
       if (!editingTransactionId) {
         form.reset({
           transaction_type: "expense",
@@ -398,10 +432,67 @@ export function useQuickAddForm({
       }
       setStatus(editingTransactionId ? "Lançamento atualizado." : "Lançamento salvo.");
       await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
-      onSaved?.();
+
+      const showConfirmation =
+        !editingTransactionId && !!savedRow && values.transaction_type !== "transfer";
+      if (!showConfirmation) {
+        onSaved?.();
+        return;
+      }
+
+      let insight: PostSaveInsight | null = null;
+      try {
+        const today = localToday();
+        const [budgetRows, recentTransactions] = await Promise.all([
+          fetchBudgetVsActualForMonth(orgId, startOfMonthDateOnly(today)),
+          fetchExpensesSince(orgId, weekStartDateOnly(today)),
+        ]);
+        insight = computePostSaveInsight({
+          savedTransaction: savedRow,
+          transactionType: values.transaction_type as "expense" | "income",
+          transactions: recentTransactions,
+          categories,
+          budgetRows,
+          today,
+        });
+      } catch {
+        // Insight é um extra sobre a confirmação básica — se a busca falhar
+        // (rede, RPC), ainda mostramos a confirmação sem ele em vez de
+        // quebrar o fluxo de salvar.
+        insight = null;
+      }
+      setConfirmation({ transaction: savedRow, insight });
     },
     onError: (err) => setStatus(err instanceof Error ? err.message : String(err)),
   });
+
+  /** Fecha a confirmação inteligente e segue o fluxo normal de "salvo" —
+   *  usado pelos botões "Ver lançamento"/"Fechar". */
+  function dismissConfirmation() {
+    setConfirmation(null);
+    onSaved?.();
+  }
+
+  /** Desfaz o lançamento recém-confirmado — só oferecido quando é seguro
+   *  (uma única linha, sem parcelamento: apagar só a 1ª parcela de um plano
+   *  deixaria as demais órfãs). Mesma exclusão simples por id já usada em
+   *  routes/index.tsx para a lista de transações. */
+  async function undoConfirmation() {
+    if (!confirmation) return;
+    const { error } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", confirmation.transaction.id)
+      .eq("organization_id", orgId);
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+    setStatus("Lançamento desfeito.");
+    setConfirmation(null);
+    onSaved?.();
+  }
 
   async function suggestCategory() {
     const values = form.getValues();
@@ -448,7 +539,13 @@ export function useQuickAddForm({
     if (match.status === "resolved") {
       form.setValue("account_id", match.accountId);
       form.setValue("account_kind", match.accountKind);
-      form.setValue("payment_method", defaultPaymentMethod(match.accountKind));
+      // Preserva o que o usuário efetivamente disse (ex: "Pix", "dinheiro")
+      // em vez de re-derivar só do tipo de conta resolvida — accountKind
+      // "checking" por si só não distingue débito/dinheiro/Pix.
+      form.setValue(
+        "payment_method",
+        resolvePaymentMethod(draft.payment_method_hint, match.accountKind),
+      );
       form.setValue("additional_card_id", match.additionalCardId);
     } else if (match.status === "ambiguous") {
       form.setValue("account_id", "");
@@ -632,6 +729,9 @@ export function useQuickAddForm({
     myPaymentOptions,
     householdPaymentOptions,
     saveMutation,
+    confirmation,
+    dismissConfirmation,
+    undoConfirmation,
     suggestCategory,
     interpretNativeText,
     transcribeAndInterpretAudio,

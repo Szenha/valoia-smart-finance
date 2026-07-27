@@ -1,3 +1,4 @@
+import { defaultPaymentMethod, type PaymentMethod } from "./transactionIcons";
 import type { AccountKind, AccountRow, AdditionalCardRow } from "./types";
 
 export type PaymentMethodHint = "debit" | "credit" | "cash" | "pix" | null;
@@ -65,6 +66,27 @@ export function accountKindForPaymentMethod(hint: PaymentMethodHint): AccountKin
   if (hint === "debit" || hint === "cash" || hint === "pix") return "checking";
   if (hint === "credit") return "credit_card";
   return null;
+}
+
+/**
+ * A forma de pagamento persistida deve refletir o que o usuário disse, não só
+ * o tipo de conta resolvida — "débito"/"dinheiro"/"pix" apontam todos para
+ * uma conta corrente (accountKindForPaymentMethod acima), então derivar
+ * payment_method só de accountKind é incapaz de diferenciá-los e sempre
+ * colapsa pro default de "checking" (débito). Só cai em
+ * defaultPaymentMethod(accountKind) quando não há hint nenhum — o mesmo
+ * "melhor esforço" que a migration 20240101000017 documenta como sendo só
+ * para backfill de linhas antigas, não para o caminho explícito do app.
+ */
+export function resolvePaymentMethod(
+  hint: PaymentMethodHint,
+  accountKind: AccountKind,
+): PaymentMethod {
+  if (hint === "pix") return "pix";
+  if (hint === "debit") return "debit";
+  if (hint === "cash") return "cash";
+  if (hint === "credit") return "credit_card";
+  return defaultPaymentMethod(accountKind);
 }
 
 /** Collapses payment options back down to their underlying accounts,

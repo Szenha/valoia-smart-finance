@@ -1,8 +1,10 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Mic, Pencil } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AddEntryChooser } from "@/components/finance/AddEntryChooser";
 import { AppShell } from "@/components/finance/AppShell";
+import { MobileHome } from "@/components/finance/MobileHome";
 import { QuickAddForm } from "@/components/finance/QuickAddForm";
 import { TransactionList } from "@/components/finance/TransactionList";
 import { VoiceCaptureFlow } from "@/components/finance/VoiceCaptureFlow";
@@ -10,15 +12,26 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ensureDefaultCategories, learnFromConfirmation } from "@/lib/classification/pipeline";
 import {
+  ensureRecurringBillOccurrences,
   fetchAccounts,
   fetchAdditionalCards,
+  fetchDashboardMonthSummary,
   fetchHouseholdMembers,
   fetchMemberProfiles,
+  fetchRecurringBillsUpcoming,
   fetchTransactions,
 } from "@/lib/finance/data";
-import type { AccountRow, CategoryRow, TxnRow } from "@/lib/finance/types";
+import { addDaysToDateOnly, localToday } from "@/lib/finance/date-utils";
+import {
+  memberDisplayName,
+  type AccountRow,
+  type CategoryRow,
+  type TxnRow,
+} from "@/lib/finance/types";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
+
+const UPCOMING_BILLS_WINDOW_DAYS = 7;
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -39,7 +52,7 @@ function Index() {
   const [userEmail, setUserEmail] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
-  const [heroCollapsed, setHeroCollapsed] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -98,6 +111,24 @@ function Index() {
     queryFn: () => fetchMemberProfiles(memberIds),
   });
 
+  // Dados do resumo inicial mobile (MobileHome) — mesma RPC/consulta já
+  // usada no Dashboard, sem duplicar lógica de cálculo.
+  const monthSummaryQuery = useQuery({
+    queryKey: ["dashboard-summary", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchDashboardMonthSummary(orgId!),
+  });
+  const upcomingBillsQuery = useQuery({
+    queryKey: ["mobile-home-upcoming-bills", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const start = localToday();
+      const end = addDaysToDateOnly(start, UPCOMING_BILLS_WINDOW_DAYS);
+      await ensureRecurringBillOccurrences(orgId!, end);
+      return fetchRecurringBillsUpcoming(orgId!, start, end);
+    },
+  });
+
   async function handleCategoryChange(txn: TxnRow, categoryId: string) {
     if (!orgId) return;
     await learnFromConfirmation(orgId, txn.id, txn.description, categoryId);
@@ -133,6 +164,10 @@ function Index() {
   const accounts = (accountsQuery.data ?? []) as AccountRow[];
   const additionalCards = additionalCardsQuery.data ?? [];
   const transactions = transactionsQuery.data ?? [];
+  const currentProfile = profilesQuery.data?.find((profile) => profile.id === userId);
+  const displayName = currentProfile
+    ? memberDisplayName(currentProfile, userId ?? "")
+    : userEmail || "";
 
   return (
     <AppShell
@@ -141,30 +176,35 @@ function Index() {
       subtitle="Registro por voz, texto ou formulário"
       userEmail={userEmail}
     >
-      {!heroCollapsed ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/70 bg-white py-10 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.08)]">
-          <Button
-            type="button"
-            size="icon"
-            className="h-20 w-20 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90"
-            aria-label="Registrar por voz"
-            onClick={() => setVoiceOpen(true)}
-          >
-            <Mic className="h-8 w-8" />
-          </Button>
-          <p className="text-sm font-medium text-slate-600">Toque para falar</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-1"
-            onClick={() => setManualOpen(true)}
-          >
-            <Pencil className="mr-1.5 h-3.5 w-3.5" />
-            Adicionar manualmente
-          </Button>
-        </div>
+      {displayName ? (
+        <MobileHome
+          displayName={displayName}
+          summary={monthSummaryQuery.data}
+          transactions={transactions}
+          upcomingBills={upcomingBillsQuery.data ?? []}
+          today={localToday()}
+        />
       ) : null}
+
+      <div className="flex justify-end">
+        <Button type="button" onClick={() => setChooserOpen(true)}>
+          <Plus className="mr-1.5 h-4 w-4" />
+          Adicionar
+        </Button>
+      </div>
+
+      <AddEntryChooser
+        open={chooserOpen}
+        onOpenChange={setChooserOpen}
+        onChooseVoice={() => {
+          setChooserOpen(false);
+          setVoiceOpen(true);
+        }}
+        onChooseManual={() => {
+          setChooserOpen(false);
+          setManualOpen(true);
+        }}
+      />
 
       <VoiceCaptureFlow
         open={voiceOpen}
@@ -206,7 +246,6 @@ function Index() {
         currentUserId={userId}
         onCategoryChange={handleCategoryChange}
         onDelete={handleDeleteTransaction}
-        onFiltersCollapsedChange={setHeroCollapsed}
       />
     </AppShell>
   );
