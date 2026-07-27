@@ -1,5 +1,6 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Layers, List } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CategoryBreadcrumb } from "@/components/finance/CategoryBreadcrumb";
 import type { useCategoryDrilldown } from "@/lib/finance/category-drilldown";
@@ -34,19 +35,52 @@ type Props = {
  *  por categoria" quanto "Receitas por categoria" no Dashboard — cada
  *  balde já vem calculado no nível certo por useCategoryDrilldown; aqui só
  *  cuida da apresentação e dos cliques de drill-down/drill-up. Ícone de
- *  seta nos itens que dão pra detalhar deixa claro que são clicáveis. */
+ *  seta nos itens que dão pra detalhar deixa claro que são clicáveis.
+ *
+ *  Padrão é o nível mais detalhado (uma fatia por categoria-folha); "Ver
+ *  agrupado" reduz pra totais por categoria principal, com a navegação
+ *  antiga (drill-down/breadcrumb) disponível a partir daí. */
 export function CategoryPieCard({ title, drilldown, emptyLabel, error }: Props) {
   const total = drilldown.buckets.reduce((sum, bucket) => sum + bucket.total, 0);
 
   return (
     <Card>
       <CardHeader className="space-y-2">
-        <CardTitle>{title}</CardTitle>
-        <CategoryBreadcrumb
-          path={drilldown.path}
-          onRoot={drilldown.drillToRoot}
-          onStep={drilldown.drillToStep}
-        />
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>{title}</CardTitle>
+          {drilldown.mode === "detailed" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              onClick={drilldown.drillToRoot}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Ver agrupado
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              onClick={drilldown.showDetailed}
+            >
+              <List className="h-3.5 w-3.5" />
+              Ver detalhado
+            </Button>
+          )}
+        </div>
+        {drilldown.mode === "detailed" ? (
+          <p className="text-xs font-medium text-muted-foreground">Nível mais detalhado</p>
+        ) : (
+          <CategoryBreadcrumb
+            path={drilldown.path}
+            onRoot={drilldown.drillToRoot}
+            onStep={drilldown.drillToStep}
+          />
+        )}
       </CardHeader>
       <CardContent>
         {error ? (

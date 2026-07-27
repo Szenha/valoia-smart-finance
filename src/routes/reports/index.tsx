@@ -5,6 +5,8 @@ import {
   ArrowUpRight,
   ChevronRight,
   Coins,
+  Layers,
+  List,
   Repeat,
   Scale,
   Tags,
@@ -15,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
@@ -546,12 +549,41 @@ function CategoryBreakdownCard({
   return (
     <Card>
       <CardHeader className="space-y-2">
-        <CardTitle>{title}</CardTitle>
-        <CategoryBreadcrumb
-          path={drilldown.path}
-          onRoot={drilldown.drillToRoot}
-          onStep={drilldown.drillToStep}
-        />
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>{title}</CardTitle>
+          {drilldown.mode === "detailed" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              onClick={drilldown.drillToRoot}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Ver agrupado
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              onClick={drilldown.showDetailed}
+            >
+              <List className="h-3.5 w-3.5" />
+              Ver detalhado
+            </Button>
+          )}
+        </div>
+        {drilldown.mode === "detailed" ? (
+          <p className="text-xs font-medium text-muted-foreground">Nível mais detalhado</p>
+        ) : (
+          <CategoryBreadcrumb
+            path={drilldown.path}
+            onRoot={drilldown.drillToRoot}
+            onStep={drilldown.drillToStep}
+          />
+        )}
       </CardHeader>
       <CardContent>
         {error ? (

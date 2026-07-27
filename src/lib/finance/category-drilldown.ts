@@ -69,29 +69,88 @@ export function categoryBucketsAt(
   return buckets.filter((bucket) => bucket.total > 0).sort((a, b) => b.total - a.total);
 }
 
+/** Um balde por categoria-FOLHA (o nível mais detalhado possível), sem
+ *  agrupar por categoria-mãe — cada folha usa seu próprio nome/cor. Já que
+ *  as linhas de `rows` vêm sempre por folha (ver CategoryTotalRow acima),
+ *  isso é só o total de cada uma, sem nenhuma soma extra. Base do modo
+ *  "detalhado" (padrão de useCategoryDrilldown). */
+export function categoryLeafBuckets(
+  categories: CategoryRow[],
+  rows: CategoryTotalRow[],
+): CategoryBucket[] {
+  const totalByCategoryId = new Map<string | null, number>();
+  for (const row of rows) {
+    const key = row.category_id ?? null;
+    totalByCategoryId.set(key, (totalByCategoryId.get(key) ?? 0) + Number(row.total));
+  }
+
+  const byId = new Map(categories.map((category) => [category.id, category]));
+  const buckets: CategoryBucket[] = [];
+  for (const [categoryId, total] of totalByCategoryId) {
+    if (total <= 0) continue;
+    if (categoryId === null) {
+      buckets.push({
+        categoryId: null,
+        name: "Sem categoria",
+        color: null,
+        total,
+        drillable: false,
+      });
+      continue;
+    }
+    const category = byId.get(categoryId);
+    if (!category) continue;
+    buckets.push({
+      categoryId,
+      name: category.name,
+      color: category.color ?? null,
+      total,
+      // Já é o nível mais detalhado que existe — não há pra onde descer.
+      drillable: false,
+    });
+  }
+  return buckets.sort((a, b) => b.total - a.total);
+}
+
 export type CategoryBreadcrumbStep = { id: string; name: string };
 
-/** Estado de navegação (pilha de drill-down) + os baldes já calculados pro
- *  nível atual — usado tanto pelo card de pizza do Dashboard quanto pela
- *  listagem de Relatórios, cada um renderizando `buckets` do seu jeito. */
+/**
+ * Estado de navegação + os baldes já calculados pro nível atual — usado
+ * tanto pelo card de pizza do Dashboard quanto pela listagem de Relatórios.
+ *
+ * Padrão é o modo "detalhado" (uma fatia por categoria-folha, sem agrupar) —
+ * é o nível mais útil pra entender onde o dinheiro realmente foi. O modo
+ * "agrupado" (uma fatia por categoria-mãe, com drill-down/drill-up pela
+ * árvore) fica disponível como uma redução opcional, não como padrão.
+ */
 export function useCategoryDrilldown(categories: CategoryRow[], rows: CategoryTotalRow[]) {
+  const [mode, setMode] = useState<"detailed" | "grouped">("detailed");
   const [path, setPath] = useState<CategoryBreadcrumbStep[]>([]);
   const parentId = path.length > 0 ? path[path.length - 1].id : null;
-  const buckets = useMemo(
-    () => categoryBucketsAt(categories, rows, parentId),
-    [categories, rows, parentId],
-  );
+
+  const buckets = useMemo(() => {
+    if (mode === "detailed") return categoryLeafBuckets(categories, rows);
+    return categoryBucketsAt(categories, rows, parentId);
+  }, [mode, categories, rows, parentId]);
 
   function drillInto(bucket: CategoryBucket) {
     if (!bucket.drillable || !bucket.categoryId) return;
     setPath((current) => [...current, { id: bucket.categoryId!, name: bucket.name }]);
   }
   function drillToRoot() {
+    setMode("grouped");
     setPath([]);
   }
   function drillToStep(index: number) {
+    setMode("grouped");
     setPath((current) => current.slice(0, index + 1));
   }
+  /** Volta pro nível mais detalhado (padrão), abandonando qualquer
+   *  navegação feita no modo agrupado. */
+  function showDetailed() {
+    setMode("detailed");
+    setPath([]);
+  }
 
-  return { path, buckets, drillInto, drillToRoot, drillToStep };
+  return { mode, path, buckets, drillInto, drillToRoot, drillToStep, showDetailed };
 }
