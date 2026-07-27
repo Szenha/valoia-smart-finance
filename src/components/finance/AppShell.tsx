@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Mic,
   MoreHorizontal,
   Pencil,
   PiggyBank,
@@ -25,8 +26,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
-import { AddEntryChooser } from "@/components/finance/AddEntryChooser";
-import { QuickAddForm } from "@/components/finance/QuickAddForm";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -144,8 +143,6 @@ const MOBILE_MORE_ITEMS = navItems
 export function AppShell({ activeSection, title, subtitle, userEmail, children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [voiceSheetOpen, setVoiceSheetOpen] = useState(false);
-  const [manualSheetOpen, setManualSheetOpen] = useState(false);
-  const [chooserOpen, setChooserOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreSectionActive = !MOBILE_PRIMARY_SECTIONS.includes(activeSection);
   const location = useLocation();
@@ -525,31 +522,18 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
         </DialogContent>
       </Dialog>
 
-      {/* FAB de adicionar lançamento — mobile only. Abre a escolha voz/manual
-          com peso igual, disponível em qualquer página sem precisar navegar
-          até Transações primeiro. */}
+      {/* FAB de registrar por voz — mobile only. Vai direto pro microfone
+          (ação de maior impulso/velocidade); a escolha entre voz e manual
+          com peso igual já é o botão "Adicionar" da tela de Transações. */}
       <Button
         type="button"
         size="icon"
         className="fixed right-4 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:hidden [bottom:calc(env(safe-area-inset-bottom)+5.5rem)]"
-        aria-label="Adicionar lançamento"
-        onClick={() => setChooserOpen(true)}
+        aria-label="Registrar por voz"
+        onClick={() => setVoiceSheetOpen(true)}
       >
-        <Plus className="h-6 w-6" />
+        <Mic className="h-6 w-6" />
       </Button>
-
-      <AddEntryChooser
-        open={chooserOpen}
-        onOpenChange={setChooserOpen}
-        onChooseVoice={() => {
-          setChooserOpen(false);
-          setVoiceSheetOpen(true);
-        }}
-        onChooseManual={() => {
-          setChooserOpen(false);
-          setManualSheetOpen(true);
-        }}
-      />
 
       {orgId ? (
         <VoiceCaptureFlow
@@ -563,25 +547,6 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           members={membersQuery.data ?? []}
           profiles={profilesQuery.data ?? []}
         />
-      ) : null}
-
-      {orgId ? (
-        <Dialog open={manualSheetOpen} onOpenChange={setManualSheetOpen}>
-          <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-            <DialogTitle>Lançamento manual</DialogTitle>
-            <QuickAddForm
-              bare
-              orgId={orgId}
-              userId={currentUserId}
-              categories={categoriesQuery.data ?? []}
-              accounts={accountsQuery.data ?? []}
-              additionalCards={additionalCardsQuery.data ?? []}
-              members={membersQuery.data ?? []}
-              profiles={profilesQuery.data ?? []}
-              onSaved={() => setManualSheetOpen(false)}
-            />
-          </DialogContent>
-        </Dialog>
       ) : null}
 
       <Dialog
