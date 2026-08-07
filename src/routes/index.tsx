@@ -15,7 +15,9 @@ import {
   ensureRecurringBillOccurrences,
   fetchAccounts,
   fetchAdditionalCards,
+  fetchCalendarEventsUpcoming,
   fetchDashboardMonthSummary,
+  fetchFamilyMembers,
   fetchHouseholdMembers,
   fetchMemberProfiles,
   fetchRecurringBillsUpcoming,
@@ -128,6 +130,22 @@ function Index() {
       return fetchRecurringBillsUpcoming(orgId!, start, end);
     },
   });
+  // Mesma janela de dias das contas — compromissos da família (Calendário)
+  // mostrados junto no resumo mobile, como já acontece no Dashboard.
+  const upcomingEventsQuery = useQuery({
+    queryKey: ["mobile-home-upcoming-events", orgId],
+    enabled: !!orgId,
+    queryFn: () => {
+      const start = localToday();
+      const end = addDaysToDateOnly(start, UPCOMING_BILLS_WINDOW_DAYS);
+      return fetchCalendarEventsUpcoming(orgId!, start, end);
+    },
+  });
+  const familyMembersQuery = useQuery({
+    queryKey: ["family-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchFamilyMembers(orgId!),
+  });
 
   async function handleCategoryChange(txn: TxnRow, categoryId: string) {
     if (!orgId) return;
@@ -182,6 +200,8 @@ function Index() {
           summary={monthSummaryQuery.data}
           transactions={transactions}
           upcomingBills={upcomingBillsQuery.data ?? []}
+          upcomingEvents={upcomingEventsQuery.data ?? []}
+          familyMembers={familyMembersQuery.data ?? []}
           today={localToday()}
         />
       ) : null}

@@ -1,5 +1,6 @@
 import { Loader2, Mic, Sparkles, Square } from "lucide-react";
 import type { ReactNode } from "react";
+import { CategoryPicker } from "@/components/finance/CategoryPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -190,22 +191,16 @@ export function QuickAddFields({
       <FieldGroup label="Categoria e data">
         <div>
           <Label>Categoria</Label>
-          <Select
-            value={form.watch("category_id") || "none"}
-            onValueChange={(value) => form.setValue("category_id", value === "none" ? "" : value)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Sem categoria</SelectItem>
-              {api.categoryItems.map((category) => (
-                <SelectItem key={category.id} value={category.id}>
-                  {category.path}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CategoryPicker
+            options={api.categoryItems}
+            type={
+              form.watch("transaction_type") === "transfer"
+                ? undefined
+                : (form.watch("transaction_type") as "income" | "expense")
+            }
+            value={form.watch("category_id") || null}
+            onChange={(value) => form.setValue("category_id", value)}
+          />
         </div>
         <div>
           <Label>Data</Label>

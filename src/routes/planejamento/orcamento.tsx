@@ -124,10 +124,10 @@ function PlanningRoute() {
   const [showFullMatrixOnMobile, setShowFullMatrixOnMobile] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
   const [granularity, setGranularity] = useState<Granularity>("category");
-  // January by default — the natural start of an annual plan, not "today",
-  // since replicate only copies rows that already have a value in this
-  // month (a base month with nothing filled in silently replicates nothing).
-  const [baseMonth, setBaseMonth] = useState(1);
+  // Mês atual por padrão — é o mês que a pessoa acabou de preencher na
+  // prática (não janeiro): replicar só copia linhas com valor no mês base,
+  // então o padrão precisa ser onde ela de fato lançou algo.
+  const [baseMonth, setBaseMonth] = useState(new Date().getMonth() + 1);
   const [replicateSummary, setReplicateSummary] = useState<{
     filled: number;
     skipped: number;

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
+import { CategoryPicker } from "@/components/finance/CategoryPicker";
 import { MonthCalendar, monthCalendarDayKey } from "@/components/finance/MonthCalendar";
 import { PlanejamentoTabs } from "@/components/finance/PlanejamentoTabs";
 import { SettleBillDialog } from "@/components/finance/SettleBillDialog";
@@ -807,22 +808,13 @@ function ContasFixasRoute() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Categoria (opcional)</Label>
-                <Select
-                  value={form.categoryId}
-                  onValueChange={(value) => setForm({ ...form, categoryId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma</SelectItem>
-                    {categoryItems.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.path}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CategoryPicker
+                  options={categoryItems}
+                  type="expense"
+                  value={form.categoryId === "none" ? null : form.categoryId}
+                  noneLabel="Nenhuma"
+                  onChange={(value) => setForm({ ...form, categoryId: value || "none" })}
+                />
               </div>
               <div>
                 <Label>Conta ou cartão (opcional)</Label>

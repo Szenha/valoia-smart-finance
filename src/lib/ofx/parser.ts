@@ -252,6 +252,23 @@ function text(node: OfxNode | undefined, tag: string): string | undefined {
 // "Saldo Anterior" / "Saldo do dia" são linhas informativas, não transações reais.
 const BALANCE_LINE_PATTERN = /^\s*saldo\s+(anterior|do\s+dia|atual|final|disponível)/i;
 
+// ---------- Desduplicação de FITID dentro do mesmo extrato ----------
+// statement_items tem unique(organization_id, statement_import_id, fit_id) —
+// alguns bancos emitem FITID duplicado de verdade no arquivo (não ausente,
+// que já cai no syntheticFitId acima, mas presente e repetido — bug do lado
+// do banco). Sem isso, o insert inteiro falhava por causa de 1-2 linhas.
+// Mantém o FITID original na 1ª ocorrência (é o que casa em reimportações)
+// e só sufixa as repetições.
+function dedupeFitIds(transactions: OfxTransaction[]): void {
+  const seenCount = new Map<string, number>();
+  for (const tx of transactions) {
+    const original = tx.fitId;
+    const n = (seenCount.get(original) ?? 0) + 1;
+    seenCount.set(original, n);
+    if (n > 1) tx.fitId = `${original}-DUP${n}`;
+  }
+}
+
 // ---------- FITID sintético determinístico ----------
 // Usado quando o banco omite o FITID (ex: Banco do Brasil).
 // FNV-1a 32-bit sobre data+valor+descrição+posição → prefixo "SYNTH".
@@ -387,6 +404,8 @@ function buildBankStatement(
     }
   }
 
+  dedupeFitIds(transactions);
+
   const ledgerBal = child(stmt, "LEDGERBAL");
   const availBal = child(stmt, "AVAILBAL");
 
@@ -463,6 +482,8 @@ function buildInvStatement(stmt: OfxNode): OfxStatement {
       txIdx++;
     }
   }
+
+  dedupeFitIds(transactions);
 
   return {
     account,

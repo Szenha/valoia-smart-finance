@@ -88,6 +88,58 @@ describe("parseOfx", () => {
     );
   });
 
+  test("disambiguates a FITID the bank duplicated within the same statement", () => {
+    const input = `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+ENCODING:USASCII
+CHARSET:1252
+
+<OFX>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STMTRS>
+        <CURDEF>BRL
+        <BANKACCTFROM>
+          <BANKID>001
+          <ACCTID>555
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20240301
+          <DTEND>20240331
+          <STMTTRN>
+            <TRNTYPE>DEBIT
+            <DTPOSTED>20240302
+            <TRNAMT>-9,99
+            <FITID>DUPE1
+            <NAME>Padaria
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT
+            <DTPOSTED>20240303
+            <TRNAMT>-15,00
+            <FITID>DUPE1
+            <NAME>Farmacia
+          </STMTTRN>
+        </BANKTRANLIST>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>`;
+
+    const doc = parseOfx(input);
+
+    const [first, second] = doc.statements[0].transactions;
+    // insert into statement_items has unique(organization_id,
+    // statement_import_id, fit_id) — importing this file used to fail
+    // outright because the bank emitted the same FITID for two different
+    // transactions. The first occurrence keeps the real FITID (so a
+    // re-import still matches it); only the repeat gets disambiguated.
+    assert.equal(first.fitId, "DUPE1");
+    assert.equal(second.fitId, "DUPE1-DUP2");
+    assert.notEqual(first.fitId, second.fitId);
+  });
+
   test("decodes Windows-1252 input", () => {
     const input = `OFXHEADER:100
 DATA:OFXSGML

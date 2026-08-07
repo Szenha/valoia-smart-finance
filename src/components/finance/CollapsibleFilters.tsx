@@ -21,13 +21,15 @@ type Props = {
   /** Avisa a tela pai quando o estado muda — usado em Transações para
    *  recolher também o bloco do microfone junto com os filtros. */
   onCollapsedChange?: (collapsed: boolean) => void;
-  /** Filtro sempre visível no mobile (o mais usado da tela) — quando
-   *  informado, o mobile deixa de empilhar todos os selects e passa a
-   *  mostrar só este + um ícone que abre os demais numa gaveta. Sem esse
-   *  prop, o mobile usa o mesmo colapsa-tudo do desktop. */
+  /** Filtro sempre visível no mobile, ao lado do ícone de gaveta (o mais
+   *  usado da tela) — opcional. Sem ele, o mobile mostra só o ícone (todos
+   *  os filtros ficam dentro da gaveta), o que evita dropdowns ocupando a
+   *  tela toda. Informe só quando um filtro específico realmente precisa
+   *  ficar sempre à vista fora da gaveta. */
   mobilePrimary?: ReactNode;
-  /** Filtros extras, abertos numa gaveta (Drawer) no mobile a partir do
-   *  ícone ao lado do filtro primário. */
+  /** Filtros abertos numa gaveta (Drawer) no mobile a partir do ícone —
+   *  quando informado (com ou sem mobilePrimary), o mobile para de empilhar
+   *  todos os selects inline e passa a escondê-los atrás do ícone. */
   mobileAdvanced?: ReactNode;
   /** Quantos filtros avançados estão com um valor não-padrão — mostrado
    *  como contador no ícone da gaveta. */
@@ -65,8 +67,10 @@ export function CollapsibleFilters({
     });
   }
 
+  const hasMobileLayout = !!mobilePrimary || !!mobileAdvanced;
+
   const desktopBar = (
-    <div className={`flex flex-wrap items-center gap-2 ${mobilePrimary ? "hidden md:flex" : ""}`}>
+    <div className={`flex flex-wrap items-center gap-2 ${hasMobileLayout ? "hidden md:flex" : ""}`}>
       <Button
         type="button"
         variant="outline"
@@ -86,13 +90,13 @@ export function CollapsibleFilters({
     </div>
   );
 
-  if (!mobilePrimary) return desktopBar;
+  if (!hasMobileLayout) return desktopBar;
 
   return (
     <>
       {desktopBar}
       <div className="flex items-center gap-2 md:hidden">
-        <div className="min-w-0 flex-1">{mobilePrimary}</div>
+        {mobilePrimary ? <div className="min-w-0 flex-1">{mobilePrimary}</div> : null}
         <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
           <DrawerTrigger asChild>
             <Button

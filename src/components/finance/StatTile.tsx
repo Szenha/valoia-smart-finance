@@ -1,4 +1,4 @@
-import { Minus, TrendingDown, TrendingUp } from "lucide-react";
+import { Minus, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type StatTone = "income" | "expense" | "neutral";
@@ -8,6 +8,11 @@ const TONE_CLASS = {
   income: "text-emerald-700",
   expense: "text-red-700",
   neutral: "text-muted-foreground",
+} as const;
+const TONE_ICON_BADGE_CLASS = {
+  income: "bg-emerald-50 text-emerald-700",
+  expense: "bg-red-50 text-red-700",
+  neutral: "bg-slate-100 text-slate-600",
 } as const;
 
 /** Cartão indicador neutro — número em destaque tipográfico (não em cor de
@@ -20,6 +25,8 @@ export function StatTile({
   value,
   tone = "neutral",
   compact,
+  onClick,
+  icon,
 }: {
   label: string;
   value: string;
@@ -27,10 +34,38 @@ export function StatTile({
   /** Menor padding/tipografia — pra caber ao lado de controles de filtro
    *  em vez de ocupar uma seção inteira como no Dashboard. */
   compact?: boolean;
+  /** Quando informado, o tile vira um botão (drilldown) — ex: abrir os
+   *  lançamentos que compõem esse número. */
+  onClick?: () => void;
+  /** Ícone à esquerda, num círculo colorido pelo tone — vira um layout
+   *  horizontal (ícone + label/valor), pra um KPI pequeno e autoexplicativo
+   *  fora de uma grade (ex: "Saldo consolidado" sozinho na página). Sem
+   *  isso, mantém o layout vertical padrão usado nas grades de indicadores. */
+  icon?: LucideIcon;
 }) {
   const Icon = TONE_ICON[tone];
-  return (
-    <div className={cn("rounded-2xl border border-slate-200 bg-card", compact ? "p-3" : "p-4")}>
+  const LeadingIcon = icon;
+  const content = LeadingIcon ? (
+    <div className="flex items-center gap-2.5">
+      <span
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+          TONE_ICON_BADGE_CLASS[tone],
+        )}
+      >
+        <LeadingIcon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        <p className="truncate text-base font-semibold leading-tight tabular-nums text-slate-950">
+          {value}
+        </p>
+      </div>
+    </div>
+  ) : (
+    <>
       <div className="flex items-center gap-1.5">
         <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           {label}
@@ -47,6 +82,25 @@ export function StatTile({
       >
         {value}
       </p>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "w-full rounded-2xl border border-slate-200 bg-card text-left transition-colors hover:bg-slate-50 active:bg-slate-100",
+          compact ? "p-3" : "p-4",
+        )}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className={cn("rounded-2xl border border-slate-200 bg-card", compact ? "p-3" : "p-4")}>
+      {content}
     </div>
   );
 }

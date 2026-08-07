@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CategoryPicker } from "@/components/finance/CategoryPicker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -171,23 +172,13 @@ export function SettleBillDialog({
             </div>
             <div>
               <Label>Categoria (opcional)</Label>
-              <Select
-                value={categoryId}
-                onValueChange={setCategoryId}
+              <CategoryPicker
+                options={categoryItems}
+                type="expense"
+                value={categoryId === "none" ? null : categoryId}
                 disabled={linkedTransactionId !== "none"}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem categoria</SelectItem>
-                  {categoryItems.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.path}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={(value) => setCategoryId(value || "none")}
+              />
             </div>
           </div>
           <div>

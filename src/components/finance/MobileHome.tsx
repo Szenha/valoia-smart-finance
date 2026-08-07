@@ -1,9 +1,17 @@
+import { Link } from "@tanstack/react-router";
 import { CalendarClock } from "lucide-react";
 import { StatTile } from "@/components/finance/StatTile";
 import { formatDateBR } from "@/lib/finance/date-utils";
 import type { DashboardMonthSummary } from "@/lib/finance/data";
+import { eventIconFor } from "@/lib/finance/event-icons";
 import { sumExpensesInRange, weekStartDateOnly } from "@/lib/finance/post-save-insight";
-import { formatCurrency, type RecurringBillOccurrenceRow, type TxnRow } from "@/lib/finance/types";
+import {
+  formatCurrency,
+  type CalendarEventOccurrence,
+  type FamilyMemberRow,
+  type RecurringBillOccurrenceRow,
+  type TxnRow,
+} from "@/lib/finance/types";
 
 /** Primeiro nome, pra uma saudação curta — "Olá, Samuel." em vez do nome
  *  completo ou do e-mail. */
@@ -23,16 +31,24 @@ export function MobileHome({
   summary,
   transactions,
   upcomingBills,
+  upcomingEvents,
+  familyMembers,
   today,
 }: {
   displayName: string;
   summary: DashboardMonthSummary | null | undefined;
   transactions: Pick<TxnRow, "amount" | "type" | "posted_at">[];
   upcomingBills: RecurringBillOccurrenceRow[];
+  upcomingEvents: CalendarEventOccurrence[];
+  familyMembers: FamilyMemberRow[];
   today: string;
 }) {
   const spentToday = sumExpensesInRange(transactions, today, today);
   const spentWeek = sumExpensesInRange(transactions, weekStartDateOnly(today), today);
+  // recurring_bills_upcoming também traz pagas/puladas dentro da janela de
+  // dias pedida (só ocorrências vencidas e pendentes furam a janela) — "Vence
+  // em breve" é só o que ainda falta pagar, então filtra aqui.
+  const pendingUpcomingBills = upcomingBills.filter((bill) => bill.status === "pending");
 
   return (
     <div className="flex flex-col gap-4 lg:hidden">
@@ -63,13 +79,13 @@ export function MobileHome({
         />
       </div>
 
-      {upcomingBills.length > 0 ? (
+      {pendingUpcomingBills.length > 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-card p-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Vence em breve
           </p>
           <div className="flex flex-col gap-2">
-            {upcomingBills.slice(0, 3).map((occurrence) => (
+            {pendingUpcomingBills.slice(0, 3).map((occurrence) => (
               <div key={occurrence.id} className="flex items-center gap-2 text-sm">
                 <CalendarClock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                 <span className="min-w-0 flex-1 truncate text-slate-700">
@@ -83,6 +99,42 @@ export function MobileHome({
                 </strong>
               </div>
             ))}
+          </div>
+        </div>
+      ) : null}
+
+      {upcomingEvents.length > 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-card p-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Próximos eventos
+          </p>
+          <div className="flex flex-col gap-2">
+            {upcomingEvents.slice(0, 3).map((occurrence) => {
+              const familyMember = occurrence.family_member_id
+                ? familyMembers.find((m) => m.id === occurrence.family_member_id)
+                : null;
+              const memberColor = familyMember?.color ?? occurrence.color ?? "#64748b";
+              const EventIcon = eventIconFor(occurrence.icon);
+              return (
+                <Link
+                  key={`${occurrence.event_id}-${occurrence.occurrence_date}`}
+                  to="/calendario"
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <span
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                    style={{ backgroundColor: `${memberColor}1f`, color: memberColor }}
+                  >
+                    <EventIcon className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-slate-700">{occurrence.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {familyMember?.name ? `${familyMember.name} · ` : ""}
+                    {occurrence.start_time ? occurrence.start_time.slice(0, 5) : ""}
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       ) : null}

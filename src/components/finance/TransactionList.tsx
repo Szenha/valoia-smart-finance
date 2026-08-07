@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { CategoryPicker } from "@/components/finance/CategoryPicker";
 import { CollapsibleFilters } from "@/components/finance/CollapsibleFilters";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { StatTile } from "@/components/finance/StatTile";
@@ -20,6 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -56,6 +64,7 @@ import {
   type ProfileRow,
   type TxnRow,
 } from "@/lib/finance/types";
+import { cn } from "@/lib/utils";
 
 type Props = {
   orgId: string;
@@ -166,6 +175,7 @@ export function TransactionList({
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<TxnRow | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
+  const [drilldown, setDrilldown] = useState<"income" | "expense" | "balance" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -197,6 +207,8 @@ export function TransactionList({
     ).values(),
   );
   const advancedFilterCount = [
+    selectedPeriod !== "this_month",
+    selectedCategory !== "all",
     selectedCreator !== "all",
     selectedAccount !== "all",
     selectedPaymentMethod !== "all",
@@ -216,14 +228,20 @@ export function TransactionList({
   });
   // Transferência é um par débito/crédito entre contas, não receita/despesa
   // de verdade — excluída do resumo pra não inflar "Entradas"/"Saídas".
-  const income = displayed.reduce(
-    (sum, t) => (t.type !== "MANUAL_TRANSFER" && t.amount > 0 ? sum + t.amount : sum),
-    0,
-  );
-  const expenses = displayed.reduce(
-    (sum, t) => (t.type !== "MANUAL_TRANSFER" && t.amount < 0 ? sum + Math.abs(t.amount) : sum),
-    0,
-  );
+  const incomeRows = displayed.filter((t) => t.type !== "MANUAL_TRANSFER" && t.amount > 0);
+  const expenseRows = displayed.filter((t) => t.type !== "MANUAL_TRANSFER" && t.amount < 0);
+  const income = incomeRows.reduce((sum, t) => sum + t.amount, 0);
+  const expenses = expenseRows.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const drilldownRows =
+    drilldown === "income"
+      ? incomeRows
+      : drilldown === "expense"
+        ? expenseRows
+        : drilldown === "balance"
+          ? [...incomeRows, ...expenseRows].sort((a, b) => b.posted_at.localeCompare(a.posted_at))
+          : [];
+  const drilldownTitle =
+    drilldown === "income" ? "Entradas" : drilldown === "expense" ? "Saídas" : "Saldo";
 
   return (
     <TooltipProvider>
@@ -235,7 +253,7 @@ export function TransactionList({
               value={selectedPeriod}
               onValueChange={(value) => setSelectedPeriod(value as PeriodFilter)}
             >
-              <SelectTrigger className="w-[150px] shrink-0" aria-label="Período">
+              <SelectTrigger className="hidden w-[150px] shrink-0 md:flex" aria-label="Período">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -263,23 +281,46 @@ export function TransactionList({
               storageKey="calcum:transactions-filters-collapsed"
               onCollapsedChange={onFiltersCollapsedChange}
               activeAdvancedCount={advancedFilterCount}
-              mobilePrimary={
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as categorias</SelectItem>
-                    {categoryItems.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.path}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              }
               mobileAdvanced={
                 <>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Período
+                    </label>
+                    <Select
+                      value={selectedPeriod}
+                      onValueChange={(value) => setSelectedPeriod(value as PeriodFilter)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(PERIOD_LABEL) as PeriodFilter[]).map((period) => (
+                          <SelectItem key={period} value={period}>
+                            {PERIOD_LABEL[period]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Categoria
+                    </label>
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as categorias</SelectItem>
+                        {categoryItems.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.path}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-muted-foreground">
                       Quem
@@ -430,14 +471,27 @@ export function TransactionList({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 grid grid-cols-3 gap-3 border-b pb-4">
-            <StatTile label="Entradas" value={formatCurrency(income)} tone="income" compact />
-            <StatTile label="Saídas" value={formatCurrency(expenses)} tone="expense" compact />
+          <div className="mb-4 grid grid-cols-1 gap-3 border-b pb-4 sm:grid-cols-3">
+            <StatTile
+              label="Entradas"
+              value={formatCurrency(income)}
+              tone="income"
+              compact
+              onClick={() => setDrilldown("income")}
+            />
+            <StatTile
+              label="Saídas"
+              value={formatCurrency(expenses)}
+              tone="expense"
+              compact
+              onClick={() => setDrilldown("expense")}
+            />
             <StatTile
               label="Saldo"
               value={formatCurrency(income - expenses)}
               tone={income - expenses >= 0 ? "income" : "expense"}
               compact
+              onClick={() => setDrilldown("balance")}
             />
           </div>
           <div
@@ -502,25 +556,17 @@ export function TransactionList({
               const listAmountClass = `text-right text-sm font-semibold tabular-nums ${amountColorClass}`;
 
               const categoryBadge = isEditing ? (
-                <Select
-                  defaultValue={transaction.category_id ?? "none"}
-                  onValueChange={(value) => {
+                <CategoryPicker
+                  options={categoryItems}
+                  type={isTransfer ? undefined : isIncome ? "income" : "expense"}
+                  value={transaction.category_id}
+                  size="sm"
+                  className="w-[220px]"
+                  onChange={(value) => {
                     setEditingCategoryFor(null);
-                    if (value !== "none") onCategoryChange(transaction, value);
+                    if (value) onCategoryChange(transaction, value);
                   }}
-                >
-                  <SelectTrigger className="h-7 w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem categoria</SelectItem>
-                    {categoryItems.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.path}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               ) : (
                 <button
                   type="button"
@@ -673,25 +719,17 @@ export function TransactionList({
 
               if (viewMode === "list") {
                 const listCategoryControl = isEditing ? (
-                  <Select
-                    defaultValue={transaction.category_id ?? "none"}
-                    onValueChange={(value) => {
+                  <CategoryPicker
+                    options={categoryItems}
+                    type={isTransfer ? undefined : isIncome ? "income" : "expense"}
+                    value={transaction.category_id}
+                    size="sm"
+                    className="h-6 w-[180px] text-xs"
+                    onChange={(value) => {
                       setEditingCategoryFor(null);
-                      if (value !== "none") onCategoryChange(transaction, value);
+                      if (value) onCategoryChange(transaction, value);
                     }}
-                  >
-                    <SelectTrigger className="h-6 w-[160px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sem categoria</SelectItem>
-                      {categoryItems.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.path}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
                 ) : (
                   <button
                     type="button"
@@ -707,64 +745,58 @@ export function TransactionList({
                 return (
                   <div
                     key={transaction.id}
-                    className="flex items-center gap-2.5 overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    className="grid grid-cols-[auto_1fr_auto] items-start gap-x-2.5 gap-y-1.5 overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-2.5"
                   >
                     <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                      className={`row-span-2 flex h-7 w-7 shrink-0 items-center justify-center self-start rounded-full ${
                         typeIconWrapperClass
                       }`}
                     >
                       <TypeIcon className="h-3.5 w-3.5" />
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {transaction.description || "-"}
-                        </p>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {formatDateBR(transaction.posted_at)}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        {listCategoryControl}
-                        {transaction.needs_review ? (
-                          <Tooltip>
-                            <TooltipTrigger
-                              type="button"
-                              aria-label="Revisar"
-                              className="text-amber-600"
-                            >
-                              <AlertCircle className="h-3 w-3" />
-                            </TooltipTrigger>
-                            <TooltipContent>Pendente de revisão</TooltipContent>
-                          </Tooltip>
-                        ) : null}
-                        {transaction.installment_plan_id ? (
-                          <Tooltip>
-                            <TooltipTrigger type="button" aria-label="Parcelado">
-                              <Layers className="h-3 w-3" />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {transaction.installment_number
-                                ? `${transaction.installment_number} parcela`
-                                : "Parcelado"}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : null}
-                        {consolidated ? (
-                          <Tooltip>
-                            <TooltipTrigger type="button" aria-label="Consolidado">
-                              <Lock className="h-3 w-3" />
-                            </TooltipTrigger>
-                            <TooltipContent>Consolidado · período fechado</TooltipContent>
-                          </Tooltip>
-                        ) : null}
-                      </div>
-                    </div>
+                    <p className="min-w-0 truncate text-sm font-medium">
+                      {transaction.description || "-"}
+                    </p>
                     <strong className={`shrink-0 ${listAmountClass}`}>
                       {formatCurrency(transaction.amount, transaction.currency)}
                     </strong>
-                    <div className="flex shrink-0 items-center">{actionButtons}</div>
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                      <span className="shrink-0">{formatDateBR(transaction.posted_at)}</span>
+                      {listCategoryControl}
+                      {transaction.needs_review ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            type="button"
+                            aria-label="Revisar"
+                            className="text-amber-600"
+                          >
+                            <AlertCircle className="h-3 w-3" />
+                          </TooltipTrigger>
+                          <TooltipContent>Pendente de revisão</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                      {transaction.installment_plan_id ? (
+                        <Tooltip>
+                          <TooltipTrigger type="button" aria-label="Parcelado">
+                            <Layers className="h-3 w-3" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {transaction.installment_number
+                              ? `${transaction.installment_number} parcela`
+                              : "Parcelado"}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                      {consolidated ? (
+                        <Tooltip>
+                          <TooltipTrigger type="button" aria-label="Consolidado">
+                            <Lock className="h-3 w-3" />
+                          </TooltipTrigger>
+                          <TooltipContent>Consolidado · período fechado</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center justify-end">{actionButtons}</div>
                   </div>
                 );
               }
@@ -850,6 +882,50 @@ export function TransactionList({
           onClose={() => setEditingTransaction(null)}
         />
       ) : null}
+
+      <Dialog open={!!drilldown} onOpenChange={(open) => !open && setDrilldown(null)}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{drilldownTitle}</DialogTitle>
+            <DialogDescription>
+              {drilldownRows.length} lançamento(s) que compõem esse número, no período e filtros
+              atuais.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            {drilldownRows.map((t) => {
+              const category = categories.find((c) => c.id === t.category_id);
+              return (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-b-0"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate">{t.description || "-"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDateBR(t.posted_at)}
+                      {category ? ` · ${category.name}` : ""}
+                    </p>
+                  </div>
+                  <strong
+                    className={cn(
+                      "shrink-0 tabular-nums",
+                      t.amount < 0 ? "text-rose-700" : "text-emerald-700",
+                    )}
+                  >
+                    {formatCurrency(t.amount, t.currency)}
+                  </strong>
+                </div>
+              );
+            })}
+            {drilldownRows.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Nenhum lançamento nesse recorte.
+              </p>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 }
