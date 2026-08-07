@@ -575,7 +575,7 @@ export function useQuickAddForm({
     if (!text) return;
     setStatus("Interpretando texto…");
     try {
-      const draft = await extractVoiceTextFn({ data: { text } });
+      const draft = await extractVoiceTextFn({ data: { text, todayStr: localToday() } });
       form.setValue("description", draft.description);
       form.setValue("amount", draft.amount);
       form.setValue("transaction_type", draft.transaction_type);
@@ -617,7 +617,9 @@ export function useQuickAddForm({
 
       setProcessingStage("interpreting");
       setStatus(PROCESSING_LABEL.interpreting);
-      const draft = await extractVoiceTextFn({ data: { text: transcription.text } });
+      const draft = await extractVoiceTextFn({
+        data: { text: transcription.text, todayStr: localToday() },
+      });
       form.setValue("description", draft.description);
       form.setValue("amount", draft.amount);
       form.setValue("transaction_type", draft.transaction_type);

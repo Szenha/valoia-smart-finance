@@ -21,9 +21,23 @@ export type VoiceTransactionDraft = {
 
 type VoiceTextInput = {
   text: string;
+  /** "Hoje" no fuso LOCAL de quem está falando/digitando (localToday(), no
+   *  client) — essencial porque esta função roda no servidor: calcular
+   *  "hoje" por lá (new Date().toISOString().slice(0,10)) usa o fuso do
+   *  servidor, não o do usuário. Num servidor em UTC, entre 21h e meia-noite
+   *  no horário de Brasília (UTC-3) a data em UTC já virou o dia seguinte —
+   *  a IA recebia "hoje" adiantado em 1 dia e citava esse dia adiantado em
+   *  lançamentos ditos "hoje"/"agora" à noite. Opcional só por segurança de
+   *  tipo (chamadores antigos/futuros sem o campo) — sempre enviado pelo
+   *  client atual.
+   */
+  todayStr?: string;
 };
 
-function today(): string {
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function today(clientTodayStr?: string): string {
+  if (clientTodayStr && DATE_ONLY_PATTERN.test(clientTodayStr)) return clientTodayStr;
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -114,7 +128,7 @@ export const extractVoiceTextFn = createServerFn({ method: "POST" })
     if (!text) throw new Error("Informe um texto para interpretar.");
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada.");
-    const todayStr = today();
+    const todayStr = today(data.todayStr);
     const client = new Anthropic({ apiKey });
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",

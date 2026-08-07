@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CalendarDays,
   Check,
+  CheckCircle2,
   LayoutGrid,
   List,
   Pause,
@@ -59,6 +60,7 @@ import {
   fetchAccounts,
   fetchCategories,
   fetchRecurringBills,
+  fetchRecurringBillsPaid,
   fetchRecurringBillsUpcoming,
   markOccurrenceSkipped,
   reopenOccurrence,
@@ -66,6 +68,7 @@ import {
   updateRecurringBill,
   type RecurringBillInput,
 } from "@/lib/finance/data";
+import { PERIOD_LABEL, periodBounds, type PeriodFilter } from "@/lib/finance/period-filter";
 import { billOccurrenceState } from "@/lib/finance/recurring-bills";
 import {
   dueDateAdjustmentLabel,
@@ -177,6 +180,17 @@ function ContasFixasRoute() {
       return fetchRecurringBillsUpcoming(orgId!, startOfMonthDateOnly(localToday()), through);
     },
   });
+  const [paidPeriod, setPaidPeriod] = useState<PeriodFilter>("this_month");
+  // Por data de pagamento, não de vencimento — uma conta paga atrasada
+  // aparece no mês em que foi de fato paga, não no mês do vencimento.
+  const paidBillsQuery = useQuery({
+    queryKey: ["recurring-bills-paid", orgId, paidPeriod],
+    enabled: !!orgId,
+    queryFn: () => {
+      const bounds = periodBounds(paidPeriod) ?? { start: "1970-01-01", end: localToday() };
+      return fetchRecurringBillsPaid(orgId!, bounds.start, bounds.end);
+    },
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<RecurringBillRow | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
@@ -274,7 +288,12 @@ function ContasFixasRoute() {
   const reopenMutation = useMutation({
     mutationFn: async (occurrenceId: string) => reopenOccurrence(occurrenceId),
     onSuccess: async () => {
+      // Reabrir pode ter excluído a movimentação da baixa (estorno de
+      // verdade) — invalida transações/saldos também, não só as ocorrências.
       await queryClient.invalidateQueries({ queryKey: ["recurring-bill-occurrences", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["recurring-bills-paid", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
     },
   });
 
@@ -287,9 +306,17 @@ function ContasFixasRoute() {
   const occurrences = occurrencesQuery.data ?? [];
 
   const calendarCutoff = addDaysToDateOnly(localToday(), CALENDAR_WINDOW_DAYS);
+  // Só pendentes — pagas têm a seção própria "Pagas no período" (por data de
+  // pagamento) e puladas ficam só no calendário. Vencida e não paga continua
+  // aparecendo mesmo fora da janela de dias — some da lista só quando for
+  // paga, pulada ou reprogramada, nunca por decurso de prazo. Ver
+  // billOccurrenceState para o badge "Atrasada há Xd".
   const upcomingItems = occurrences
-    .filter((o) => o.due_date >= localToday() && o.due_date <= calendarCutoff)
+    .filter((o) => o.status === "pending" && o.due_date <= calendarCutoff)
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
+  const upcomingTotal = upcomingItems.reduce((sum, o) => sum + o.expected_amount, 0);
+  const paidBills = paidBillsQuery.data ?? [];
+  const paidTotal = paidBills.reduce((sum, o) => sum + (o.paid_amount ?? o.expected_amount), 0);
 
   const futureOccurrences = occurrences
     .filter((o) => o.due_date >= localToday())
@@ -405,14 +432,25 @@ function ContasFixasRoute() {
       <PlanejamentoTabs value="contas-fixas" />
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarClock className="h-4 w-4 text-emerald-700" />
-            Próximos vencimentos
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Contas com vencimento nos próximos {CALENDAR_WINDOW_DAYS} dias.
-          </p>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-emerald-700" />
+              Próximos vencimentos
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Contas com vencimento nos próximos {CALENDAR_WINDOW_DAYS} dias, além de qualquer conta
+              vencida ainda não paga.
+            </p>
+          </div>
+          {upcomingItems.length > 0 ? (
+            <div className="shrink-0 rounded-lg bg-slate-50 px-3 py-1.5 text-right">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Total
+              </p>
+              <strong className="text-amber-700">{formatCurrency(upcomingTotal)}</strong>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-2">
           {upcomingItems.length === 0 ? (
@@ -450,44 +488,141 @@ function ContasFixasRoute() {
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <strong>{formatCurrency(occurrence.expected_amount)}</strong>
-                    {occurrence.status === "pending" ? (
-                      <div className="flex gap-1">
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => openPay(occurrence)}
-                        >
-                          <Check className="mr-1 h-3 w-3" />
-                          Marcar paga
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => skipMutation.mutate(occurrence.id)}
-                        >
-                          <SkipForward className="mr-1 h-3 w-3" />
-                          Pular
-                        </Button>
-                      </div>
-                    ) : (
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => openPay(occurrence)}
+                      >
+                        <Check className="mr-1 h-3 w-3" />
+                        Pagar
+                      </Button>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         className="h-7 px-2 text-xs"
-                        onClick={() => reopenMutation.mutate(occurrence.id)}
+                        onClick={() => skipMutation.mutate(occurrence.id)}
                       >
-                        <RotateCcw className="mr-1 h-3 w-3" />
-                        Reabrir
+                        <SkipForward className="mr-1 h-3 w-3" />
+                        Pular
                       </Button>
-                    )}
+                    </div>
                   </div>
                 </div>
               );
             })
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+              Pagas no período
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Contas fixas baixadas, por data de pagamento.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {paidBills.length > 0 ? (
+              <div className="rounded-lg bg-slate-50 px-3 py-1.5 text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Total
+                </p>
+                <strong className="text-emerald-700">{formatCurrency(paidTotal)}</strong>
+              </div>
+            ) : null}
+            <Select
+              value={paidPeriod}
+              onValueChange={(value) => setPaidPeriod(value as PeriodFilter)}
+            >
+              <SelectTrigger className="w-[170px]" aria-label="Período">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(PERIOD_LABEL) as PeriodFilter[]).map((period) => (
+                  <SelectItem key={period} value={period}>
+                    {PERIOD_LABEL[period]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {paidBillsQuery.error ? (
+            <p className="p-4 text-center text-sm text-red-700">
+              Não foi possível carregar as contas pagas:{" "}
+              {paidBillsQuery.error instanceof Error
+                ? paidBillsQuery.error.message
+                : String(paidBillsQuery.error)}
+            </p>
+          ) : paidBills.length === 0 ? (
+            <p className="p-4 text-center text-sm text-muted-foreground">
+              Nenhuma conta paga em {PERIOD_LABEL[paidPeriod].toLowerCase()}.
+            </p>
+          ) : (
+            paidBills.map((occurrence) => (
+              <div
+                key={occurrence.id}
+                className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <strong className="truncate">{occurrence.bill_name}</strong>
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700"
+                    >
+                      Paga
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Vencia {formatDateBR(occurrence.due_date)}
+                    {occurrence.paid_at ? ` · Paga em ${formatDateBR(occurrence.paid_at)}` : ""}
+                    {occurrence.category_name ? ` · ${occurrence.category_name}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <div className="text-right">
+                    <strong>
+                      {formatCurrency(occurrence.paid_amount ?? occurrence.expected_amount)}
+                    </strong>
+                    {occurrence.paid_amount != null &&
+                    occurrence.paid_amount !== occurrence.expected_amount ? (
+                      <p className="text-xs text-muted-foreground">
+                        Previsto {formatCurrency(occurrence.expected_amount)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
+                      title="Baixada"
+                      aria-label="Baixada"
+                    >
+                      <CheckCircle2 className="h-4 w-4" strokeWidth={2.5} />
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-slate-500 hover:text-slate-900"
+                      title="Reabrir"
+                      aria-label="Reabrir"
+                      onClick={() => reopenMutation.mutate(occurrence.id)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))
           )}
         </CardContent>
       </Card>
@@ -628,7 +763,11 @@ function ContasFixasRoute() {
                 return (
                   <button
                     type="button"
-                    title={`${occurrence.bill_name} · ${formatCurrency(occurrence.expected_amount)}`}
+                    title={
+                      occurrence.status === "paid" && occurrence.paid_amount != null
+                        ? `${occurrence.bill_name} · ${formatCurrency(occurrence.paid_amount)} (previsto ${formatCurrency(occurrence.expected_amount)})`
+                        : `${occurrence.bill_name} · ${formatCurrency(occurrence.expected_amount)}`
+                    }
                     onClick={() => occurrence.status === "pending" && openPay(occurrence)}
                     className={cn(
                       "block w-full truncate rounded px-1 py-0.5 text-left text-[10px]",
@@ -851,6 +990,7 @@ function ContasFixasRoute() {
         onSettled={async () => {
           setPayOccurrence(null);
           await queryClient.invalidateQueries({ queryKey: ["recurring-bill-occurrences", orgId] });
+          await queryClient.invalidateQueries({ queryKey: ["recurring-bills-paid", orgId] });
         }}
       />
     </AppShell>

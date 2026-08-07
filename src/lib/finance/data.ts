@@ -136,6 +136,39 @@ export async function fetchAccountBalances(orgId: string): Promise<AccountBalanc
   return (data ?? []) as AccountBalanceRow[];
 }
 
+/** Extrato completo de uma conta (corrente ou investimento) — todas as
+ *  transações lançadas nela, ordenadas por data ascendente pra dar pra
+ *  acumular o saldo corrente na tela e comparar com account_balances. Não
+ *  usa fetchTransactions (limite de 500 compartilhado entre TODAS as contas
+ *  da organização) porque isso podia cortar o histórico de uma conta
+ *  específica se outras contas tivessem muito volume. */
+export type AccountStatementRow = Pick<
+  TxnRow,
+  | "id"
+  | "description"
+  | "amount"
+  | "posted_at"
+  | "type"
+  | "installment_plan_id"
+  | "installment_number"
+>;
+
+export async function fetchAccountStatement(
+  orgId: string,
+  accountKey: string,
+  accountKind: AccountKind,
+): Promise<AccountStatementRow[]> {
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id, description, amount, posted_at, type, installment_plan_id, installment_number")
+    .eq("organization_id", orgId)
+    .eq("account_id", accountKey)
+    .eq("account_kind", accountKind)
+    .order("posted_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AccountStatementRow[];
+}
+
 export async function fetchCardSummary(orgId: string): Promise<CardSummaryRow[]> {
   const { data, error } = await supabase.rpc("card_summary", { p_org_id: orgId });
   if (error) throw new Error(error.message);
@@ -579,6 +612,22 @@ export async function fetchRecurringBillsUpcoming(
   return (data ?? []) as RecurringBillOccurrenceRow[];
 }
 
+/** Contas fixas pagas num período, por data de pagamento (não por
+ *  vencimento) — usado na seção "Pagas no período" de Contas fixas. */
+export async function fetchRecurringBillsPaid(
+  orgId: string,
+  start: string,
+  end: string,
+): Promise<RecurringBillOccurrenceRow[]> {
+  const { data, error } = await supabase.rpc("recurring_bills_paid_in_range", {
+    p_org_id: orgId,
+    p_start: start,
+    p_end: end,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as RecurringBillOccurrenceRow[];
+}
+
 export async function markOccurrencePaid(
   occurrenceId: string,
   input: {
@@ -586,6 +635,10 @@ export async function markOccurrencePaid(
     paidAt: string;
     paidBy: string | null;
     transactionId: string | null;
+    /** true quando a baixa criou a movimentação (não vinculou a uma já
+     *  existente) — reopenOccurrence usa isso pra saber se pode excluir a
+     *  transação ao estornar. */
+    transactionCreated: boolean;
   },
 ): Promise<void> {
   const { error } = await supabase
@@ -593,9 +646,15 @@ export async function markOccurrencePaid(
     .update({
       status: "paid",
       paid_amount: input.paidAmount,
-      paid_at: input.paidAt,
+      // paid_at é timestamptz — grava a data escolhida ("YYYY-MM-DD") como
+      // instante UTC explícito, igual a `posted_at` logo abaixo, em vez de
+      // mandar a string nua e depender de como o Postgres/PostgREST
+      // interpretam um texto sem timezone (podia gravar meia-noite no fuso
+      // errado e voltar como o dia anterior pra quem lê com getters locais).
+      paid_at: new Date(input.paidAt).toISOString(),
       paid_by: input.paidBy,
       paid_transaction_id: input.transactionId,
+      paid_transaction_created: input.transactionCreated,
     })
     .eq("id", occurrenceId);
   if (error) throw new Error(error.message);
@@ -624,6 +683,7 @@ export async function settleRecurringBillOccurrence(
   },
 ): Promise<void> {
   let transactionId = input.linkedTransactionId;
+  const transactionCreated = !transactionId;
   if (!transactionId) {
     if (!input.accountKey || !input.accountKind) {
       throw new Error("Selecione a conta usada no pagamento.");
@@ -658,6 +718,7 @@ export async function settleRecurringBillOccurrence(
     paidAt: input.paidAt,
     paidBy: input.paidBy,
     transactionId,
+    transactionCreated,
   });
 }
 
@@ -675,7 +736,30 @@ export async function markOccurrenceSkipped(occurrenceId: string): Promise<void>
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Reabrir uma ocorrência paga é um estorno, não só trocar o status: se a
+ * baixa criou a movimentação (não vinculou a uma já existente), a
+ * movimentação é excluída — senão o valor continuaria afetando o saldo da
+ * conta mesmo depois de "cancelado" o pagamento. Uma transação VINCULADA a
+ * um lançamento pré-existente nunca é excluída aqui (ela não nasceu da
+ * baixa); só perde o vínculo.
+ */
 export async function reopenOccurrence(occurrenceId: string): Promise<void> {
+  const { data: occurrence, error: fetchError } = await supabase
+    .from("recurring_bill_occurrences")
+    .select("paid_transaction_id, paid_transaction_created")
+    .eq("id", occurrenceId)
+    .single();
+  if (fetchError) throw new Error(fetchError.message);
+
+  if (occurrence.paid_transaction_created && occurrence.paid_transaction_id) {
+    const { error: deleteError } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", occurrence.paid_transaction_id);
+    if (deleteError) throw new Error(deleteError.message);
+  }
+
   const { error } = await supabase
     .from("recurring_bill_occurrences")
     .update({
@@ -684,6 +768,7 @@ export async function reopenOccurrence(occurrenceId: string): Promise<void> {
       paid_at: null,
       paid_by: null,
       paid_transaction_id: null,
+      paid_transaction_created: false,
     })
     .eq("id", occurrenceId);
   if (error) throw new Error(error.message);

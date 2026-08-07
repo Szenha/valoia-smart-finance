@@ -33,6 +33,7 @@ import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import { categoryIconFor } from "@/lib/finance/category-icons";
 import { formatDateBR } from "@/lib/finance/date-utils";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
+import { PERIOD_LABEL, periodBounds, type PeriodFilter } from "@/lib/finance/period-filter";
 import {
   entrySourceIcon,
   entrySourceLabel,
@@ -156,6 +157,7 @@ export function TransactionList({
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const memberById = new Map(members.map((member) => [member.user_id, member]));
   const isAdmin = members.find((member) => member.user_id === currentUserId)?.role === "admin";
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>("this_month");
   const [selectedAccount, setSelectedAccount] = useState("all");
   const [selectedCreator, setSelectedCreator] = useState("all");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
@@ -200,14 +202,18 @@ export function TransactionList({
     selectedPaymentMethod !== "all",
     selectedEntrySource !== "all",
   ].filter(Boolean).length;
-  const displayed = transactions.filter(
-    (transaction) =>
+  const bounds = periodBounds(selectedPeriod);
+  const displayed = transactions.filter((transaction) => {
+    const day = transaction.posted_at.slice(0, 10);
+    return (
+      (!bounds || (day >= bounds.start && day <= bounds.end)) &&
       (selectedAccount === "all" || transaction.account_id === selectedAccount) &&
       (selectedCreator === "all" || transaction.created_by === selectedCreator) &&
       (selectedPaymentMethod === "all" || transaction.payment_method === selectedPaymentMethod) &&
       (selectedEntrySource === "all" || transaction.entry_source === selectedEntrySource) &&
-      (selectedCategory === "all" || transaction.category_id === selectedCategory),
-  );
+      (selectedCategory === "all" || transaction.category_id === selectedCategory)
+    );
+  });
   // Transferência é um par débito/crédito entre contas, não receita/despesa
   // de verdade — excluída do resumo pra não inflar "Entradas"/"Saídas".
   const income = displayed.reduce(
@@ -225,6 +231,21 @@ export function TransactionList({
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="shrink-0">Transações</CardTitle>
           <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+            <Select
+              value={selectedPeriod}
+              onValueChange={(value) => setSelectedPeriod(value as PeriodFilter)}
+            >
+              <SelectTrigger className="w-[150px] shrink-0" aria-label="Período">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(PERIOD_LABEL) as PeriodFilter[]).map((period) => (
+                  <SelectItem key={period} value={period}>
+                    {PERIOD_LABEL[period]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <ToggleGroup
               type="single"
               variant="outline"
@@ -409,8 +430,7 @@ export function TransactionList({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 grid grid-cols-2 gap-3 border-b pb-4 lg:grid-cols-4">
-            <StatTile label="Lançamentos" value={String(displayed.length)} compact />
+          <div className="mb-4 grid grid-cols-3 gap-3 border-b pb-4">
             <StatTile label="Entradas" value={formatCurrency(income)} tone="income" compact />
             <StatTile label="Saídas" value={formatCurrency(expenses)} tone="expense" compact />
             <StatTile

@@ -59,6 +59,19 @@ export function startOfMonthDateOnly(dateStr: string): string {
   return `${year}-${month}-01`;
 }
 
+/** Mês de competência de uma transação de cartão — mesma regra da RPC SQL
+ *  `competence_month` (20240101000014_account_card_details.sql): sem dia de
+ *  fechamento, é o mês do lançamento; com fechamento, cai no mês seguinte
+ *  quando o dia do lançamento é depois do fechamento. Reimplementada aqui
+ *  (não só no banco) pra Contas e cartões poder agrupar o extrato do cartão
+ *  em "fatura atual"/"parcelas futuras" no client sem outra ida ao banco. */
+export function competenceMonthDateOnly(dateStr: string, closingDay: number | null): string {
+  const monthStart = startOfMonthDateOnly(dateStr);
+  if (closingDay == null) return monthStart;
+  const day = Number(dateStr.slice(8, 10));
+  return day > closingDay ? addMonthsToDateOnly(monthStart, 1) : monthStart;
+}
+
 /** Diferença em meses inteiros entre duas datas "YYYY-MM-DD" (end - start). */
 export function monthsBetweenDateOnly(startStr: string, endStr: string): number {
   const start = parseDateOnlyUTC(startStr);

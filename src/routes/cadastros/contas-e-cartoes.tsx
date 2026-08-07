@@ -1,9 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { FileText, Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AccountStatementDialog } from "@/components/finance/AccountStatementDialog";
 import { AppShell } from "@/components/finance/AppShell";
 import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
+import { CardStatementDialog } from "@/components/finance/CardStatementDialog";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -270,6 +272,8 @@ function ContasECartoesRoute() {
     await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
   }
 
+  const [statementAccount, setStatementAccount] = useState<AccountRow | null>(null);
+
   const [addingHolderFor, setAddingHolderFor] = useState<AccountRow | null>(null);
   const [holderMemberId, setHolderMemberId] = useState("");
   const [holderLabel, setHolderLabel] = useState("");
@@ -514,6 +518,19 @@ function ContasECartoesRoute() {
                     );
               const actions = (
                 <div className="flex items-center gap-1">
+                  {account.kind !== "investment" ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Ver extrato"
+                      title="Ver extrato"
+                      onClick={() => setStatementAccount(account)}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"
@@ -870,6 +887,17 @@ function ContasECartoesRoute() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AccountStatementDialog
+        orgId={orgId}
+        account={statementAccount?.kind === "checking" ? statementAccount : null}
+        onClose={() => setStatementAccount(null)}
+      />
+      <CardStatementDialog
+        orgId={orgId}
+        account={statementAccount?.kind === "credit_card" ? statementAccount : null}
+        onClose={() => setStatementAccount(null)}
+      />
     </AppShell>
   );
 }
