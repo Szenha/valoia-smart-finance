@@ -20,6 +20,7 @@ import { categoryIconFor } from "@/lib/finance/category-icons";
 import {
   addDaysToDateOnly,
   addMonthsToDateOnly,
+  dateOnlyStringToLocalDate,
   localToday,
   startOfCurrentLocalMonth,
   startOfMonthDateOnly,
@@ -127,6 +128,18 @@ function CalendarioRoute() {
   const [selectedMemberId, setSelectedMemberId] = useState("all");
 
   const viewDateKey = monthCalendarDayKey(viewDate);
+
+  // Dia selecionado na agenda mobile abaixo da grade "Mês" — segue o mês
+  // exibido: mostra hoje quando o mês vigente está em tela, senão o dia 1
+  // do mês pra onde o usuário navegou.
+  const [selectedDayKey, setSelectedDayKey] = useState(localToday());
+  useEffect(() => {
+    if (viewMode !== "month") return;
+    const shownMonthKey = startOfMonthDateOnly(viewDateKey);
+    const todayMonthKey = startOfMonthDateOnly(localToday());
+    setSelectedDayKey(shownMonthKey === todayMonthKey ? localToday() : shownMonthKey);
+  }, [viewMode, viewDateKey]);
+
   const monthKey = startOfMonthDateOnly(viewDateKey);
   const weekStartKey = addDaysToDateOnly(viewDateKey, -viewDate.getDay());
   const weekEndKey = addDaysToDateOnly(weekStartKey, 6);
@@ -226,9 +239,20 @@ function CalendarioRoute() {
   const canGoPrev = windowStart > earliestView;
   const canGoNext = windowEnd < latestView;
 
+  /** Cor representativa de um item — mesma regra usada tanto pro pill
+   *  completo (renderItem) quanto pro pontinho compacto do mobile
+   *  (dotColorForItem passado ao MonthCalendar). */
+  function itemColor(item: CalendarItem): string {
+    if (item.kind === "bill") return item.categoryColor ?? BILL_FALLBACK_COLOR;
+    const member = item.occurrence.family_member_id
+      ? familyMemberById.get(item.occurrence.family_member_id)
+      : null;
+    return member?.color ?? item.occurrence.color ?? "#64748b";
+  }
+
   function renderItem(item: CalendarItem) {
     if (item.kind === "bill") {
-      const billColor = item.categoryColor ?? BILL_FALLBACK_COLOR;
+      const billColor = itemColor(item);
       const BillIcon = categoryIconFor(item.categoryIcon, "expense");
       return (
         <span
@@ -245,7 +269,7 @@ function CalendarioRoute() {
     const member = occurrence.family_member_id
       ? familyMemberById.get(occurrence.family_member_id)
       : null;
-    const memberColor = member?.color ?? occurrence.color ?? "#64748b";
+    const memberColor = itemColor(item);
     const EventIcon = eventIconFor(occurrence.icon);
     const time = occurrence.start_time ? occurrence.start_time.slice(0, 5) : "";
     return (
@@ -393,17 +417,34 @@ function CalendarioRoute() {
           </div>
 
           {viewMode === "month" ? (
-            <MonthCalendar
-              month={viewDate}
-              onShiftMonth={shiftView}
-              canGoPrev={canGoPrev}
-              canGoNext={canGoNext}
-              itemsByDay={itemsByDay}
-              getItemKey={(item) => item.key}
-              todayKey={localToday()}
-              maxVisiblePerDay={4}
-              renderItem={renderItem}
-            />
+            <>
+              <MonthCalendar
+                month={viewDate}
+                onShiftMonth={shiftView}
+                canGoPrev={canGoPrev}
+                canGoNext={canGoNext}
+                itemsByDay={itemsByDay}
+                getItemKey={(item) => item.key}
+                todayKey={localToday()}
+                maxVisiblePerDay={4}
+                renderItem={renderItem}
+                mobileCompact
+                dotColorForItem={itemColor}
+                onSelectDay={setSelectedDayKey}
+                selectedDayKey={selectedDayKey}
+              />
+              {/* No mobile, a grade de mês vira só números + pontinhos —
+                  tocar num dia mostra a agenda completa dele aqui embaixo,
+                  em vez de espremer texto minúsculo dentro da célula. No
+                  desktop (lg+) a célula já mostra os itens por extenso, então
+                  essa agenda fica escondida. */}
+              <div className="lg:hidden">
+                {renderDayAgenda(
+                  selectedDayKey,
+                  `${WEEKDAY_FULL_LABELS[dateOnlyStringToLocalDate(selectedDayKey).getDay()]} · ${shortDate(selectedDayKey)}`,
+                )}
+              </div>
+            </>
           ) : viewMode === "week" ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
               {Array.from({ length: 7 }, (_, index) => {

@@ -199,6 +199,7 @@ function Index() {
           displayName={displayName}
           summary={monthSummaryQuery.data}
           transactions={transactions}
+          categories={categories}
           upcomingBills={upcomingBillsQuery.data ?? []}
           upcomingEvents={upcomingEventsQuery.data ?? []}
           familyMembers={familyMembersQuery.data ?? []}

@@ -16,18 +16,12 @@ import { CategoryPicker } from "@/components/finance/CategoryPicker";
 import { CollapsibleFilters } from "@/components/finance/CollapsibleFilters";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { StatTile } from "@/components/finance/StatTile";
+import { TransactionDrilldownDialog } from "@/components/finance/TransactionDrilldownDialog";
 import { TransactionEditDialog } from "@/components/finance/TransactionEditDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -64,7 +58,6 @@ import {
   type ProfileRow,
   type TxnRow,
 } from "@/lib/finance/types";
-import { cn } from "@/lib/utils";
 
 type Props = {
   orgId: string;
@@ -471,7 +464,12 @@ export function TransactionList({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 grid grid-cols-1 gap-3 border-b pb-4 sm:grid-cols-3">
+          {/* Some no mobile — o resumo de saldo/gasto do mês já aparece nos
+              cards do início (MobileHome, lg:hidden) com o mesmo período
+              padrão ("this_month"), então repetir aqui só duplica. No
+              desktop, MobileHome não renderiza, então esse bloco continua
+              sendo a única fonte desse resumo. */}
+          <div className="mb-4 hidden gap-3 border-b pb-4 lg:grid lg:grid-cols-3">
             <StatTile
               label="Entradas"
               value={formatCurrency(income)}
@@ -536,11 +534,15 @@ export function TransactionList({
               const categoryPillClass = category?.color
                 ? "border border-transparent"
                 : `${categoryTheme.bg} ${categoryTheme.text} border ${categoryTheme.border}`;
+              // Despesa vira um badge com preenchimento vermelho bem suave e
+              // texto em cor normal — o fundo já sinaliza "saída", então o
+              // texto não precisa repetir o sinal em vermelho forte. Entrada
+              // e transferência mantêm o texto colorido como antes.
               const amountColorClass = isTransfer
                 ? "text-slate-600"
                 : isIncome
                   ? "text-emerald-700"
-                  : "text-rose-700";
+                  : "rounded-full bg-rose-50 px-2 py-0.5 text-slate-900";
               const typeIconWrapperClass = isTransfer
                 ? "bg-slate-100 text-slate-600"
                 : isIncome
@@ -690,7 +692,7 @@ export function TransactionList({
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-red-600 hover:text-red-700"
+                            className="h-7 w-7"
                             disabled={consolidated || !canManage}
                             aria-label="Excluir lançamento"
                             onClick={async () => {
@@ -883,49 +885,13 @@ export function TransactionList({
         />
       ) : null}
 
-      <Dialog open={!!drilldown} onOpenChange={(open) => !open && setDrilldown(null)}>
-        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{drilldownTitle}</DialogTitle>
-            <DialogDescription>
-              {drilldownRows.length} lançamento(s) que compõem esse número, no período e filtros
-              atuais.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1">
-            {drilldownRows.map((t) => {
-              const category = categories.find((c) => c.id === t.category_id);
-              return (
-                <div
-                  key={t.id}
-                  className="flex items-center justify-between gap-2 border-b py-2 text-sm last:border-b-0"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate">{t.description || "-"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDateBR(t.posted_at)}
-                      {category ? ` · ${category.name}` : ""}
-                    </p>
-                  </div>
-                  <strong
-                    className={cn(
-                      "shrink-0 tabular-nums",
-                      t.amount < 0 ? "text-rose-700" : "text-emerald-700",
-                    )}
-                  >
-                    {formatCurrency(t.amount, t.currency)}
-                  </strong>
-                </div>
-              );
-            })}
-            {drilldownRows.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                Nenhum lançamento nesse recorte.
-              </p>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <TransactionDrilldownDialog
+        open={!!drilldown}
+        onOpenChange={(open) => !open && setDrilldown(null)}
+        title={drilldownTitle}
+        rows={drilldownRows}
+        categories={categories}
+      />
     </TooltipProvider>
   );
 }

@@ -49,6 +49,17 @@ type Props<T> = {
   getItemKey: (item: T) => string;
   todayKey?: string;
   maxVisiblePerDay?: number;
+  /** Abaixo do breakpoint `sm`, esconde a lista de itens (texto minúsculo
+   *  demais pra caber numa célula em mobile) e mostra só pontinhos
+   *  coloridos + contador — a partir de `sm`, mantém o grid completo. */
+  mobileCompact?: boolean;
+  /** Cor de cada pontinho no modo compacto — obrigatório quando
+   *  mobileCompact é true. */
+  dotColorForItem?: (item: T) => string;
+  /** Clique no dia inteiro (não só num item) — usado no mobile pra abrir a
+   *  agenda do dia selecionado fora da grade. */
+  onSelectDay?: (dayKey: string) => void;
+  selectedDayKey?: string;
 };
 
 /** Grid mensal genérico — usado tanto por Contas fixas (só contas) quanto
@@ -64,6 +75,10 @@ export function MonthCalendar<T>({
   getItemKey,
   todayKey,
   maxVisiblePerDay = 3,
+  mobileCompact,
+  dotColorForItem,
+  onSelectDay,
+  selectedDayKey,
 }: Props<T>) {
   return (
     <div className="space-y-3">
@@ -105,21 +120,57 @@ export function MonthCalendar<T>({
             const inMonth = date.getMonth() === month.getMonth();
             const dayItems = itemsByDay.get(key) ?? [];
             const isToday = todayKey != null && key === todayKey;
+            const isSelected = !isToday && selectedDayKey != null && key === selectedDayKey;
+            const dots = dayItems.slice(0, 3);
             return (
               <div
                 key={key}
+                role={onSelectDay ? "button" : undefined}
+                tabIndex={onSelectDay ? 0 : undefined}
+                onClick={onSelectDay ? () => onSelectDay(key) : undefined}
+                onKeyDown={
+                  onSelectDay
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectDay(key);
+                        }
+                      }
+                    : undefined
+                }
                 className={cn(
-                  "min-h-[64px] rounded-md border p-1 text-xs",
+                  "rounded-md border p-1 text-xs",
+                  mobileCompact ? "min-h-[40px] sm:min-h-[64px]" : "min-h-[64px]",
                   inMonth ? "border-slate-200 bg-white" : "border-transparent bg-slate-50",
                   isToday && "ring-1 ring-emerald-500",
+                  isSelected && "ring-1 ring-primary",
+                  onSelectDay && "cursor-pointer",
                 )}
               >
                 <span className={cn(inMonth ? "text-slate-500" : "text-slate-300")}>
                   {date.getDate()}
                 </span>
-                <div className="mt-0.5 space-y-0.5">
+                {mobileCompact ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-0.5 sm:hidden">
+                    {dots.map((item) => (
+                      <span
+                        key={getItemKey(item)}
+                        className="h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: dotColorForItem?.(item) ?? "#64748b" }}
+                      />
+                    ))}
+                    {dayItems.length > dots.length ? (
+                      <span className="text-[9px] leading-none text-slate-400">
+                        +{dayItems.length - dots.length}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className={cn("mt-0.5 space-y-0.5", mobileCompact && "hidden sm:block")}>
                   {dayItems.slice(0, maxVisiblePerDay).map((item) => (
-                    <div key={getItemKey(item)}>{renderItem(item, key)}</div>
+                    <div key={getItemKey(item)} onClick={(event) => event.stopPropagation()}>
+                      {renderItem(item, key)}
+                    </div>
                   ))}
                   {dayItems.length > maxVisiblePerDay ? (
                     <p className="text-[10px] text-muted-foreground">
