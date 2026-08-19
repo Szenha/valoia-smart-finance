@@ -560,6 +560,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           onOpenChange={setVoiceSheetOpen}
           orgId={orgId}
           userId={currentUserId}
+          organizations={workspace.organizations}
           categories={categoriesQuery.data ?? []}
           accounts={accountsQuery.data ?? []}
           additionalCards={additionalCardsQuery.data ?? []}

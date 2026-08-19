@@ -9,6 +9,7 @@ export type VoiceTransactionDraft = {
   amount: number;
   transaction_type: "expense" | "income" | "transfer";
   date: string;
+  workspace_hint: string | null;
   account_hint: string | null;
   /** Só para transferências: nome da conta de destino mencionado na fala
    *  (ex: "transferi 500 do Nubank pro Inter" -> "Inter"). null quando não
@@ -32,6 +33,7 @@ type VoiceTextInput = {
    *  client atual.
    */
   todayStr?: string;
+  workspaceNames?: string[];
 };
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -41,7 +43,11 @@ function today(clientTodayStr?: string): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function textSystemPrompt(todayStr: string): string {
+function textSystemPrompt(todayStr: string, workspaceNames: string[] = []): string {
+  const workspaceInstruction =
+    workspaceNames.length > 0
+      ? `\n- workspace_hint: se a fala mencionar explicitamente um workspace/destino entre estes nomes, retorne o nome mais provável exatamente como listado: ${workspaceNames.map((name) => `"${name}"`).join(", ")}. Se não mencionar workspace, retorne null. Não confunda conta/cartão/banco com workspace.`
+      : "\n- workspace_hint: nome do workspace explicitamente mencionado na fala, ou null se não houver.";
   return `Você transforma uma frase curta em um lançamento financeiro estruturado.
 Responda APENAS JSON válido:
 {
@@ -50,6 +56,7 @@ Responda APENAS JSON válido:
   "amount": number,
   "transaction_type": "expense" | "income" | "transfer",
   "date": "YYYY-MM-DD",
+  "workspace_hint": string | null,
   "account_hint": string | null,
   "destination_account_hint": string | null,
   "payment_method_hint": "debit" | "credit" | "cash" | "pix" | null,
@@ -64,6 +71,7 @@ Regras:
 - Hoje é ${todayStr}. Use essa data como referência para expressões relativas
   ("hoje", "ontem", "semana passada"). Se não houver nenhuma pista de data na fala, use ${todayStr}.
   Nunca invente uma data antiga ou arbitrária — na dúvida, use ${todayStr}.
+${workspaceInstruction}
 - account_hint: só o NOME/instituição da conta ou cartão mencionado (ex: "Nubank", "Inter"),
   sem a palavra "cartão"/"conta". Em transferências, é a conta de ORIGEM (de onde saiu).
   null se não houver nome específico.
@@ -113,6 +121,7 @@ export function parseDraft(
     amount: Math.abs(Number(parsed.amount)),
     transaction_type: parsed.transaction_type ?? "expense",
     date: plausibleDate(parsed.date, todayStr),
+    workspace_hint: parsed.workspace_hint ?? null,
     account_hint: parsed.account_hint ?? null,
     destination_account_hint: parsed.destination_account_hint ?? null,
     payment_method_hint: parsed.payment_method_hint ?? null,
@@ -129,11 +138,15 @@ export const extractVoiceTextFn = createServerFn({ method: "POST" })
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada.");
     const todayStr = today(data.todayStr);
+    const workspaceNames = (data.workspaceNames ?? [])
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .slice(0, 20);
     const client = new Anthropic({ apiKey });
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1200,
-      system: textSystemPrompt(todayStr),
+      system: textSystemPrompt(todayStr, workspaceNames),
       messages: [{ role: "user", content: text }],
     });
     const rawText = message.content

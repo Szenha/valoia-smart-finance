@@ -71,7 +71,8 @@ function Index() {
     init();
   }, [navigate]);
 
-  const { orgId } = useActiveOrganization(userId);
+  const workspace = useActiveOrganization(userId);
+  const { orgId } = workspace;
 
   // ensureDefaultCategories é idempotente e roda toda vez que o workspace
   // ativo muda (inclusive um workspace recém-criado no seletor), garantindo
@@ -232,6 +233,7 @@ function Index() {
         onOpenChange={setVoiceOpen}
         orgId={orgId}
         userId={userId}
+        organizations={workspace.organizations}
         categories={categories}
         accounts={accounts}
         additionalCards={additionalCards}

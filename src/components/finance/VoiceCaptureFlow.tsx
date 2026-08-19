@@ -16,6 +16,7 @@ import {
   type AdditionalCardRow,
   type CategoryRow,
   type HouseholdMemberRow,
+  type OrganizationRow,
   type ProfileRow,
 } from "@/lib/finance/types";
 import { formatSeconds, useQuickAddForm } from "./useQuickAddForm";
@@ -28,6 +29,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   orgId: string;
   userId: string | null;
+  organizations?: OrganizationRow[];
   categories: CategoryRow[];
   accounts: AccountRow[];
   additionalCards?: AdditionalCardRow[];
@@ -40,6 +42,7 @@ export function VoiceCaptureFlow({
   onOpenChange,
   orgId,
   userId,
+  organizations = [],
   categories,
   accounts,
   additionalCards,
@@ -52,6 +55,7 @@ export function VoiceCaptureFlow({
   const api = useQuickAddForm({
     orgId,
     userId,
+    organizations,
     categories,
     accounts,
     additionalCards,
@@ -111,11 +115,11 @@ export function VoiceCaptureFlow({
   }
 
   const values = api.form.getValues();
-  const currentMember = members.find((member) => member.user_id === userId);
-  const currentProfile = profiles.find((profile) => profile.id === userId);
+  const currentMember = api.members.find((member) => member.user_id === userId);
+  const currentProfile = api.profiles.find((profile) => profile.id === userId);
   const memberName = userId ? resolveMemberName(currentMember, currentProfile, userId) : "Eu";
   const memberColor = userId ? resolveMemberColor(userId, currentMember?.color ?? null) : "#059669";
-  const account = accounts.find((a) => a.account_key === values.account_id);
+  const account = api.accounts.find((a) => a.account_key === values.account_id);
   // O account_key é compartilhado entre o cartão principal e seus adicionais
   // (mesmo limite) — achar só por ele sempre devolve o cartão principal.
   // Pra mostrar o cartão de fato atribuído (o adicional, quando for o caso),
@@ -128,20 +132,20 @@ export function VoiceCaptureFlow({
   // A cartão adicional foi selecionado (manual ou via casamento por voz) —
   // o gasto é de quem está vinculado a ele, não de quem está logado.
   const spentByMemberId = values.additional_card_id
-    ? (additionalCards?.find((card) => card.id === values.additional_card_id)?.member_user_id ??
+    ? (api.additionalCards.find((card) => card.id === values.additional_card_id)?.member_user_id ??
       null)
     : null;
   const spenderLabel = spentByMemberId
     ? {
         prefix: "Gasto de",
         name: resolveMemberName(
-          members.find((member) => member.user_id === spentByMemberId),
-          profiles.find((profile) => profile.id === spentByMemberId),
+          api.members.find((member) => member.user_id === spentByMemberId),
+          api.profiles.find((profile) => profile.id === spentByMemberId),
           spentByMemberId,
         ),
         color: resolveMemberColor(
           spentByMemberId,
-          members.find((member) => member.user_id === spentByMemberId)?.color ?? null,
+          api.members.find((member) => member.user_id === spentByMemberId)?.color ?? null,
         ),
       }
     : { prefix: "Lançado por", name: memberName, color: memberColor };
@@ -258,11 +262,12 @@ export function VoiceCaptureFlow({
               </DialogClose>
             </div>
             <dl className="grid grid-cols-2 gap-3 text-sm">
+              <SummaryField label="Workspace" value={api.activeWorkspaceName ?? "Atual"} />
               <SummaryField label="Valor" value={formatCurrency(values.amount)} />
               <SummaryField label="Tipo" value={categoryTypeLabel[values.transaction_type]} />
               <SummaryField
                 label="Categoria"
-                value={categoryPath(categories, values.category_id || null)}
+                value={categoryPath(api.categories, values.category_id || null)}
               />
               <SummaryField
                 label="Forma de pagamento"
@@ -320,7 +325,7 @@ export function VoiceCaptureFlow({
         ) : stage === "done" && api.confirmation ? (
           <PostSaveConfirmation
             confirmation={api.confirmation}
-            categories={categories}
+            categories={api.categories}
             onClose={api.dismissConfirmation}
             onUndo={async () => {
               setUndoing(true);
