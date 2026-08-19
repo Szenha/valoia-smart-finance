@@ -65,6 +65,7 @@ import {
   IceCreamCone,
   Key,
   Landmark,
+  Laptop,
   Lightbulb,
   Luggage,
   MapPin,

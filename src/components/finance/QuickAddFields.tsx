@@ -184,7 +184,7 @@ export function QuickAddFields({
         </div>
         <div className="sm:col-span-2">
           <Label>Descrição</Label>
-          <Input {...form.register("description")} onBlur={api.suggestCategory} />
+          <Input {...form.register("description")} onBlur={() => api.suggestCategory()} />
         </div>
       </FieldGroup>
 
