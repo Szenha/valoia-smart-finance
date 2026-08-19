@@ -57,4 +57,9 @@ describe("parseDraft basic fields", () => {
     const draft = parseDraft(draftJson({}), "fallback", TODAY);
     assert.equal(draft.installments_count, 1);
   });
+
+  test("keeps the workspace hint when present", () => {
+    const draft = parseDraft(draftJson({ workspace_hint: "Minha PJ" }), "fallback", TODAY);
+    assert.equal(draft.workspace_hint, "Minha PJ");
+  });
 });

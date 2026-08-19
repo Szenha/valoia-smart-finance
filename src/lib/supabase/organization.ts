@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createOrganization, fetchMyOrganizations } from "@/lib/finance/data";
+import {
+  createOrganization,
+  fetchMyOrganizations,
+  setPrimaryOrganization,
+} from "@/lib/finance/data";
 import type { OrganizationRow } from "@/lib/finance/types";
 import { getOrCreateOrganization } from "./auth";
 
@@ -49,7 +53,9 @@ export function useActiveOrganization(userId: string | null) {
 
   const validStoredId =
     storedOrgId && organizations.some((org) => org.id === storedOrgId) ? storedOrgId : null;
-  const resolvedOrgId = validStoredId ?? organizations[0]?.id ?? fallbackQuery.data ?? null;
+  const primaryOrg = organizations.find((org) => org.is_primary) ?? null;
+  const resolvedOrgId =
+    validStoredId ?? primaryOrg?.id ?? organizations[0]?.id ?? fallbackQuery.data ?? null;
 
   // A escolha ativa mudou (primeira vez, ou a salva não existe mais nessa
   // lista — ex: foi removido daquele workspace) — grava a nova escolha.
@@ -72,12 +78,20 @@ export function useActiveOrganization(userId: string | null) {
     return id;
   }
 
+  async function setPrimaryWorkspace(id: string): Promise<void> {
+    if (!userId) throw new Error("Não autenticado.");
+    await setPrimaryOrganization(id);
+    await queryClient.invalidateQueries({ queryKey: ["my-organizations", userId] });
+  }
+
   return {
     orgId: hydrated ? resolvedOrgId : null,
+    primaryOrgId: primaryOrg?.id ?? null,
     organizations: organizations as OrganizationRow[],
     isLoading: !hydrated || organizationsQuery.isLoading,
     switchOrganization,
     createWorkspace,
+    setPrimaryWorkspace,
     refetchOrganizations: organizationsQuery.refetch,
   };
 }

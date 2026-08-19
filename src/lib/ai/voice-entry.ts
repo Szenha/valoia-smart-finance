@@ -5,6 +5,7 @@ export type PaymentMethodHint = "debit" | "credit" | "cash" | "pix" | null;
 
 export type VoiceTransactionDraft = {
   original_text: string;
+  workspace_hint: string | null;
   description: string;
   amount: number;
   transaction_type: "expense" | "income" | "transfer";
@@ -21,6 +22,7 @@ export type VoiceTransactionDraft = {
 
 type VoiceTextInput = {
   text: string;
+  workspaceNames?: string[];
   /** "Hoje" no fuso LOCAL de quem está falando/digitando (localToday(), no
    *  client) — essencial porque esta função roda no servidor: calcular
    *  "hoje" por lá (new Date().toISOString().slice(0,10)) usa o fuso do
@@ -41,11 +43,20 @@ function today(clientTodayStr?: string): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function textSystemPrompt(todayStr: string): string {
+function textSystemPrompt(todayStr: string, workspaceNames: string[] = []): string {
+  const workspaceInstruction =
+    workspaceNames.length > 1
+      ? `- workspace_hint: se a fala mencionar claramente um workspace desta lista (${workspaceNames
+          .map((name) => `"${name}"`)
+          .join(
+            ", ",
+          )}), retorne exatamente o nome correspondente. Se não mencionar claramente, retorne null.`
+      : "- workspace_hint: null.";
   return `Você transforma uma frase curta em um lançamento financeiro estruturado.
 Responda APENAS JSON válido:
 {
   "original_text": string,
+  "workspace_hint": string | null,
   "description": string,
   "amount": number,
   "transaction_type": "expense" | "income" | "transfer",
@@ -58,6 +69,7 @@ Responda APENAS JSON válido:
 }
 
 Regras:
+${workspaceInstruction}
 - amount é sempre o valor TOTAL da compra (positivo), mesmo quando parcelado.
   Ex: "390 reais em 3 parcelas" -> amount 390, installments_count 3 (não 130).
 - transaction_type "expense" para gastos, "income" para entradas, "transfer" para transferências.
@@ -109,6 +121,7 @@ export function parseDraft(
   const installments = Number(parsed.installments_count);
   return {
     original_text: parsed.original_text ?? fallbackText,
+    workspace_hint: parsed.workspace_hint ?? null,
     description: parsed.description,
     amount: Math.abs(Number(parsed.amount)),
     transaction_type: parsed.transaction_type ?? "expense",
@@ -133,7 +146,7 @@ export const extractVoiceTextFn = createServerFn({ method: "POST" })
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1200,
-      system: textSystemPrompt(todayStr),
+      system: textSystemPrompt(todayStr, data.workspaceNames),
       messages: [{ role: "user", content: text }],
     });
     const rawText = message.content

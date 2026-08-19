@@ -309,6 +309,7 @@ export type OrganizationRow = {
   name: string;
   owner_id: string;
   role: string;
+  is_primary: boolean;
 };
 
 export type ProfileRow = {

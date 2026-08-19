@@ -20,6 +20,7 @@ import {
   PiggyBank,
   Plus,
   Settings2,
+  Star,
   Tags,
   Target,
   Users,
@@ -238,6 +239,14 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
       setRenamePending(false);
     }
   }
+
+  async function handleSetPrimaryWorkspace(org: OrganizationRow) {
+    try {
+      await workspace.setPrimaryWorkspace(org.id);
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : String(err));
+    }
+  }
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,
@@ -288,6 +297,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
                 activeOrg={activeOrganization}
                 onSwitch={workspace.switchOrganization}
                 onRename={openRename}
+                onSetPrimary={(org) => void handleSetPrimaryWorkspace(org)}
                 onCreate={() => setCreateOpen(true)}
                 trigger={
                   <button
@@ -312,6 +322,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
             activeOrg={activeOrganization}
             onSwitch={workspace.switchOrganization}
             onRename={openRename}
+            onSetPrimary={(org) => void handleSetPrimaryWorkspace(org)}
             onCreate={() => setCreateOpen(true)}
             trigger={
               <button
@@ -426,6 +437,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
                 activeOrg={activeOrganization}
                 onSwitch={workspace.switchOrganization}
                 onRename={openRename}
+                onSetPrimary={(org) => void handleSetPrimaryWorkspace(org)}
                 onCreate={() => setCreateOpen(true)}
                 trigger={
                   <button
@@ -560,6 +572,8 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           onOpenChange={setVoiceSheetOpen}
           orgId={orgId}
           userId={currentUserId}
+          primaryOrgId={workspace.primaryOrgId}
+          organizations={workspace.organizations}
           categories={categoriesQuery.data ?? []}
           accounts={accountsQuery.data ?? []}
           additionalCards={additionalCardsQuery.data ?? []}
@@ -649,6 +663,7 @@ function WorkspaceMenu({
   activeOrg,
   onSwitch,
   onRename,
+  onSetPrimary,
   onCreate,
 }: {
   trigger: ReactNode;
@@ -656,6 +671,7 @@ function WorkspaceMenu({
   activeOrg: OrganizationRow | null;
   onSwitch: (id: string) => void;
   onRename: (org: OrganizationRow) => void;
+  onSetPrimary: (org: OrganizationRow) => void;
   onCreate: () => void;
 }) {
   return (
@@ -672,6 +688,11 @@ function WorkspaceMenu({
               <span className="h-3.5 w-3.5 shrink-0" />
             )}
             <span className="truncate">{org.name}</span>
+            {org.is_primary ? (
+              <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                Principal
+              </span>
+            ) : null}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -679,6 +700,12 @@ function WorkspaceMenu({
           <DropdownMenuItem onSelect={() => onRename(activeOrg)} className="gap-2">
             <Pencil className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">Renomear "{activeOrg.name}"</span>
+          </DropdownMenuItem>
+        ) : null}
+        {activeOrg && !activeOrg.is_primary ? (
+          <DropdownMenuItem onSelect={() => onSetPrimary(activeOrg)} className="gap-2">
+            <Star className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Definir "{activeOrg.name}" como principal</span>
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onSelect={onCreate} className="gap-2 text-primary focus:text-primary">

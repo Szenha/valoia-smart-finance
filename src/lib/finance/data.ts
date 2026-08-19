@@ -202,13 +202,20 @@ export async function fetchOrganizationOwner(orgId: string): Promise<string> {
 export async function fetchMyOrganizations(userId: string): Promise<OrganizationRow[]> {
   const { data, error } = await supabase
     .from("organization_members")
-    .select("role, created_at, organizations!inner(id, name, owner_id)")
+    .select("role, is_primary, created_at, organizations!inner(id, name, owner_id)")
     .eq("user_id", userId)
+    .order("is_primary", { ascending: false })
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => {
     const org = row.organizations as unknown as { id: string; name: string; owner_id: string };
-    return { id: org.id, name: org.name, owner_id: org.owner_id, role: row.role as string };
+    return {
+      id: org.id,
+      name: org.name,
+      owner_id: org.owner_id,
+      role: row.role as string,
+      is_primary: Boolean(row.is_primary),
+    };
   });
 }
 
@@ -226,6 +233,11 @@ export async function createOrganization(name: string): Promise<string> {
 
 export async function renameOrganization(orgId: string, name: string): Promise<void> {
   const { error } = await supabase.from("organizations").update({ name }).eq("id", orgId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setPrimaryOrganization(orgId: string): Promise<void> {
+  const { error } = await supabase.rpc("set_primary_organization", { p_org_id: orgId });
   if (error) throw new Error(error.message);
 }
 

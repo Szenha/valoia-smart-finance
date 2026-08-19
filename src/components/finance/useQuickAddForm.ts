@@ -4,12 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { transcribeAudioFn, type TranscriptionResult } from "@/lib/ai/transcribe-audio";
-import { extractVoiceTextFn, type PaymentMethodHint } from "@/lib/ai/voice-entry";
+import {
+  extractVoiceTextFn,
+  type PaymentMethodHint,
+  type VoiceTransactionDraft,
+} from "@/lib/ai/voice-entry";
 import {
   buildPaymentOptions,
   matchPaymentAccount,
   resolvePaymentMethod,
 } from "@/lib/finance/account-match";
+import { ensureDefaultCategories } from "@/lib/classification/pipeline";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import { categoryPath, leafCategoryOptions } from "@/lib/finance/categories";
 import {
@@ -19,8 +24,12 @@ import {
 } from "@/lib/finance/date-utils";
 import {
   ensureAccountFromTransaction,
+  fetchAccounts,
+  fetchAdditionalCards,
   fetchBudgetVsActualForMonth,
   fetchExpensesSince,
+  fetchHouseholdMembers,
+  fetchMemberProfiles,
 } from "@/lib/finance/data";
 import { computeInstallmentSchedule } from "@/lib/finance/installments";
 import { resolveMemberName } from "@/lib/finance/member-visuals";
@@ -35,6 +44,7 @@ import type {
   AdditionalCardRow,
   CategoryRow,
   HouseholdMemberRow,
+  OrganizationRow,
   ProfileRow,
   TxnRow,
 } from "@/lib/finance/types";
@@ -100,6 +110,8 @@ type Options = {
   userId: string | null;
   categories: CategoryRow[];
   accounts: AccountRow[];
+  organizations?: OrganizationRow[];
+  primaryOrgId?: string | null;
   additionalCards?: AdditionalCardRow[];
   members?: HouseholdMemberRow[];
   profiles?: ProfileRow[];
@@ -120,6 +132,24 @@ type Options = {
   initialValues?: Partial<QuickAddFormValues>;
 };
 
+type QuickAddWorkspaceContext = {
+  orgId: string;
+  workspaceName: string | null;
+  categories: CategoryRow[];
+  accounts: AccountRow[];
+  additionalCards: AdditionalCardRow[];
+  members: HouseholdMemberRow[];
+  profiles: ProfileRow[];
+};
+
+function normalizeWorkspaceName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
 /**
  * Recording + transcription + interpretation + save logic for the quick-add
  * flow, shared between the full manual form (QuickAddForm) and the 4-stage
@@ -131,6 +161,8 @@ export function useQuickAddForm({
   userId,
   categories,
   accounts,
+  organizations = [],
+  primaryOrgId = null,
   additionalCards = [],
   members = [],
   profiles = [],
@@ -148,6 +180,7 @@ export function useQuickAddForm({
   const [pendingAudio, setPendingAudio] = useState<PendingAudio | null>(null);
   const [usedAiDraft, setUsedAiDraft] = useState(false);
   const [confirmation, setConfirmation] = useState<SavedConfirmation | null>(null);
+  const [targetContext, setTargetContext] = useState<QuickAddWorkspaceContext | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
@@ -155,28 +188,50 @@ export function useQuickAddForm({
   /** Live mic stream while recording — exposed so a waveform visualization
    *  can attach an AnalyserNode to the same audio source. */
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const categoryItems = leafCategoryOptions(categories);
-  const myAccounts = accounts.filter((account) => account.owner_user_id === userId);
-  const householdAccounts = accounts.filter((account) => account.owner_user_id !== userId);
+  const baseWorkspaceName = organizations.find((org) => org.id === orgId)?.name ?? null;
+  const activeContext = targetContext ?? {
+    orgId,
+    workspaceName: baseWorkspaceName,
+    categories,
+    accounts,
+    additionalCards,
+    members,
+    profiles,
+  };
+  const activeOrgId = activeContext.orgId;
+  const activeCategories = activeContext.categories;
+  const activeAccounts = activeContext.accounts;
+  const activeAdditionalCards = activeContext.additionalCards;
+  const activeMembers = activeContext.members;
+  const activeProfiles = activeContext.profiles;
+  const categoryItems = leafCategoryOptions(activeCategories);
+  const myAccounts = activeAccounts.filter((account) => account.owner_user_id === userId);
+  const householdAccounts = activeAccounts.filter((account) => account.owner_user_id !== userId);
   const orderedAccounts = [...myAccounts, ...householdAccounts];
   // Same account list, but with each additional card injected as its own
   // selectable option (inheriting account_id/kind from its parent card) —
   // grouped by who it's assigned to, same "Meus"/"Da família" split as
   // plain accounts.
-  const paymentOptions = buildPaymentOptions(accounts, additionalCards).map((option) => ({
-    ...option,
-    displayLabel: option.additionalCardId
-      ? (option.label ??
-        `${option.account.name} — ${resolveMemberName(
-          members.find((member) => member.user_id === option.ownerId),
-          profiles.find((profile) => profile.id === option.ownerId),
-          option.ownerId,
-        )}`)
-      : option.account.name,
-  }));
+  const paymentOptions = buildPaymentOptions(activeAccounts, activeAdditionalCards).map(
+    (option) => ({
+      ...option,
+      displayLabel: option.additionalCardId
+        ? (option.label ??
+          `${option.account.name} — ${resolveMemberName(
+            activeMembers.find((member) => member.user_id === option.ownerId),
+            activeProfiles.find((profile) => profile.id === option.ownerId),
+            option.ownerId,
+          )}`)
+        : option.account.name,
+    }),
+  );
   const myPaymentOptions = paymentOptions.filter((option) => option.ownerId === userId);
   const householdPaymentOptions = paymentOptions.filter((option) => option.ownerId !== userId);
-  const additionalCardById = new Map(additionalCards.map((card) => [card.id, card]));
+  const additionalCardById = new Map(activeAdditionalCards.map((card) => [card.id, card]));
+
+  useEffect(() => {
+    setTargetContext(null);
+  }, [orgId]);
 
   useEffect(() => {
     return () => {
@@ -229,7 +284,7 @@ export function useQuickAddForm({
             .from("transactions")
             .update({ ...sharedFields, amount: thisRowAmount })
             .eq("id", editingTransactionId)
-            .eq("organization_id", orgId);
+            .eq("organization_id", activeOrgId);
           if (thisRowError) throw new Error(thisRowError.message);
 
           const { error: otherRowError } = await supabase
@@ -237,7 +292,7 @@ export function useQuickAddForm({
             .update({ ...sharedFields, amount: otherRowAmount })
             .eq("transfer_group_id", editingTransferGroupId)
             .neq("id", editingTransactionId)
-            .eq("organization_id", orgId);
+            .eq("organization_id", activeOrgId);
           if (otherRowError) throw new Error(otherRowError.message);
           return null;
         }
@@ -252,22 +307,22 @@ export function useQuickAddForm({
         if (values.destination_account_id === values.account_id) {
           throw new Error("A conta de destino deve ser diferente da conta de origem.");
         }
-        if (!accounts.some((account) => account.account_key === values.account_id)) {
+        if (!activeAccounts.some((account) => account.account_key === values.account_id)) {
           await ensureAccountFromTransaction(
-            orgId,
+            activeOrgId,
             values.account_id,
             values.account_kind,
             userId ?? undefined,
           );
         }
-        const destinationAccount = accounts.find(
+        const destinationAccount = activeAccounts.find(
           (account) => account.account_key === values.destination_account_id,
         );
         const destinationKind = destinationAccount?.kind ?? values.account_kind;
         const transferGroupId = crypto.randomUUID();
         const postedAtIso = new Date(values.posted_at).toISOString();
         const sharedTransferFields = {
-          organization_id: orgId,
+          organization_id: activeOrgId,
           description: values.description,
           type: "MANUAL_TRANSFER",
           entry_source: usedAiDraft ? "voice_ai" : "manual",
@@ -308,9 +363,9 @@ export function useQuickAddForm({
       const signedType = values.transaction_type === "expense" ? "MANUAL_DEBIT" : "MANUAL_CREDIT";
       const sign = values.transaction_type === "expense" ? -1 : 1;
 
-      if (!accounts.some((account) => account.account_key === values.account_id)) {
+      if (!activeAccounts.some((account) => account.account_key === values.account_id)) {
         await ensureAccountFromTransaction(
-          orgId,
+          activeOrgId,
           values.account_id,
           values.account_kind,
           userId ?? undefined,
@@ -339,13 +394,13 @@ export function useQuickAddForm({
             spent_by_member_id: spentByMemberId,
           })
           .eq("id", editingTransactionId)
-          .eq("organization_id", orgId);
+          .eq("organization_id", activeOrgId);
         if (error) throw new Error(error.message);
         return null;
       }
 
       const baseRow = {
-        organization_id: orgId,
+        organization_id: activeOrgId,
         description: values.description,
         type: signedType,
         account_id: values.account_id,
@@ -363,7 +418,7 @@ export function useQuickAddForm({
       };
 
       if (values.installments_count > 1) {
-        const account = accounts.find((a) => a.account_key === values.account_id);
+        const account = activeAccounts.find((a) => a.account_key === values.account_id);
         const schedule = computeInstallmentSchedule(
           dateOnlyStringToLocalDate(values.posted_at),
           values.amount,
@@ -373,7 +428,7 @@ export function useQuickAddForm({
         const { data: plan, error: planError } = await supabase
           .from("installment_plans")
           .insert({
-            organization_id: orgId,
+            organization_id: activeOrgId,
             account_id: values.account_id,
             description_normalized: values.description.trim().toLowerCase(),
             total_installments: values.installments_count,
@@ -431,7 +486,7 @@ export function useQuickAddForm({
         setUsedAiDraft(false);
       }
       setStatus(editingTransactionId ? "Lançamento atualizado." : "Lançamento salvo.");
-      await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["transactions", activeOrgId] });
 
       const showConfirmation =
         !editingTransactionId && !!savedRow && values.transaction_type !== "transfer";
@@ -444,14 +499,14 @@ export function useQuickAddForm({
       try {
         const today = localToday();
         const [budgetRows, recentTransactions] = await Promise.all([
-          fetchBudgetVsActualForMonth(orgId, startOfMonthDateOnly(today)),
-          fetchExpensesSince(orgId, weekStartDateOnly(today)),
+          fetchBudgetVsActualForMonth(activeOrgId, startOfMonthDateOnly(today)),
+          fetchExpensesSince(activeOrgId, weekStartDateOnly(today)),
         ]);
         insight = computePostSaveInsight({
           savedTransaction: savedRow,
           transactionType: values.transaction_type as "expense" | "income",
           transactions: recentTransactions,
-          categories,
+          categories: activeCategories,
           budgetRows,
           today,
         });
@@ -483,32 +538,35 @@ export function useQuickAddForm({
       .from("transactions")
       .delete()
       .eq("id", confirmation.transaction.id)
-      .eq("organization_id", orgId);
+      .eq("organization_id", activeOrgId);
     if (error) {
       setStatus(error.message);
       return;
     }
-    await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+    await queryClient.invalidateQueries({ queryKey: ["transactions", activeOrgId] });
     setStatus("Lançamento desfeito.");
     setConfirmation(null);
     onSaved?.();
   }
 
-  async function suggestCategory() {
+  async function suggestCategory(context: QuickAddWorkspaceContext = activeContext) {
     const values = form.getValues();
     if (!values.description || !values.amount) return;
     setStatus("Sugerindo categoria…");
     try {
+      const contextCategoryItems = leafCategoryOptions(context.categories);
       const suggestion = await suggestCategoryForDescription(
-        orgId,
+        context.orgId,
         values.description,
         values.amount,
         values.account_kind,
-        categoryItems,
+        contextCategoryItems,
       );
       if (suggestion.category_id) {
         form.setValue("category_id", suggestion.category_id);
-        setStatus(`Categoria sugerida: ${categoryPath(categories, suggestion.category_id)}.`);
+        setStatus(
+          `Categoria sugerida: ${categoryPath(context.categories, suggestion.category_id)}.`,
+        );
       } else {
         setStatus("Nenhuma categoria sugerida.");
       }
@@ -517,21 +575,89 @@ export function useQuickAddForm({
     }
   }
 
+  function resolveVoiceWorkspaceId(workspaceHint: string | null): string {
+    if (organizations.length <= 1) return orgId;
+
+    if (workspaceHint) {
+      const normalizedHint = normalizeWorkspaceName(workspaceHint);
+      const exactMatch = organizations.find(
+        (organization) => normalizeWorkspaceName(organization.name) === normalizedHint,
+      );
+      if (exactMatch) return exactMatch.id;
+
+      const partialMatch = organizations.find((organization) => {
+        const normalizedName = normalizeWorkspaceName(organization.name);
+        return normalizedName.includes(normalizedHint) || normalizedHint.includes(normalizedName);
+      });
+      if (partialMatch) return partialMatch.id;
+    }
+
+    return (
+      primaryOrgId ?? organizations.find((organization) => organization.is_primary)?.id ?? orgId
+    );
+  }
+
+  async function loadWorkspaceContext(targetOrgId: string): Promise<QuickAddWorkspaceContext> {
+    const targetWorkspaceName =
+      organizations.find((organization) => organization.id === targetOrgId)?.name ?? null;
+    if (targetOrgId === orgId) {
+      return {
+        orgId,
+        workspaceName: targetWorkspaceName,
+        categories,
+        accounts,
+        additionalCards,
+        members,
+        profiles,
+      };
+    }
+
+    const [targetCategories, targetAccounts, targetAdditionalCards, targetMembers] =
+      await Promise.all([
+        ensureDefaultCategories(targetOrgId),
+        fetchAccounts(targetOrgId),
+        fetchAdditionalCards(targetOrgId),
+        fetchHouseholdMembers(targetOrgId),
+      ]);
+    const targetMemberIds = targetMembers.map((member) => member.user_id);
+    const targetProfiles = await fetchMemberProfiles(targetMemberIds);
+    return {
+      orgId: targetOrgId,
+      workspaceName: targetWorkspaceName,
+      categories: targetCategories,
+      accounts: targetAccounts,
+      additionalCards: targetAdditionalCards,
+      members: targetMembers,
+      profiles: targetProfiles,
+    };
+  }
+
+  async function applyVoiceWorkspace(
+    draft: VoiceTransactionDraft,
+  ): Promise<QuickAddWorkspaceContext> {
+    const nextContext = await loadWorkspaceContext(resolveVoiceWorkspaceId(draft.workspace_hint));
+    setTargetContext(nextContext);
+    return nextContext;
+  }
+
   /** Applies the AI draft's payment-method/account-name hints to the account
    *  fields, or clears the account so the user must pick explicitly when
    *  more than one account of the inferred kind exists. For transfers, also
    *  resolves destination_account_hint against destination_account_id, the
    *  same way. Returns a status suffix describing what happened, or "" when
    *  there was nothing to say. */
-  function applyAccountMatch(draft: {
-    transaction_type?: QuickAddFormValues["transaction_type"];
-    payment_method_hint: PaymentMethodHint;
-    account_hint: string | null;
-    destination_account_hint?: string | null;
-  }): string {
+  function applyAccountMatch(
+    draft: {
+      transaction_type?: QuickAddFormValues["transaction_type"];
+      payment_method_hint: PaymentMethodHint;
+      account_hint: string | null;
+      destination_account_hint?: string | null;
+    },
+    context: QuickAddWorkspaceContext = activeContext,
+  ): string {
     const match = matchPaymentAccount(
-      accounts,
-      additionalCards,
+      context.accounts,
+      context.additionalCards,
       { paymentMethodHint: draft.payment_method_hint, accountNameHint: draft.account_hint },
       userId,
     );
@@ -556,8 +682,8 @@ export function useQuickAddForm({
 
     if (draft.transaction_type === "transfer" && draft.destination_account_hint) {
       const destinationMatch = matchPaymentAccount(
-        accounts,
-        additionalCards,
+        context.accounts,
+        context.additionalCards,
         { paymentMethodHint: null, accountNameHint: draft.destination_account_hint },
         userId,
       );
@@ -575,16 +701,27 @@ export function useQuickAddForm({
     if (!text) return;
     setStatus("Interpretando texto…");
     try {
-      const draft = await extractVoiceTextFn({ data: { text, todayStr: localToday() } });
+      const draft = await extractVoiceTextFn({
+        data: {
+          text,
+          todayStr: localToday(),
+          workspaceNames: organizations.map((organization) => organization.name),
+        },
+      });
+      const workspaceContext = await applyVoiceWorkspace(draft);
       form.setValue("description", draft.description);
       form.setValue("amount", draft.amount);
       form.setValue("transaction_type", draft.transaction_type);
       form.setValue("posted_at", draft.date);
       form.setValue("installments_count", draft.installments_count);
-      const accountNote = applyAccountMatch(draft);
+      form.setValue("category_id", "");
+      const accountNote = applyAccountMatch(draft, workspaceContext);
       setUsedAiDraft(true);
-      await suggestCategory();
-      setStatus(`Confira os campos antes de salvar.${accountNote}`);
+      await suggestCategory(workspaceContext);
+      const workspaceNote = workspaceContext.workspaceName
+        ? ` Workspace: ${workspaceContext.workspaceName}.`
+        : "";
+      setStatus(`Confira os campos antes de salvar.${workspaceNote}${accountNote}`);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err));
     }
@@ -592,7 +729,7 @@ export function useQuickAddForm({
 
   async function logTranscriptionUsage(transcription: TranscriptionResult) {
     const { error } = await supabase.from("ai_usage_logs").insert({
-      organization_id: orgId,
+      organization_id: activeOrgId,
       provider: "openai",
       operation: "voice_transcription",
       model: transcription.model,
@@ -618,18 +755,27 @@ export function useQuickAddForm({
       setProcessingStage("interpreting");
       setStatus(PROCESSING_LABEL.interpreting);
       const draft = await extractVoiceTextFn({
-        data: { text: transcription.text, todayStr: localToday() },
+        data: {
+          text: transcription.text,
+          todayStr: localToday(),
+          workspaceNames: organizations.map((organization) => organization.name),
+        },
       });
+      const workspaceContext = await applyVoiceWorkspace(draft);
       form.setValue("description", draft.description);
       form.setValue("amount", draft.amount);
       form.setValue("transaction_type", draft.transaction_type);
       form.setValue("posted_at", draft.date);
       form.setValue("installments_count", draft.installments_count);
-      const accountNote = applyAccountMatch(draft);
+      form.setValue("category_id", "");
+      const accountNote = applyAccountMatch(draft, workspaceContext);
       setUsedAiDraft(true);
       setPendingAudio(null);
-      await suggestCategory();
-      setStatus(`Transcrição interpretada. Confira antes de salvar.${accountNote}`);
+      await suggestCategory(workspaceContext);
+      const workspaceNote = workspaceContext.workspaceName
+        ? ` Workspace: ${workspaceContext.workspaceName}.`
+        : "";
+      setStatus(`Transcrição interpretada.${workspaceNote} Confira antes de salvar.${accountNote}`);
     } catch (err) {
       setPendingAudio(audio);
       setStatus(
@@ -723,6 +869,13 @@ export function useQuickAddForm({
     processingStage,
     pendingAudio,
     usedAiDraft,
+    activeOrgId,
+    activeWorkspaceName: activeContext.workspaceName,
+    categories: activeCategories,
+    accounts: activeAccounts,
+    additionalCards: activeAdditionalCards,
+    members: activeMembers,
+    profiles: activeProfiles,
     mediaStreamRef,
     categoryItems,
     myAccounts,
