@@ -61,7 +61,8 @@ function MembrosRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const { orgId } = useActiveOrganization(currentUserId);
+  const { orgId, organizations } = useActiveOrganization(currentUserId);
+  const activeOrgName = organizations.find((org) => org.id === orgId)?.name ?? null;
 
   const membersQuery = useQuery({
     queryKey: ["household-members", orgId],
@@ -87,6 +88,23 @@ function MembrosRoute() {
   const [formError, setFormError] = useState("");
   const [removeError, setRemoveError] = useState("");
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  // Com quais workspaces esse membro vai ganhar acesso — inicia só com o
+  // ativo (o que se espera na maioria dos casos), mas o admin pode marcar
+  // mais de um antes de adicionar, ao invés de repetir o cadastro workspace
+  // por workspace.
+  const [shareOrgIds, setShareOrgIds] = useState<string[]>(orgId ? [orgId] : []);
+
+  useEffect(() => {
+    if (!editingUserId && orgId) {
+      setShareOrgIds((current) => (current.length === 0 ? [orgId] : current));
+    }
+  }, [orgId, editingUserId]);
+
+  function toggleShareOrgId(id: string) {
+    setShareOrgIds((current) =>
+      current.includes(id) ? current.filter((orgIdEntry) => orgIdEntry !== id) : [...current, id],
+    );
+  }
 
   useEffect(() => {
     if (!editingUserId && membersQuery.data && !color) {
@@ -101,6 +119,7 @@ function MembrosRoute() {
     setColor(nextAvailableColor((membersQuery.data ?? []).map((m) => m.color)));
     setRole("colaborador");
     setFormError("");
+    setShareOrgIds(orgId ? [orgId] : []);
   }
 
   function startEdit(member: HouseholdMemberRow) {
@@ -115,24 +134,61 @@ function MembrosRoute() {
 
   const addMember = useMutation({
     mutationFn: async () => {
-      if (!orgId) return;
-      const candidate = await findHouseholdCandidate(orgId, email);
-      if (!candidate) {
-        throw new Error("Usuário não encontrado ou você não tem permissão para adicioná-lo.");
+      if (shareOrgIds.length === 0) {
+        throw new Error("Selecione ao menos um workspace para compartilhar.");
       }
-      await addHouseholdMember(
-        orgId,
-        candidate.user_id,
-        role,
-        currentUserId,
-        name || null,
-        color || null,
+      // Um convite por workspace marcado — cada um checa admin e email
+      // candidato de forma independente, então um workspace sem permissão
+      // ou sem o candidato ali não deve travar os outros que já deram certo.
+      const settled = await Promise.all(
+        shareOrgIds.map(async (targetOrgId) => {
+          try {
+            const candidate = await findHouseholdCandidate(targetOrgId, email);
+            if (!candidate) {
+              throw new Error("Usuário não encontrado ou você não tem permissão para adicioná-lo.");
+            }
+            await addHouseholdMember(
+              targetOrgId,
+              candidate.user_id,
+              role,
+              currentUserId,
+              name || null,
+              color || null,
+            );
+            return { targetOrgId, error: null as string | null };
+          } catch (err) {
+            return {
+              targetOrgId,
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+        }),
       );
+      const succeededOrgIds = settled.filter((r) => !r.error).map((r) => r.targetOrgId);
+      const failed = settled.filter((r) => r.error);
+      return { succeededOrgIds, failed };
     },
-    onSuccess: async () => {
-      resetForm();
-      await queryClient.invalidateQueries({ queryKey: ["household-members", orgId] });
-      await queryClient.invalidateQueries({ queryKey: ["member-profiles", orgId] });
+    onSuccess: async ({ succeededOrgIds, failed }) => {
+      await Promise.all(
+        succeededOrgIds.flatMap((targetOrgId) => [
+          queryClient.invalidateQueries({ queryKey: ["household-members", targetOrgId] }),
+          queryClient.invalidateQueries({ queryKey: ["member-profiles", targetOrgId] }),
+        ]),
+      );
+      if (failed.length === 0) {
+        resetForm();
+        return;
+      }
+      const failedNames = failed
+        .map(
+          (f) => organizations.find((org) => org.id === f.targetOrgId)?.name ?? f.targetOrgId,
+        )
+        .join(", ");
+      setFormError(
+        succeededOrgIds.length > 0
+          ? `Adicionado nos demais, mas falhou em: ${failedNames} (${failed[0].error}).`
+          : (failed[0].error ?? "Falha ao adicionar membro."),
+      );
     },
     onError: (err) => setFormError(err instanceof Error ? err.message : String(err)),
   });
@@ -210,7 +266,7 @@ function MembrosRoute() {
     <AppShell activeSection="membros" title="Membros" subtitle="Quem tem acesso ao seu workspace">
       <Card>
         <CardHeader>
-          <CardTitle>Membros do workspace</CardTitle>
+          <CardTitle>Membros do workspace{activeOrgName ? ` "${activeOrgName}"` : ""}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {members.map((member) => {
@@ -302,6 +358,30 @@ function MembrosRoute() {
                   </SelectContent>
                 </Select>
               </div>
+              {!editingUserId && organizations.length > 1 ? (
+                <div className="md:col-span-3">
+                  <Label>Compartilhar com</Label>
+                  <div className="mt-1 flex flex-wrap gap-3">
+                    {organizations.map((org) => (
+                      <label
+                        key={org.id}
+                        className="flex items-center gap-1.5 text-sm text-foreground"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={shareOrgIds.includes(org.id)}
+                          onChange={() => toggleShareOrgId(org.id)}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        {org.name}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    O membro só vê os workspaces marcados aqui.
+                  </p>
+                </div>
+              ) : null}
               <div className="md:col-span-3">
                 <Label>Cor</Label>
                 <div className="mt-1 flex flex-wrap gap-2">
@@ -333,7 +413,7 @@ function MembrosRoute() {
                 ) : (
                   <Button
                     onClick={() => addMember.mutate()}
-                    disabled={!email || addMember.isPending}
+                    disabled={!email || shareOrgIds.length === 0 || addMember.isPending}
                   >
                     Adicionar
                   </Button>
