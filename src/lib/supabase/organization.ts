@@ -66,7 +66,7 @@ export function useActiveOrganization(userId: string | null) {
 
   async function createWorkspace(name: string): Promise<string> {
     if (!userId) throw new Error("Não autenticado.");
-    const id = await createOrganization(name, userId);
+    const id = await createOrganization(name);
     await queryClient.invalidateQueries({ queryKey: ["my-organizations", userId] });
     persistActiveOrgId(id);
     return id;

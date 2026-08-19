@@ -212,16 +212,16 @@ export async function fetchMyOrganizations(userId: string): Promise<Organization
   });
 }
 
-// Cria um novo workspace com o usuário logado como dono — o trigger
-// trg_add_owner_as_admin já existente cuida de vinculá-lo como admin.
-export async function createOrganization(name: string, ownerId: string): Promise<string> {
-  const { data, error } = await supabase
-    .from("organizations")
-    .insert({ name, owner_id: ownerId })
-    .select("id")
-    .single();
+// Cria um novo workspace com o usuário logado como dono. Via RPC
+// SECURITY DEFINER (não insert direto) porque o insert client-side cai na
+// policy "org_insert" (owner_id = auth.uid()), que falha se o JWT da sessão
+// ainda não propagou — mesmo problema já resolvido para o org do signup em
+// ensure_user_organization(). O trigger trg_add_owner_as_admin já existente
+// cuida de vinculá-lo como admin.
+export async function createOrganization(name: string): Promise<string> {
+  const { data, error } = await supabase.rpc("create_organization", { org_name: name });
   if (error) throw new Error(error.message);
-  return data.id as string;
+  return data as string;
 }
 
 export async function renameOrganization(orgId: string, name: string): Promise<void> {
