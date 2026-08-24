@@ -417,7 +417,7 @@ export function useQuickAddForm({
         needs_review: !values.category_id,
       };
 
-      if (values.installments_count > 1) {
+      if (values.installments_count > 1 && values.account_kind === "credit_card") {
         const account = activeAccounts.find((a) => a.account_key === values.account_id);
         const schedule = computeInstallmentSchedule(
           dateOnlyStringToLocalDate(values.posted_at),
@@ -673,6 +673,11 @@ export function useQuickAddForm({
         resolvePaymentMethod(draft.payment_method_hint, match.accountKind),
       );
       form.setValue("additional_card_id", match.additionalCardId);
+      // Parcelamento só existe em cartão de crédito — evita que uma
+      // contagem de parcelas fique presa a uma conta não-crédito.
+      if (match.accountKind !== "credit_card") {
+        form.setValue("installments_count", 1);
+      }
     } else if (match.status === "ambiguous") {
       form.setValue("account_id", "");
       form.setValue("additional_card_id", null);

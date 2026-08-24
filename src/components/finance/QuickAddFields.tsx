@@ -220,6 +220,11 @@ export function QuickAddFields({
               form.setValue("account_kind", accountKind as QuickAddFormValues["account_kind"]);
               form.setValue("payment_method", defaultPaymentMethod(accountKind));
               form.setValue("additional_card_id", additionalCardId || null);
+              // Parcelamento só existe em cartão de crédito — evita que uma
+              // contagem de parcelas fique presa a uma conta não-crédito.
+              if (accountKind !== "credit_card") {
+                form.setValue("installments_count", 1);
+              }
             }}
           >
             <SelectTrigger>

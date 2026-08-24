@@ -119,6 +119,7 @@ export function parseDraft(
     throw new Error("Não foi possível identificar descrição e valor no relato.");
   }
   const installments = Number(parsed.installments_count);
+  const paymentMethodHint = parsed.payment_method_hint ?? null;
   return {
     original_text: parsed.original_text ?? fallbackText,
     workspace_hint: parsed.workspace_hint ?? null,
@@ -128,8 +129,13 @@ export function parseDraft(
     date: plausibleDate(parsed.date, todayStr),
     account_hint: parsed.account_hint ?? null,
     destination_account_hint: parsed.destination_account_hint ?? null,
-    payment_method_hint: parsed.payment_method_hint ?? null,
-    installments_count: Number.isFinite(installments) && installments >= 1 ? installments : 1,
+    payment_method_hint: paymentMethodHint,
+    // Parcelamento só existe em cartão de crédito — ignora qualquer
+    // contagem vinda da IA para outras formas de pagamento.
+    installments_count:
+      paymentMethodHint === "credit" && Number.isFinite(installments) && installments >= 1
+        ? installments
+        : 1,
     confidence: Number.isFinite(parsed.confidence) ? Number(parsed.confidence) : 0.7,
   };
 }
