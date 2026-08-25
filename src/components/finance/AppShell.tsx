@@ -152,7 +152,9 @@ const MOBILE_PRIMARY_SECTIONS: Section[] = ["day", "analytics"];
 
 function visibleNavItemsForTrial(items: NavItem[]): NavItem[] {
   return items
-    .filter((item) => ["day", "cadastros", "membros", "planejamento"].includes(item.section))
+    .filter((item) =>
+      ["day", "cadastros", "membros", "planejamento", "analytics"].includes(item.section),
+    )
     .map((item) => {
       if (item.section !== "planejamento") return item;
       return {
@@ -225,7 +227,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
     Math.ceil((new Date(shellSubscription.trial_ends_at).getTime() - Date.now()) / 86_400_000),
   );
   const visibleNavItems = isTrialPlan ? visibleNavItemsForTrial(navItems) : navItems;
-  const mobilePrimarySections = isTrialPlan ? ["day"] : MOBILE_PRIMARY_SECTIONS;
+  const mobilePrimarySections = MOBILE_PRIMARY_SECTIONS;
   const mobileNavItems = visibleNavItems.filter((item) =>
     mobilePrimarySections.includes(item.section),
   );
