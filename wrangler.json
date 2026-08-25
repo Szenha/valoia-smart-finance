@@ -1,5 +1,6 @@
 {
   "name": "ticlio",
+  "workers_dev": true,
   "routes": [
     {
       "pattern": "ticlio.com.br",
