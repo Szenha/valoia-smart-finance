@@ -27,6 +27,7 @@ import { Route as ComercialCodigosRouteImport } from './routes/comercial/codigos
 import { Route as CadastrosMembrosRouteImport } from './routes/cadastros/membros'
 import { Route as CadastrosContasECartoesRouteImport } from './routes/cadastros/contas-e-cartoes'
 import { Route as CadastrosCategoriasRouteImport } from './routes/cadastros/categorias'
+import { Route as ApiWebhooksAsaasRouteImport } from './routes/api/webhooks/asaas'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -118,6 +119,11 @@ const CadastrosCategoriasRoute = CadastrosCategoriasRouteImport.update({
   path: '/cadastros/categorias',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWebhooksAsaasRoute = ApiWebhooksAsaasRouteImport.update({
+  id: '/api/webhooks/asaas',
+  path: '/api/webhooks/asaas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
   '/reports/rateio': typeof ReportsRateioRoute
   '/reports/': typeof ReportsIndexRoute
+  '/api/webhooks/asaas': typeof ApiWebhooksAsaasRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
   '/reports/rateio': typeof ReportsRateioRoute
   '/reports': typeof ReportsIndexRoute
+  '/api/webhooks/asaas': typeof ApiWebhooksAsaasRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
   '/reports/rateio': typeof ReportsRateioRoute
   '/reports/': typeof ReportsIndexRoute
+  '/api/webhooks/asaas': typeof ApiWebhooksAsaasRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/planejamento/orcamento'
     | '/reports/rateio'
     | '/reports/'
+    | '/api/webhooks/asaas'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/planejamento/orcamento'
     | '/reports/rateio'
     | '/reports'
+    | '/api/webhooks/asaas'
   id:
     | '__root__'
     | '/'
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/planejamento/orcamento'
     | '/reports/rateio'
     | '/reports/'
+    | '/api/webhooks/asaas'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -262,6 +274,7 @@ export interface RootRouteChildren {
   PlanejamentoOrcamentoRoute: typeof PlanejamentoOrcamentoRoute
   ReportsRateioRoute: typeof ReportsRateioRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
+  ApiWebhooksAsaasRoute: typeof ApiWebhooksAsaasRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -392,6 +405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CadastrosCategoriasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/webhooks/asaas': {
+      id: '/api/webhooks/asaas'
+      path: '/api/webhooks/asaas'
+      fullPath: '/api/webhooks/asaas'
+      preLoaderRoute: typeof ApiWebhooksAsaasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -414,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlanejamentoOrcamentoRoute: PlanejamentoOrcamentoRoute,
   ReportsRateioRoute: ReportsRateioRoute,
   ReportsIndexRoute: ReportsIndexRoute,
+  ApiWebhooksAsaasRoute: ApiWebhooksAsaasRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

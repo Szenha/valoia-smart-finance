@@ -28,9 +28,14 @@ VITE_SUPABASE_ANON_KEY=
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 OPENAI_TRANSCRIPTION_MODEL=
+ASAAS_API_KEY=
+ASAAS_ENV=production
+ASAAS_WEBHOOK_TOKEN=
 ```
 
 `OPENAI_API_KEY` e usada exclusivamente para transformar audio gravado em texto no registro por voz. O texto transcrito continua sendo interpretado e classificado pelo pipeline existente via Anthropic. `OPENAI_TRANSCRIPTION_MODEL` e opcional; quando ausente, o app usa `gpt-4o-mini-transcribe`.
+
+`ASAAS_API_KEY` e a chave de API da Asaas (Integracoes > Chave de API no painel Asaas), usada apenas no servidor. `ASAAS_WEBHOOK_TOKEN` e um segredo proprio (nao pode ser igual a chave de API) que a Asaas devolve no header `asaas-access-token` a cada chamada de webhook; o endpoint em `/api/webhooks/asaas` valida esse header antes de processar o evento. Em producao (Cloudflare Workers), essas variaveis precisam ser configuradas como secrets via `wrangler secret put ASAAS_API_KEY` e `wrangler secret put ASAAS_WEBHOOK_TOKEN` — o `.env` local nao e lido no runtime do Workers.
 
 ## Desenvolvimento local
 
