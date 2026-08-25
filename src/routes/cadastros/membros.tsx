@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
+import { PremiumFeatureCard } from "@/components/finance/CommercialGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -31,6 +32,11 @@ import {
   resolveMemberName,
 } from "@/lib/finance/member-visuals";
 import type { HouseholdMemberRow } from "@/lib/finance/types";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
@@ -79,6 +85,11 @@ function MembrosRoute() {
     queryKey: ["org-owner", orgId],
     enabled: !!orgId,
     queryFn: () => fetchOrganizationOwner(orgId!),
+  });
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
   });
 
   const [email, setEmail] = useState("");
@@ -180,9 +191,7 @@ function MembrosRoute() {
         return;
       }
       const failedNames = failed
-        .map(
-          (f) => organizations.find((org) => org.id === f.targetOrgId)?.name ?? f.targetOrgId,
-        )
+        .map((f) => organizations.find((org) => org.id === f.targetOrgId)?.name ?? f.targetOrgId)
         .join(", ");
       setFormError(
         succeededOrgIds.length > 0
@@ -227,11 +236,13 @@ function MembrosRoute() {
   // never render a "Remover" button before it actually knows who the owner
   // is (that window used to let anyone, including the owner themselves, be
   // removed by mistake since `userId === undefined` is never true).
-  if (!orgId || ownerQuery.isLoading) {
+  if (!orgId || ownerQuery.isLoading || subscriptionQuery.isLoading) {
     return <div className="p-5 text-muted-foreground">Carregando…</div>;
   }
 
   const members = membersQuery.data ?? [];
+  const capabilities = capabilitiesFor(normalizeSubscription(subscriptionQuery.data));
+  const canManageMembers = capabilities.canInviteMembers;
   const profileById = new Map((profilesQuery.data ?? []).map((profile) => [profile.id, profile]));
   const isAdmin = members.find((member) => member.user_id === currentUserId)?.role === "admin";
   const adminCount = members.filter((member) => member.role === "admin").length;
@@ -289,7 +300,7 @@ function MembrosRoute() {
                   <span className="text-muted-foreground">
                     {ROLE_LABEL[member.role] ?? member.role}
                   </span>
-                  {isAdmin ? (
+                  {isAdmin && canManageMembers ? (
                     <Button
                       type="button"
                       variant="ghost"
@@ -299,7 +310,9 @@ function MembrosRoute() {
                       Editar
                     </Button>
                   ) : null}
-                  {isAdmin && !removeBlockedReason(member.user_id, member.role) ? (
+                  {isAdmin &&
+                  canManageMembers &&
+                  !removeBlockedReason(member.user_id, member.role) ? (
                     <Button
                       type="button"
                       variant="ghost"
@@ -324,7 +337,12 @@ function MembrosRoute() {
           <CardTitle>{editingUserId ? "Editar membro" : "Adicionar membro"}</CardTitle>
         </CardHeader>
         <CardContent>
-          {isAdmin ? (
+          {!canManageMembers ? (
+            <PremiumFeatureCard
+              title="Compartilhamento familiar fica no plano Família"
+              description="No trial e no plano Individual, o Ticlio mantém o uso em uma pessoa e um workspace. Isso reduz risco e deixa a experiência inicial mais simples."
+            />
+          ) : isAdmin ? (
             <div className="grid gap-3 md:grid-cols-3">
               {editingUserId ? null : (
                 <div className="md:col-span-2">

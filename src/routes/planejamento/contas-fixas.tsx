@@ -21,6 +21,7 @@ import { CategoryPicker } from "@/components/finance/CategoryPicker";
 import { MonthCalendar, monthCalendarDayKey } from "@/components/finance/MonthCalendar";
 import { PlanejamentoTabs } from "@/components/finance/PlanejamentoTabs";
 import { SettleBillDialog } from "@/components/finance/SettleBillDialog";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -150,7 +151,11 @@ function ContasFixasRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const { orgId } = useActiveOrganization(currentUserId);
+  const {
+    orgId,
+    error: orgError,
+    refetchOrganizations,
+  } = useActiveOrganization(currentUserId);
 
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
@@ -298,7 +303,7 @@ function ContasFixasRoute() {
     },
   });
 
-  if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
 
   const categories = categoriesQuery.data ?? [];
   const categoryItems = leafCategoryOptions(categories);

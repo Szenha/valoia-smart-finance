@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -107,7 +108,11 @@ function RateioRoute() {
     queryFn: async () => (await supabase.auth.getUser()).data.user,
   });
   const currentUserId = currentUserQuery.data?.id ?? null;
-  const { orgId } = useActiveOrganization(currentUserId);
+  const {
+    orgId,
+    error: orgError,
+    refetchOrganizations,
+  } = useActiveOrganization(currentUserId);
 
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
@@ -381,7 +386,7 @@ function RateioRoute() {
     },
   });
 
-  if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
 
   return (
     <AppShell activeSection="analytics" title="Rateio de despesas" subtitle="Quem deve pagar quem">

@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { PlanejamentoTabs } from "@/components/finance/PlanejamentoTabs";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,7 +154,11 @@ function MetasRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const { orgId } = useActiveOrganization(currentUserId);
+  const {
+    orgId,
+    error: orgError,
+    refetchOrganizations,
+  } = useActiveOrganization(currentUserId);
 
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
@@ -301,7 +306,7 @@ function MetasRoute() {
     },
   });
 
-  if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
 
   const profileById = new Map((profilesQuery.data ?? []).map((profile) => [profile.id, profile]));
   const memberById = new Map((membersQuery.data ?? []).map((member) => [member.user_id, member]));

@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { Mic, PiggyBank, RefreshCw, ShieldCheck, Sparkles, Upload, Users } from "lucide-react";
+import { CheckCircle2, CreditCard, Mic, ShieldCheck, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getOrCreateOrganization } from "@/lib/supabase/auth";
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/login")({
   },
   head: () => ({
     meta: [
-      { title: "Ticlio — Entrar" },
+      { title: "Ticlio, Entrar" },
       {
         name: "description",
         content:
@@ -26,7 +26,7 @@ export const Route = createFileRoute("/login")({
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@700;800&display=swap",
       },
     ],
   }),
@@ -37,34 +37,21 @@ const FEATURES = [
   {
     icon: Mic,
     title: "Lance por voz",
-    description: "Fale o gasto e a IA organiza sozinha — valor, categoria e data.",
+    description: "Sem abrir planilha ou digitar linha por linha.",
   },
   {
     icon: Sparkles,
-    title: "Categorização automática",
-    description: "O sistema aprende com você e categoriza sem esforço.",
+    title: "IA organiza",
+    description: "Valor, categoria, data e pagamento já vêm sugeridos.",
   },
   {
-    icon: Users,
-    title: "Toda a família junta",
-    description: "Contas, cartões e lançamentos compartilhados entre os membros.",
-  },
-  {
-    icon: Upload,
-    title: "Importe extratos",
-    description: "OFX do banco ou fatura em PDF, direto pro sistema.",
-  },
-  {
-    icon: PiggyBank,
-    title: "Planejamento anual",
-    description: "Planeje por categoria, mês a mês, receitas e despesas separadas.",
-  },
-  {
-    icon: RefreshCw,
-    title: "Despesas fixas",
-    description: "Cadastre uma vez (aluguel, escola…) e dê baixa todo mês.",
+    icon: CreditCard,
+    title: "Painel organizado",
+    description: "Contas, cartões e despesas em um só painel.",
   },
 ];
+
+const TRUST_ITEMS = ["30 dias grátis", "Sem cartão na inscrição", "Acesso beta individual"];
 
 function Login() {
   const navigate = useNavigate();
@@ -119,6 +106,122 @@ function Login() {
     }
   }
 
+  async function handleGoogleSignIn() {
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      const redirectTo =
+        typeof window === "undefined" ? undefined : `${window.location.origin}/login`;
+      const { error: authErr } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+      if (authErr) {
+        const providerDisabled = authErr.message.toLowerCase().includes("provider is not enabled");
+        setError(
+          providerDisabled
+            ? "Login com Google ainda não está ativo. Entre com email e senha por enquanto."
+            : authErr.message,
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
+    }
+  }
+
+  const voicePreview = (
+    <div
+      className="ticlio-voice-preview"
+      aria-hidden="true"
+      style={{
+        width: "100%",
+        maxWidth: 560,
+        borderRadius: 14,
+        border: "1px solid rgba(3,92,58,0.12)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.94), rgba(247,250,249,0.84))",
+        boxShadow: "0 18px 46px -38px rgba(3,92,58,0.54)",
+        padding: "11px 12px",
+        marginBottom: 18,
+        position: "relative",
+        zIndex: 1,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "linear-gradient(130deg, rgba(198,214,39,0.14), transparent 42%, rgba(3,92,58,0.08))",
+          pointerEvents: "none",
+        }}
+      />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 30,
+            height: 30,
+            borderRadius: "50%",
+            background: "#035C3A",
+            color: "white",
+            flexShrink: 0,
+          }}
+        >
+          <Mic size={15} />
+        </span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 6,
+            }}
+          >
+            <strong style={{ color: "#0B1B2A", fontSize: 13.5, fontWeight: 800 }}>
+              “Gastei 82 reais no mercado hoje”
+            </strong>
+            <span style={{ color: "rgba(11,27,42,0.36)", fontSize: 12 }}>vira</span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            {["R$ 82,00", "Mercado", "Cartão principal", "Hoje"].map((item) => (
+              <span
+                key={item}
+                style={{
+                  borderRadius: 999,
+                  background: item === "R$ 82,00" ? "#035C3A" : "rgba(3,92,58,0.08)",
+                  color: item === "R$ 82,00" ? "white" : "#035C3A",
+                  padding: "5px 8px",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item}
+              </span>
+            ))}
+            <span style={{ color: "rgba(11,27,42,0.42)", fontSize: 11.5, fontWeight: 700 }}>
+              pronto para confirmar
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div
       style={{
@@ -152,10 +255,18 @@ function Login() {
           -webkit-box-shadow: 0 0 0 1000px rgba(3,92,58,0.06) inset !important;
           box-shadow: 0 0 0 1000px rgba(3,92,58,0.06) inset !important;
         }
+          .ticlio-auth-feature:hover {
+            background: rgba(255,255,255,0.72);
+            box-shadow: 0 12px 28px -20px rgba(11,27,42,0.32);
+            transform: translateY(-1px);
+          }
+          @media (max-width: 959px) {
+            .ticlio-voice-preview { display: none !important; }
+            .ticlio-benefit-strip { grid-template-columns: 1fr !important; }
+          }
       `}</style>
 
-      {/* Subtle dot-grid texture — the "tech product" layer beneath the
-          ambient color orbs, barely-there so it reads as texture, not noise. */}
+      {/* Subtle dot-grid texture behind the product story. */}
       <div
         style={{
           position: "absolute",
@@ -169,43 +280,21 @@ function Login() {
         }}
       />
 
-      {/* Ambient orbs */}
       <div
         style={{
           position: "absolute",
-          top: "8%",
-          left: "10%",
-          width: 460,
-          height: 460,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(52,211,153,0.16) 0%, transparent 70%)",
-          filter: "blur(60px)",
+          inset: 0,
+          background:
+            "linear-gradient(120deg, rgba(3,92,58,0.08) 0%, transparent 34%, rgba(198,214,39,0.1) 63%, transparent 100%)",
           pointerEvents: "none",
         }}
       />
       <div
         style={{
           position: "absolute",
-          bottom: "4%",
-          right: "8%",
-          width: 380,
-          height: 380,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(3,92,58,0.14) 0%, transparent 70%)",
-          filter: "blur(60px)",
-          pointerEvents: "none",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          top: "38%",
-          right: "26%",
-          width: 260,
-          height: 260,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(198,214,39,0.12) 0%, transparent 70%)",
-          filter: "blur(70px)",
+          inset: "auto 0 0 0",
+          height: "34%",
+          background: "linear-gradient(to top, rgba(3,92,58,0.08), transparent)",
           pointerEvents: "none",
         }}
       />
@@ -218,96 +307,157 @@ function Login() {
           justifyContent: "center",
           position: "relative",
           zIndex: 1,
-          padding: "40px 16px 48px",
+          padding: "18px 16px 20px",
         }}
       >
         <div
           style={{
             width: "100%",
-            maxWidth: 1080,
+            maxWidth: 1120,
             display: "grid",
             gridTemplateColumns: "1fr",
-            gap: 48,
+            gap: 40,
             alignItems: "center",
           }}
           className="ticlio-auth-grid"
         >
           <style>{`
             @media (min-width: 960px) {
-              .ticlio-auth-grid { grid-template-columns: 1.1fr 0.9fr !important; }
+              .ticlio-auth-grid { grid-template-columns: minmax(0, 1.16fr) minmax(380px, 0.84fr) !important; }
             }
           `}</style>
 
           {/* Marketing / hero column */}
-          <section>
+          <section style={{ position: "relative", maxWidth: 610 }}>
             <span
               style={{
                 display: "inline-block",
                 fontSize: 11.5,
-                fontWeight: 700,
+                fontWeight: 800,
                 letterSpacing: "0.16em",
                 textTransform: "uppercase",
                 color: "#035C3A",
                 background: "rgba(3,92,58,0.08)",
                 padding: "5px 12px",
                 borderRadius: 999,
-                marginBottom: 18,
+                marginBottom: 14,
               }}
             >
-              Finanças em família, num só lugar
+              Teste grátis por 30 dias
             </span>
             <h1
               style={{
-                fontSize: "clamp(30px, 4.2vw, 42px)",
+                fontFamily: "Sora, Inter, system-ui, sans-serif",
+                fontSize: "clamp(36px, 4.5vw, 52px)",
                 fontWeight: 800,
                 color: "#0B1B2A",
-                letterSpacing: "-0.035em",
-                lineHeight: 1.08,
+                letterSpacing: 0,
+                lineHeight: 1.01,
                 margin: "0 0 16px",
+                position: "relative",
+                zIndex: 1,
               }}
             >
-              Suas finanças, contadas em voz alta.
+              Suas finanças, contadas em <span style={{ color: "#035C3A" }}>voz alta.</span>
             </h1>
             <p
               style={{
                 fontSize: 17,
-                color: "rgba(11,27,42,0.6)",
-                lineHeight: 1.6,
-                margin: "0 0 32px",
-                maxWidth: 480,
+                color: "rgba(11,27,42,0.62)",
+                lineHeight: 1.45,
+                margin: "0 0 16px",
+                maxWidth: 520,
+                position: "relative",
+                zIndex: 1,
               }}
             >
-              Fale um gasto, a IA organiza sozinha. Toda a família compartilhando contas, cartões e
-              planejamento — num só lugar, sem planilha.
+              Fale o gasto uma vez. O Ticlio transforma voz em lançamento categorizado, pronto para
+              você confirmar.
             </p>
 
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
-                gap: 6,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                marginBottom: 16,
+                position: "relative",
+                zIndex: 1,
               }}
+            >
+              <button
+                type="button"
+                onClick={() => switchMode("signup")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  border: "none",
+                  borderRadius: 999,
+                  background: "#035C3A",
+                  color: "white",
+                  padding: "11px 16px",
+                  fontSize: 13.5,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  boxShadow: "0 16px 32px -18px rgba(3,92,58,0.72)",
+                }}
+              >
+                Começar teste grátis
+                <span aria-hidden="true">→</span>
+              </button>
+              {TRUST_ITEMS.slice(1).map((item) => (
+                <span
+                  key={item}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    borderRadius: 999,
+                    border: "1px solid rgba(3,92,58,0.16)",
+                    background: "rgba(255,255,255,0.72)",
+                    color: "#035C3A",
+                    padding: "9px 11px",
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}
+                >
+                  <CheckCircle2 size={14} />
+                  {item}
+                </span>
+              ))}
+            </div>
+
+            {voicePreview}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 12,
+                position: "relative",
+                zIndex: 1,
+              }}
+              className="ticlio-benefit-strip"
             >
               {FEATURES.map(({ icon: Icon, title, description }) => (
                 <div
                   key={title}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 10,
-                    padding: "10px 10px",
-                    borderRadius: 12,
-                    transition: "background .15s",
+                    display: "grid",
+                    gap: 7,
+                    paddingTop: 12,
+                    borderTop: "1px solid rgba(3,92,58,0.16)",
                   }}
                 >
                   <span
                     style={{
-                      display: "flex",
+                      display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      width: 30,
-                      height: 30,
-                      flexShrink: 0,
+                      width: 28,
+                      height: 28,
                       borderRadius: "50%",
                       background: "rgba(3,92,58,0.08)",
                       color: "#035C3A",
@@ -315,21 +465,19 @@ function Login() {
                   >
                     <Icon size={15} />
                   </span>
-                  <div>
-                    <p style={{ fontSize: 13.5, fontWeight: 700, color: "#0B1B2A", margin: 0 }}>
-                      {title}
-                    </p>
-                    <p
-                      style={{
-                        fontSize: 12.5,
-                        color: "rgba(11,27,42,0.5)",
-                        margin: "2px 0 0",
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {description}
-                    </p>
-                  </div>
+                  <p style={{ fontSize: 13.5, fontWeight: 800, color: "#0B1B2A", margin: 0 }}>
+                    {title}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: 12.5,
+                      color: "rgba(11,27,42,0.5)",
+                      margin: 0,
+                      lineHeight: 1.32,
+                    }}
+                  >
+                    {description}
+                  </p>
                 </div>
               ))}
             </div>
@@ -346,6 +494,7 @@ function Login() {
               width: "100%",
               maxWidth: 420,
               justifySelf: "center",
+              alignSelf: "start",
             }}
           >
             <div
@@ -353,14 +502,14 @@ function Login() {
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 8,
-                marginBottom: 22,
+                gap: 6,
+                marginBottom: 14,
               }}
             >
               <TiclioLogo
                 variant="full-on-light"
                 style={{
-                  width: "clamp(150px, 32vw, 184px)",
+                  width: "clamp(138px, 28vw, 166px)",
                   filter: "drop-shadow(0 6px 16px rgba(3,92,58,0.16))",
                 }}
               />
@@ -383,7 +532,7 @@ function Login() {
                 background: "#ffffff",
                 border: "1px solid rgba(11,27,42,0.07)",
                 borderRadius: 20,
-                padding: "36px 36px 32px",
+                padding: "28px 30px 24px",
                 boxShadow:
                   "0 32px 80px -12px rgba(11,27,42,0.16), 0 0 0 1px rgba(11,27,42,0.02), 0 0 0 8px rgba(3,92,58,0.025)",
                 position: "relative",
@@ -417,15 +566,72 @@ function Login() {
               <p style={{ fontSize: 14, color: "rgba(11,27,42,0.5)", margin: "0 0 24px" }}>
                 {mode === "login"
                   ? "Entre na sua conta para continuar"
-                  : "Comece a controlar suas finanças hoje"}
+                  : "Seu teste grátis começa agora. Não precisa cadastrar cartão."}
               </p>
+
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void handleGoogleSignIn()}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  padding: "11px 0",
+                  borderRadius: 10,
+                  border: "1px solid rgba(11,27,42,0.1)",
+                  background: "#ffffff",
+                  color: "#0B1B2A",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  boxShadow: "0 8px 18px -16px rgba(11,27,42,0.5)",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 21,
+                    height: 21,
+                    borderRadius: "50%",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    border: "1px solid rgba(11,27,42,0.1)",
+                    fontWeight: 800,
+                    color: "#4285F4",
+                    fontSize: 13,
+                  }}
+                >
+                  G
+                </span>
+                Continuar com Google
+              </button>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto 1fr",
+                  alignItems: "center",
+                  gap: 10,
+                  margin: "16px 0",
+                  color: "rgba(11,27,42,0.34)",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ height: 1, background: "rgba(11,27,42,0.08)" }} />
+                ou acesse com email
+                <span style={{ height: 1, background: "rgba(11,27,42,0.08)" }} />
+              </div>
 
               {/* Mode toggle pills */}
               <div
                 style={{
                   display: "flex",
                   gap: 0,
-                  marginBottom: 24,
+                  marginBottom: 18,
                   background: "#F3F5F4",
                   borderRadius: 10,
                   padding: 4,
@@ -457,7 +663,7 @@ function Login() {
 
               <form
                 onSubmit={handleSubmit}
-                style={{ display: "flex", flexDirection: "column", gap: 16 }}
+                style={{ display: "flex", flexDirection: "column", gap: 12 }}
               >
                 {/* Email */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -475,7 +681,7 @@ function Login() {
                     onBlur={() => setFocusedField(null)}
                     placeholder="seu@email.com"
                     style={{
-                      padding: "11px 14px",
+                      padding: "10px 13px",
                       background: focusedField === "email" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
                       border:
                         focusedField === "email"
@@ -507,7 +713,7 @@ function Login() {
                     onBlur={() => setFocusedField(null)}
                     placeholder="••••••••"
                     style={{
-                      padding: "11px 14px",
+                      padding: "10px 13px",
                       background: focusedField === "password" ? "rgba(3,92,58,0.05)" : "#F3F5F4",
                       border:
                         focusedField === "password"
@@ -558,7 +764,7 @@ function Login() {
                   disabled={loading}
                   style={{
                     marginTop: 4,
-                    padding: "13px 0",
+                    padding: "12px 0",
                     borderRadius: 10,
                     border: "none",
                     cursor: loading ? "not-allowed" : "pointer",
@@ -566,7 +772,7 @@ function Login() {
                     fontWeight: 700,
                     color: "white",
                     // Solid fill (not the full lime-to-petroleum gradient) so
-                    // white text keeps reliable contrast — small filled
+                    // white text keeps reliable contrast. Small filled
                     // buttons use --primary, the darker end of the brand
                     // gradient.
                     background: loading ? "rgba(3,92,58,0.5)" : "#035C3A",
@@ -590,7 +796,7 @@ function Login() {
               {/* Footer note */}
               <p
                 style={{
-                  marginTop: 24,
+                  marginTop: 16,
                   textAlign: "center",
                   fontSize: 13,
                   color: "rgba(11,27,42,0.4)",
@@ -618,7 +824,8 @@ function Login() {
                   </>
                 ) : (
                   <>
-                    Já tem conta?{" "}
+                    Ao criar conta, você seguirá para o aceite dos termos, privacidade e aviso de
+                    IA. Já tem conta?{" "}
                     <button
                       type="button"
                       onClick={() => switchMode("login")}
@@ -652,13 +859,13 @@ function Login() {
           textAlign: "center",
           fontSize: 12,
           color: "rgba(11,27,42,0.35)",
-          padding: "0 16px 28px",
+          padding: "0 16px 14px",
           position: "relative",
           zIndex: 1,
         }}
       >
         <ShieldCheck size={13} />
-        Dados protegidos · Conforme LGPD
+        Teste grátis de 30 dias · Privacidade em revisão · Dados protegidos por autenticação
       </p>
     </div>
   );

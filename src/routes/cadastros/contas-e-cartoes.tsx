@@ -17,6 +17,7 @@ import { CadastrosTabs } from "@/components/finance/CadastrosTabs";
 import { CardStatementDialog } from "@/components/finance/CardStatementDialog";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { StatTile } from "@/components/finance/StatTile";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -109,7 +110,11 @@ function ContasECartoesRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const { orgId } = useActiveOrganization(currentUserId);
+  const {
+    orgId,
+    error: orgError,
+    refetchOrganizations,
+  } = useActiveOrganization(currentUserId);
 
   const accountsQuery = useQuery({
     queryKey: ["accounts", orgId],
@@ -326,7 +331,7 @@ function ContasECartoesRoute() {
     },
   });
 
-  if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
 
   const balanceByAccountId = new Map(
     (balancesQuery.data ?? []).map((row) => [row.account_id, row]),

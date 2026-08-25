@@ -89,6 +89,10 @@ export function useActiveOrganization(userId: string | null) {
     primaryOrgId: primaryOrg?.id ?? null,
     organizations: organizations as OrganizationRow[],
     isLoading: !hydrated || organizationsQuery.isLoading,
+    // Sem isso, uma falha aqui (ex: policy de RLS) deixava orgId null pra
+    // sempre e todo consumidor caía num "Carregando…" eterno, indistinguível
+    // de um login que nunca termina.
+    error: (organizationsQuery.error ?? fallbackQuery.error) as Error | null,
     switchOrganization,
     createWorkspace,
     setPrimaryWorkspace,

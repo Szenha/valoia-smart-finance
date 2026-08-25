@@ -8,6 +8,7 @@ import { MobileHome } from "@/components/finance/MobileHome";
 import { QuickAddForm } from "@/components/finance/QuickAddForm";
 import { TransactionList } from "@/components/finance/TransactionList";
 import { VoiceCaptureFlow } from "@/components/finance/VoiceCaptureFlow";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ensureDefaultCategories, learnFromConfirmation } from "@/lib/classification/pipeline";
@@ -72,7 +73,7 @@ function Index() {
   }, [navigate]);
 
   const workspace = useActiveOrganization(userId);
-  const { orgId } = workspace;
+  const { orgId, error: orgError, refetchOrganizations } = workspace;
 
   // ensureDefaultCategories é idempotente e roda toda vez que o workspace
   // ativo muda (inclusive um workspace recém-criado no seletor), garantindo
@@ -173,9 +174,7 @@ function Index() {
 
   if (!orgId) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        Carregando…
-      </div>
+      <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} fullScreen />
     );
   }
 

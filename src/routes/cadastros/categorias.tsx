@@ -36,6 +36,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CategoryTree } from "@/components/finance/CategoryTree";
 import { IconPicker } from "@/components/finance/IconPicker";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import {
   buildCategoryTree,
   categoryOptions,
@@ -84,7 +85,11 @@ function CategoriasRoute() {
       return user;
     },
   });
-  const { orgId } = useActiveOrganization(currentUserQuery.data?.id ?? null);
+  const {
+    orgId,
+    error: orgError,
+    refetchOrganizations,
+  } = useActiveOrganization(currentUserQuery.data?.id ?? null);
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,
@@ -284,7 +289,7 @@ function CategoriasRoute() {
     });
   }
 
-  if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
 
   return (
     <AppShell

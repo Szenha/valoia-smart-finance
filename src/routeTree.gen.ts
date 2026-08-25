@@ -9,21 +9,35 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LandingRouteImport } from './routes/landing'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConciliacaoRouteImport } from './routes/conciliacao'
 import { Route as CalendarioRouteImport } from './routes/calendario'
+import { Route as AiNoticeRouteImport } from './routes/ai-notice'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportsIndexRouteImport } from './routes/reports/index'
 import { Route as ReportsRateioRouteImport } from './routes/reports/rateio'
 import { Route as PlanejamentoOrcamentoRouteImport } from './routes/planejamento/orcamento'
 import { Route as PlanejamentoMetasRouteImport } from './routes/planejamento/metas'
 import { Route as PlanejamentoContasFixasRouteImport } from './routes/planejamento/contas-fixas'
+import { Route as ComercialCodigosRouteImport } from './routes/comercial/codigos'
 import { Route as CadastrosMembrosRouteImport } from './routes/cadastros/membros'
 import { Route as CadastrosContasECartoesRouteImport } from './routes/cadastros/contas-e-cartoes'
 import { Route as CadastrosCategoriasRouteImport } from './routes/cadastros/categorias'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -47,6 +61,11 @@ const ConciliacaoRoute = ConciliacaoRouteImport.update({
 const CalendarioRoute = CalendarioRouteImport.update({
   id: '/calendario',
   path: '/calendario',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AiNoticeRoute = AiNoticeRouteImport.update({
+  id: '/ai-notice',
+  path: '/ai-notice',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -79,6 +98,11 @@ const PlanejamentoContasFixasRoute = PlanejamentoContasFixasRouteImport.update({
   path: '/planejamento/contas-fixas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ComercialCodigosRoute = ComercialCodigosRouteImport.update({
+  id: '/comercial/codigos',
+  path: '/comercial/codigos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CadastrosMembrosRoute = CadastrosMembrosRouteImport.update({
   id: '/cadastros/membros',
   path: '/cadastros/membros',
@@ -97,14 +121,18 @@ const CadastrosCategoriasRoute = CadastrosCategoriasRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/ai-notice': typeof AiNoticeRoute
   '/calendario': typeof CalendarioRoute
   '/conciliacao': typeof ConciliacaoRoute
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/comercial/codigos': typeof ComercialCodigosRoute
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
@@ -113,14 +141,18 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ai-notice': typeof AiNoticeRoute
   '/calendario': typeof CalendarioRoute
   '/conciliacao': typeof ConciliacaoRoute
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/comercial/codigos': typeof ComercialCodigosRoute
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
@@ -130,14 +162,18 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/ai-notice': typeof AiNoticeRoute
   '/calendario': typeof CalendarioRoute
   '/conciliacao': typeof ConciliacaoRoute
   '/dashboard': typeof DashboardRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/comercial/codigos': typeof ComercialCodigosRoute
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
@@ -148,14 +184,18 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/ai-notice'
     | '/calendario'
     | '/conciliacao'
     | '/dashboard'
     | '/landing'
     | '/login'
+    | '/privacy'
+    | '/terms'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/comercial/codigos'
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
@@ -164,14 +204,18 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/ai-notice'
     | '/calendario'
     | '/conciliacao'
     | '/dashboard'
     | '/landing'
     | '/login'
+    | '/privacy'
+    | '/terms'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/comercial/codigos'
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
@@ -180,14 +224,18 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/ai-notice'
     | '/calendario'
     | '/conciliacao'
     | '/dashboard'
     | '/landing'
     | '/login'
+    | '/privacy'
+    | '/terms'
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/comercial/codigos'
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
@@ -197,14 +245,18 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AiNoticeRoute: typeof AiNoticeRoute
   CalendarioRoute: typeof CalendarioRoute
   ConciliacaoRoute: typeof ConciliacaoRoute
   DashboardRoute: typeof DashboardRoute
   LandingRoute: typeof LandingRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
   CadastrosCategoriasRoute: typeof CadastrosCategoriasRoute
   CadastrosContasECartoesRoute: typeof CadastrosContasECartoesRoute
   CadastrosMembrosRoute: typeof CadastrosMembrosRoute
+  ComercialCodigosRoute: typeof ComercialCodigosRoute
   PlanejamentoContasFixasRoute: typeof PlanejamentoContasFixasRoute
   PlanejamentoMetasRoute: typeof PlanejamentoMetasRoute
   PlanejamentoOrcamentoRoute: typeof PlanejamentoOrcamentoRoute
@@ -214,6 +266,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -247,6 +313,13 @@ declare module '@tanstack/react-router' {
       path: '/calendario'
       fullPath: '/calendario'
       preLoaderRoute: typeof CalendarioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ai-notice': {
+      id: '/ai-notice'
+      path: '/ai-notice'
+      fullPath: '/ai-notice'
+      preLoaderRoute: typeof AiNoticeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -291,6 +364,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlanejamentoContasFixasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/comercial/codigos': {
+      id: '/comercial/codigos'
+      path: '/comercial/codigos'
+      fullPath: '/comercial/codigos'
+      preLoaderRoute: typeof ComercialCodigosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cadastros/membros': {
       id: '/cadastros/membros'
       path: '/cadastros/membros'
@@ -317,14 +397,18 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AiNoticeRoute: AiNoticeRoute,
   CalendarioRoute: CalendarioRoute,
   ConciliacaoRoute: ConciliacaoRoute,
   DashboardRoute: DashboardRoute,
   LandingRoute: LandingRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   CadastrosCategoriasRoute: CadastrosCategoriasRoute,
   CadastrosContasECartoesRoute: CadastrosContasECartoesRoute,
   CadastrosMembrosRoute: CadastrosMembrosRoute,
+  ComercialCodigosRoute: ComercialCodigosRoute,
   PlanejamentoContasFixasRoute: PlanejamentoContasFixasRoute,
   PlanejamentoMetasRoute: PlanejamentoMetasRoute,
   PlanejamentoOrcamentoRoute: PlanejamentoOrcamentoRoute,

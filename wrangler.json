@@ -1,3 +1,13 @@
 {
-  "name": "ticlio"
+  "name": "ticlio",
+  "routes": [
+    {
+      "pattern": "ticlio.com.br",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.ticlio.com.br",
+      "custom_domain": true
+    }
+  ]
 }

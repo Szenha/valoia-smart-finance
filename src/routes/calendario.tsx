@@ -6,6 +6,7 @@ import { AppShell } from "@/components/finance/AppShell";
 import { CalendarEventDialog } from "@/components/finance/CalendarEventDialog";
 import { FamilyMembersDialog } from "@/components/finance/FamilyMembersDialog";
 import { MonthCalendar, monthCalendarDayKey } from "@/components/finance/MonthCalendar";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -85,7 +86,11 @@ function CalendarioRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const { orgId } = useActiveOrganization(currentUserId);
+  const {
+    orgId,
+    error: orgError,
+    refetchOrganizations,
+  } = useActiveOrganization(currentUserId);
 
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [viewDate, setViewDate] = useState(() => startOfCurrentLocalMonth());
@@ -202,7 +207,7 @@ function CalendarioRoute() {
     setDialogOpen(true);
   }
 
-  if (!orgId) return <div className="p-5 text-muted-foreground">Carregando…</div>;
+  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
 
   const familyMembers = familyMembersQuery.data ?? [];
   const familyMemberById = new Map(familyMembers.map((m) => [m.id, m]));

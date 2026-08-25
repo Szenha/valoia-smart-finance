@@ -2,9 +2,11 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  BadgePercent,
   CalendarClock,
   CalendarDays,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
@@ -28,6 +30,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
+import { CommercialGate } from "@/components/finance/CommercialGate";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -49,11 +52,17 @@ import {
   fetchAccounts,
   fetchAdditionalCards,
   fetchCategories,
+  fetchGoals,
   fetchHouseholdMembers,
   fetchMemberProfiles,
   renameOrganization,
 } from "@/lib/finance/data";
 import type { OrganizationRow } from "@/lib/finance/types";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -68,7 +77,8 @@ type Section =
   | "conciliacao"
   | "planejamento"
   | "calendario"
-  | "analytics";
+  | "analytics"
+  | "comercial";
 
 type AppShellProps = {
   activeSection: Section;
@@ -129,6 +139,7 @@ const navItems: NavItem[] = [
       { label: "Relatórios", to: "/reports", icon: LayoutDashboard },
     ],
   },
+  { label: "Comercial", to: "/comercial/codigos", icon: BadgePercent, section: "comercial" },
 ];
 
 // Mobile é intencionalmente reduzido, não o desktop espremido: só as duas
@@ -137,10 +148,19 @@ const navItems: NavItem[] = [
 // Relatórios não precisa entrar em "Mais" — já é alcançável pela
 // AnalyticsTabs dentro da própria página de Análises.
 const MOBILE_PRIMARY_SECTIONS: Section[] = ["day", "analytics"];
-const MOBILE_NAV_ITEMS = navItems.filter((item) => MOBILE_PRIMARY_SECTIONS.includes(item.section));
-const MOBILE_MORE_ITEMS = navItems
-  .filter((item) => !MOBILE_PRIMARY_SECTIONS.includes(item.section))
-  .flatMap((item) => (item.children && item.children.length > 0 ? item.children : [item]));
+
+function visibleNavItemsForTrial(items: NavItem[]): NavItem[] {
+  return items
+    .filter((item) => ["day", "cadastros", "membros", "planejamento"].includes(item.section))
+    .map((item) => {
+      if (item.section !== "planejamento") return item;
+      return {
+        ...item,
+        to: "/planejamento/metas",
+        children: item.children?.filter((child) => child.to === "/planejamento/metas"),
+      };
+    });
+}
 
 export function AppShell({ activeSection, title, subtitle, userEmail, children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -190,8 +210,25 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
   const orgId = workspace.orgId;
   const activeOrganization =
     workspace.organizations.find((org) => org.id === orgId) ?? workspace.organizations[0] ?? null;
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
+  });
+  const shellSubscription = normalizeSubscription(subscriptionQuery.data);
+  const shellCapabilities = capabilitiesFor(shellSubscription);
+  const isTrialPlan = shellSubscription.plan_name === "trial";
+  const visibleNavItems = isTrialPlan ? visibleNavItemsForTrial(navItems) : navItems;
+  const mobilePrimarySections = isTrialPlan ? ["day"] : MOBILE_PRIMARY_SECTIONS;
+  const mobileNavItems = visibleNavItems.filter((item) =>
+    mobilePrimarySections.includes(item.section),
+  );
+  const mobileMoreItems = visibleNavItems
+    .filter((item) => !mobilePrimarySections.includes(item.section))
+    .flatMap((item) => (item.children && item.children.length > 0 ? item.children : [item]));
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [blockedFeature, setBlockedFeature] = useState<string | null>(null);
   const [createName, setCreateName] = useState("");
   const [createPending, setCreatePending] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -210,6 +247,16 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
     } finally {
       setCreatePending(false);
     }
+  }
+
+  function requestCreateWorkspace() {
+    if (!shellCapabilities.canCreateWorkspace) {
+      setBlockedFeature(
+        "Workspaces adicionais ficam disponíveis no plano Família. No trial e no plano Individual, o Ticlio mantém um workspace único para reduzir complexidade e risco.",
+      );
+      return;
+    }
+    setCreateOpen(true);
   }
 
   const [renamingOrg, setRenamingOrg] = useState<OrganizationRow | null>(null);
@@ -273,6 +320,11 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
     enabled: !!orgId && memberIds.length > 0,
     queryFn: () => fetchMemberProfiles(memberIds),
   });
+  const goalsQuery = useQuery({
+    queryKey: ["goals", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchGoals(orgId!),
+  });
 
   return (
     <div className="min-h-screen bg-background text-slate-950">
@@ -298,7 +350,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
                 onSwitch={workspace.switchOrganization}
                 onRename={openRename}
                 onSetPrimary={(org) => void handleSetPrimaryWorkspace(org)}
-                onCreate={() => setCreateOpen(true)}
+                onCreate={requestCreateWorkspace}
                 trigger={
                   <button
                     type="button"
@@ -323,7 +375,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
             onSwitch={workspace.switchOrganization}
             onRename={openRename}
             onSetPrimary={(org) => void handleSetPrimaryWorkspace(org)}
-            onCreate={() => setCreateOpen(true)}
+            onCreate={requestCreateWorkspace}
             trigger={
               <button
                 type="button"
@@ -349,7 +401,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
         </Button>
         <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const active = item.section === activeSection;
             return (
@@ -438,7 +490,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
                 onSwitch={workspace.switchOrganization}
                 onRename={openRename}
                 onSetPrimary={(org) => void handleSetPrimaryWorkspace(org)}
-                onCreate={() => setCreateOpen(true)}
+                onCreate={requestCreateWorkspace}
                 trigger={
                   <button
                     type="button"
@@ -483,7 +535,20 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           </div>
         </header>
         <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:px-8 lg:pb-6">
-          {children}
+          <CommercialGate userId={currentUserId} orgId={orgId}>
+            {({ subscription }) => (
+              <>
+                {subscription.plan_name === "trial" ? (
+                  <TrialNextSteps
+                    categoriesCount={categoriesQuery.data?.length ?? 0}
+                    accountsCount={accountsQuery.data?.length ?? 0}
+                    goalsCount={goalsQuery.data?.length ?? 0}
+                  />
+                ) : null}
+                {children}
+              </>
+            )}
+          </CommercialGate>
         </main>
       </div>
 
@@ -497,7 +562,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
         className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 flex items-stretch gap-1 rounded-full border border-slate-200/70 bg-white/95 p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_28px_-10px_rgba(0,0,0,0.18)] backdrop-blur lg:hidden"
         aria-label="Navegação principal"
       >
-        {MOBILE_NAV_ITEMS.map((item) => {
+        {mobileNavItems.map((item) => {
           const Icon = item.icon;
           const active = item.section === activeSection;
           return (
@@ -531,7 +596,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
         <DialogContent className="max-w-sm">
           <DialogTitle>Mais</DialogTitle>
           <div className="grid gap-1">
-            {MOBILE_MORE_ITEMS.map((item) => {
+            {mobileMoreItems.map((item) => {
               const Icon = item.icon;
               const active = location.pathname === item.to;
               return (
@@ -653,7 +718,95 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!blockedFeature} onOpenChange={(open) => !open && setBlockedFeature(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Recurso do plano Família</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{blockedFeature}</p>
+          <DialogFooter>
+            <Button type="button" onClick={() => setBlockedFeature(null)}>
+              Entendi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function TrialNextSteps({
+  categoriesCount,
+  accountsCount,
+  goalsCount,
+}: {
+  categoriesCount: number;
+  accountsCount: number;
+  goalsCount: number;
+}) {
+  const steps = [
+    {
+      label: "Revisar categorias",
+      description: "Ajuste receitas, despesas e subcategorias para o seu jeito de organizar.",
+      to: "/cadastros/categorias",
+      done: categoriesCount > 0,
+    },
+    {
+      label: "Cadastrar contas e cartões",
+      description: "Adicione pelo menos uma conta ou cartão para começar os lançamentos.",
+      to: "/cadastros/contas-e-cartoes",
+      done: accountsCount > 0,
+    },
+    {
+      label: "Criar uma meta",
+      description: "Opcional no beta: acompanhe um objetivo financeiro simples.",
+      to: "/planejamento/metas",
+      done: goalsCount > 0,
+    },
+  ];
+  const completed = steps.filter((step) => step.done).length;
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Próximos passos do trial</p>
+          <p className="text-sm text-muted-foreground">
+            Configure o básico primeiro. Depois, registre despesas e receitas com menos atrito.
+          </p>
+        </div>
+        <span className="text-xs font-medium text-slate-500">
+          {completed}/{steps.length} concluído(s)
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2 lg:grid-cols-3">
+        {steps.map((step) => (
+          <Link
+            key={step.to}
+            to={step.to}
+            className="flex min-h-[92px] gap-3 rounded-lg border border-slate-200 p-3 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
+          >
+            <span
+              className={cn(
+                "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+                step.done
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-slate-50 text-slate-400",
+              )}
+            >
+              {step.done ? <CheckCircle2 className="h-4 w-4" /> : null}
+            </span>
+            <span>
+              <span className="block font-medium text-slate-900">{step.label}</span>
+              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                {step.description}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 

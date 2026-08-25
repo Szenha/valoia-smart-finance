@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { ImportPanel } from "@/components/finance/ImportPanel";
 import { ReconciliationBoard } from "@/components/finance/ReconciliationBoard";
+import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,7 +99,11 @@ function ReconciliationRoute() {
     init();
   }, [navigate]);
 
-  const { orgId } = useActiveOrganization(userId);
+  const {
+    orgId,
+    error: orgError,
+    refetchOrganizations,
+  } = useActiveOrganization(userId);
 
   const importsQuery = useQuery({
     queryKey: ["statement-imports", orgId],
@@ -529,9 +534,7 @@ function ReconciliationRoute() {
 
   if (!orgId) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        Carregando…
-      </div>
+      <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} fullScreen />
     );
   }
 

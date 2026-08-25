@@ -14,11 +14,11 @@ export const Route = createFileRoute("/landing")({
   component: LandingPage,
   head: () => ({
     meta: [
-      { title: "Ticlio — Inteligência Financeira Pessoal" },
+      { title: "Ticlio, Inteligência Financeira Pessoal" },
       {
         name: "description",
         content:
-          "Importe seus extratos bancários e transforme suas movimentações financeiras em inteligência financeira.",
+          "Teste grátis o Ticlio e organize gastos, categorias, contas, cartões e metas em um painel financeiro simples.",
       },
     ],
     links: [
@@ -777,8 +777,8 @@ function Hero() {
               animationDelay: ".16s",
             }}
           >
-            Importe seus extratos bancários e transforme suas movimentações financeiras em
-            inteligência financeira para tomar decisões melhores todos os dias.
+            Teste grátis por 30 dias. Organize gastos, categorias, contas, cartões e metas em um
+            painel simples para tomar decisões melhores todos os dias.
           </p>
 
           <div className="fade-up" style={{ display: "flex", gap: 12, animationDelay: ".24s" }}>
@@ -841,7 +841,7 @@ function Hero() {
               animationDelay: ".32s",
             }}
           >
-            Sem cartão de crédito · Dados protegidos · Conforme LGPD
+            Teste grátis por 30 dias · Sem cartão de crédito · Dados protegidos
           </p>
         </div>
 
@@ -879,9 +879,9 @@ function Hero() {
 const STEPS = [
   {
     n: "01",
-    icon: "⬆",
-    title: "Importe seus extratos OFX",
-    desc: "Carregue arquivos OFX ou faturas PDF de qualquer banco. Leitura automática, zero digitação.",
+    icon: "🎙",
+    title: "Registre gastos por voz",
+    desc: "Fale uma despesa ou receita. O Ticlio ajuda a registrar valor, categoria e data.",
   },
   {
     n: "02",
@@ -899,7 +899,7 @@ const STEPS = [
     n: "04",
     icon: "🎯",
     title: "Suas metas viram decisões",
-    desc: "Insights personalizados com base nos seus dados reais — não em médias genéricas.",
+    desc: "Insights personalizados com base nos seus dados reais, não em médias genéricas.",
   },
 ];
 function HowItWorks() {
@@ -998,9 +998,9 @@ function HowItWorks() {
 /* ── Benefícios ────────────────────────────────────────────────────── */
 const BENEFITS = [
   {
-    icon: "📥",
-    title: "Extratos OFX organizados",
-    desc: "Importe de qualquer banco. O Ticlio lê e organiza tudo em segundos, sem digitação.",
+    icon: "💳",
+    title: "Contas e cartões organizados",
+    desc: "Cadastre onde o dinheiro entra, sai e fica guardado, com visão clara por conta.",
   },
   {
     icon: "📊",
@@ -1025,7 +1025,7 @@ const BENEFITS = [
   {
     icon: "🗓",
     title: "Planejamento financeiro",
-    desc: "Projeções realistas baseadas no seu histórico — para planejar com confiança.",
+    desc: "Projeções realistas baseadas no seu histórico para planejar com confiança.",
   },
 ];
 function Benefits() {
@@ -1270,12 +1270,12 @@ const SEC = [
   {
     icon: "🔐",
     title: "Seus dados protegidos",
-    desc: "Criptografia TLS 1.3 em trânsito e AES-256 em repouso. Seus extratos nunca ficam expostos.",
+    desc: "Criptografia TLS 1.3 em trânsito e AES-256 em repouso. Seus dados financeiros ficam protegidos.",
   },
   {
     icon: "⬆",
     title: "Importação segura",
-    desc: "Você importa manualmente seus extratos. O Ticlio não acessa sua conta bancária.",
+    desc: "O Ticlio não acessa sua conta bancária automaticamente. Você controla o que cadastra.",
   },
   {
     icon: "🛡",
@@ -1329,8 +1329,7 @@ function SecuritySection() {
                 marginBottom: 28,
               }}
             >
-              Segurança não é um recurso — é a base de tudo. Projetamos o Ticlio com privacidade em
-              cada camada.
+              Segurança é a base de tudo. Projetamos o Ticlio com privacidade em cada camada.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               {["LGPD", "TLS 1.3", "AES-256"].map((t) => (
@@ -1408,7 +1407,7 @@ function FinalCTA() {
             lineHeight: 1.65,
           }}
         >
-          Importe seus extratos e descubra uma nova forma de entender sua vida financeira.
+          Comece grátis e descubra uma forma mais simples de entender sua vida financeira.
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
           <Link
