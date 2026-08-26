@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, CreditCard, Gift, QrCode } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  applyPromoCode,
+  previewPromoCode,
   fetchCommercialPricing,
   BILLING_CYCLE_LABEL,
   SUBSCRIPTION_STATUS_LABEL,
@@ -43,12 +43,21 @@ type MyPlanDialogProps = {
 };
 
 export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlanDialogProps) {
-  const queryClient = useQueryClient();
   const [code, setCode] = useState("");
   const [appliedMessage, setAppliedMessage] = useState("");
+  // Só uma prévia local desta sessão do diálogo — nada é gravado no banco
+  // até o clique em "Continuar para pagamento". Fechar sem pagar não deixa
+  // nenhum desconto aplicado da próxima vez que abrir.
+  const [appliedDiscountPercent, setAppliedDiscountPercent] = useState(0);
   const [checkoutError, setCheckoutError] = useState("");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("annual");
   const [chargeMode, setChargeMode] = useState<ChargeMode>("one_time");
+
+  function updateCode(value: string) {
+    setCode(value.toUpperCase());
+    setAppliedDiscountPercent(0);
+    setAppliedMessage("");
+  }
 
   const pricingQuery = useQuery({
     queryKey: ["commercial-pricing"],
@@ -68,8 +77,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
   );
   const basePriceCents =
     (billingCycle === "monthly" ? monthlyPricing : annualPricing)?.price_cents ?? 0;
-  const discountPercent = subscription.discount_percent ?? 0;
-  const checkoutAmountCents = Math.round(basePriceCents * (1 - discountPercent / 100));
+  const checkoutAmountCents = Math.round(basePriceCents * (1 - appliedDiscountPercent / 100));
   // Mostra a seção de contratação sempre que ainda não há assinatura paga
   // ativa — não trava numa lista fixa de status, porque aplicar um cupom já
   // muda plan_name/status sem que nenhum pagamento tenha sido feito ainda.
@@ -78,13 +86,13 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
   const promoMutation = useMutation({
     mutationFn: async () => {
       if (!code.trim()) throw new Error("Informe o código promocional.");
-      return applyPromoCode(orgId, code, billingCycle);
+      return previewPromoCode(code, billingCycle);
     },
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
+      setAppliedDiscountPercent(result.discount_percent);
       setAppliedMessage(
         `${result.code} aplicado: ${formatCents(result.discount_amount_cents)} de desconto. Valor com desconto: ${formatCents(result.final_amount_cents)}.`,
       );
-      await queryClient.invalidateQueries({ queryKey: ["commercial-subscription", orgId] });
     },
   });
 
@@ -92,7 +100,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
     mutationFn: async () => {
       setCheckoutError("");
       return createAsaasCheckoutFn({
-        data: { orgId, billingCycle, chargeMode },
+        data: { orgId, billingCycle, chargeMode, promoCode: code.trim() || null },
       });
     },
     onSuccess: (result) => {
@@ -171,7 +179,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                   <Label className="text-xs font-medium">Código promocional, se tiver</Label>
                   <Input
                     value={code}
-                    onChange={(event) => setCode(event.target.value.toUpperCase())}
+                    onChange={(event) => updateCode(event.target.value)}
                     placeholder="Digite seu código"
                     className="mt-1"
                   />

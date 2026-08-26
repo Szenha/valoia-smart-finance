@@ -455,13 +455,16 @@ export async function setPromoCodeActive(id: string, active: boolean): Promise<v
   if (error) throw new Error(error.message);
 }
 
-export async function applyPromoCode(
-  orgId: string,
+// Só calcula e mostra o valor com desconto — não grava nada na assinatura
+// nem consome o uso do cupom. Isso vale só pra esta tentativa de checkout;
+// fechar o diálogo sem pagar não deixa nenhum desconto "grudado" pra
+// próxima vez. A gravação de verdade acontece em createAsaasCheckoutFn,
+// no momento de criar o checkout.
+export async function previewPromoCode(
   code: string,
   billingCycle: BillingCycle,
 ): Promise<AppliedPromoCode> {
-  const { data, error } = await supabase.rpc("apply_promo_code_to_subscription", {
-    p_org_id: orgId,
+  const { data, error } = await supabase.rpc("preview_promo_code_to_subscription", {
     p_code: code.trim().toUpperCase(),
     p_billing_cycle: billingCycle,
   });

@@ -10,6 +10,11 @@ type CreateCheckoutInput = {
   orgId: string;
   billingCycle: BillingCycle;
   chargeMode: ChargeMode;
+  promoCode?: string | null;
+};
+
+type PromoApplicationResult = {
+  final_amount_cents: number;
 };
 
 type AsaasCheckoutResponse = {
@@ -52,30 +57,41 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
 
     // Preço vem sempre do servidor — nunca do valor que o cliente mandar.
     // Isso é o que garante que ninguém contrate por um valor diferente do
-    // preço de tabela (ou do desconto já registrado na assinatura).
+    // preço de tabela. Se tiver cupom, ele só é validado e consumido agora
+    // — não antes, no botão "Aplicar" — pra não deixar desconto "grudado"
+    // numa assinatura que nunca chegou a ser paga.
     const admin = supabaseAdmin();
 
-    const { data: pricing, error: pricingError } = await admin
-      .from("commercial_pricing")
-      .select("price_cents, active")
-      .eq("billing_cycle", data.billingCycle)
-      .maybeSingle();
-    if (pricingError) throw new Error(`Falha ao buscar preço: ${pricingError.message}`);
-    if (!pricing || !pricing.active) {
-      throw new Error("Este ciclo de cobrança não está disponível no momento.");
+    let amountCents: number;
+
+    if (data.promoCode) {
+      const { data: promoResult, error: promoError } = await admin.rpc(
+        "apply_promo_code_to_subscription",
+        {
+          p_org_id: data.orgId,
+          p_code: data.promoCode,
+          p_billing_cycle: data.billingCycle,
+        },
+      );
+      if (promoError) throw new Error(promoError.message);
+      const row = (Array.isArray(promoResult) ? promoResult[0] : promoResult) as
+        | PromoApplicationResult
+        | undefined;
+      if (!row) throw new Error("Não foi possível aplicar o código promocional.");
+      amountCents = row.final_amount_cents;
+    } else {
+      const { data: pricing, error: pricingError } = await admin
+        .from("commercial_pricing")
+        .select("price_cents, active")
+        .eq("billing_cycle", data.billingCycle)
+        .maybeSingle();
+      if (pricingError) throw new Error(`Falha ao buscar preço: ${pricingError.message}`);
+      if (!pricing || !pricing.active) {
+        throw new Error("Este ciclo de cobrança não está disponível no momento.");
+      }
+      amountCents = pricing.price_cents;
     }
 
-    const { data: subscription, error: subscriptionError } = await admin
-      .from("commercial_subscriptions")
-      .select("discount_percent")
-      .eq("organization_id", data.orgId)
-      .maybeSingle();
-    if (subscriptionError) {
-      throw new Error(`Falha ao buscar assinatura: ${subscriptionError.message}`);
-    }
-
-    const discountPercent = subscription?.discount_percent ?? 0;
-    const amountCents = Math.max(Math.round(pricing.price_cents * (1 - discountPercent / 100)), 0);
     if (amountCents <= 0) throw new Error("Valor calculado inválido.");
 
     // Pix não suporta cobrança recorrente na Asaas — "recorrente" só existe
