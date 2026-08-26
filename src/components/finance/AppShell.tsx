@@ -686,8 +686,14 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
       <Button
         type="button"
         size="icon"
-        className="fixed right-4 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 lg:hidden [bottom:calc(env(safe-area-inset-bottom)+5.5rem)]"
+        className="fixed right-4 z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 disabled:pointer-events-auto disabled:opacity-50 lg:hidden [bottom:calc(env(safe-area-inset-bottom)+5.5rem)]"
         aria-label="Registrar por voz"
+        disabled={!shellCapabilities.canWriteFinancialData}
+        title={
+          shellCapabilities.canWriteFinancialData
+            ? undefined
+            : 'Renove seu plano em "Meu plano" para continuar lançando.'
+        }
         onClick={() => setVoiceSheetOpen(true)}
       >
         <Mic className="h-6 w-6" />

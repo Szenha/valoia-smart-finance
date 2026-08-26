@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { CategoryPicker } from "@/components/finance/CategoryPicker";
+import { PremiumFeatureCard } from "@/components/finance/CommercialGate";
 import { MonthCalendar, monthCalendarDayKey } from "@/components/finance/MonthCalendar";
 import { PlanejamentoTabs } from "@/components/finance/PlanejamentoTabs";
 import { SettleBillDialog } from "@/components/finance/SettleBillDialog";
@@ -82,6 +83,11 @@ import {
   type RecurringBillOccurrenceRow,
   type RecurringBillRow,
 } from "@/lib/finance/types";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -151,11 +157,14 @@ function ContasFixasRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const {
-    orgId,
-    error: orgError,
-    refetchOrganizations,
-  } = useActiveOrganization(currentUserId);
+  const { orgId, error: orgError, refetchOrganizations } = useActiveOrganization(currentUserId);
+
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
+  });
+  const capabilities = capabilitiesFor(normalizeSubscription(subscriptionQuery.data));
 
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
@@ -303,7 +312,25 @@ function ContasFixasRoute() {
     },
   });
 
-  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
+  if (!orgId || subscriptionQuery.isLoading) {
+    return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
+  }
+
+  if (!capabilities.canUseFixedBills) {
+    return (
+      <AppShell
+        activeSection="planejamento"
+        title="Planejamento"
+        subtitle="Contas fixas e calendário de pagamentos"
+      >
+        <PlanejamentoTabs value="contas-fixas" />
+        <PremiumFeatureCard
+          title="Contas fixas ficam disponíveis após o trial"
+          description="O controle de contas recorrentes é liberado assim que você contrata o plano Individual ou Família. No trial, acompanhe suas metas em Planejamento → Metas."
+        />
+      </AppShell>
+    );
+  }
 
   const categories = categoriesQuery.data ?? [];
   const categoryItems = leafCategoryOptions(categories);

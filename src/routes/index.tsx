@@ -31,6 +31,11 @@ import {
   type CategoryRow,
   type TxnRow,
 } from "@/lib/finance/types";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
@@ -74,6 +79,13 @@ function Index() {
 
   const workspace = useActiveOrganization(userId);
   const { orgId, error: orgError, refetchOrganizations } = workspace;
+
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
+  });
+  const capabilities = capabilitiesFor(normalizeSubscription(subscriptionQuery.data));
 
   // ensureDefaultCategories é idempotente e roda toda vez que o workspace
   // ativo muda (inclusive um workspace recém-criado no seletor), garantindo
@@ -173,9 +185,7 @@ function Index() {
   }
 
   if (!orgId) {
-    return (
-      <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} fullScreen />
-    );
+    return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} fullScreen />;
   }
 
   const categories = (categoriesQuery.data ?? []) as CategoryRow[];
@@ -208,7 +218,16 @@ function Index() {
       ) : null}
 
       <div className="flex justify-end">
-        <Button type="button" onClick={() => setChooserOpen(true)}>
+        <Button
+          type="button"
+          disabled={!capabilities.canWriteFinancialData}
+          title={
+            capabilities.canWriteFinancialData
+              ? undefined
+              : 'Renove seu plano em "Meu plano" para continuar lançando.'
+          }
+          onClick={() => setChooserOpen(true)}
+        >
           <Plus className="mr-1.5 h-4 w-4" />
           Adicionar
         </Button>

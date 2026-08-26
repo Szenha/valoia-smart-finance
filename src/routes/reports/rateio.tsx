@@ -12,6 +12,7 @@ import {
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { AnalyticsTabs } from "@/components/finance/AnalyticsTabs";
+import { PremiumFeatureCard } from "@/components/finance/CommercialGate";
 import { MemberAvatar } from "@/components/finance/MemberAvatar";
 import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,11 @@ import {
 } from "@/lib/finance/expense-split";
 import { resolveMemberColor, resolveMemberName } from "@/lib/finance/member-visuals";
 import { formatCurrency, type CategoryRow, type TxnRow } from "@/lib/finance/types";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -108,11 +114,14 @@ function RateioRoute() {
     queryFn: async () => (await supabase.auth.getUser()).data.user,
   });
   const currentUserId = currentUserQuery.data?.id ?? null;
-  const {
-    orgId,
-    error: orgError,
-    refetchOrganizations,
-  } = useActiveOrganization(currentUserId);
+  const { orgId, error: orgError, refetchOrganizations } = useActiveOrganization(currentUserId);
+
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
+  });
+  const capabilities = capabilitiesFor(normalizeSubscription(subscriptionQuery.data));
 
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
@@ -386,7 +395,24 @@ function RateioRoute() {
     },
   });
 
-  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
+  if (!orgId || subscriptionQuery.isLoading) {
+    return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
+  }
+
+  if (!capabilities.canUseExpenseSplit) {
+    return (
+      <AppShell
+        activeSection="analytics"
+        title="Rateio de despesas"
+        subtitle="Quem deve pagar quem"
+      >
+        <PremiumFeatureCard
+          title="Rateio de despesas fica no plano Família"
+          description="Dividir gastos entre membros e acompanhar quem deve a quem é um recurso do plano Família."
+        />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell activeSection="analytics" title="Rateio de despesas" subtitle="Quem deve pagar quem">

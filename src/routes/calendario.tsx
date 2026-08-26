@@ -4,6 +4,7 @@ import { CalendarClock, ChevronLeft, ChevronRight, Plus, Users } from "lucide-re
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { CalendarEventDialog } from "@/components/finance/CalendarEventDialog";
+import { PremiumFeatureCard } from "@/components/finance/CommercialGate";
 import { FamilyMembersDialog } from "@/components/finance/FamilyMembersDialog";
 import { MonthCalendar, monthCalendarDayKey } from "@/components/finance/MonthCalendar";
 import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
@@ -35,6 +36,11 @@ import {
 } from "@/lib/finance/data";
 import { eventIconFor } from "@/lib/finance/event-icons";
 import type { CalendarEventOccurrence, CalendarEventRow } from "@/lib/finance/types";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -86,11 +92,14 @@ function CalendarioRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const {
-    orgId,
-    error: orgError,
-    refetchOrganizations,
-  } = useActiveOrganization(currentUserId);
+  const { orgId, error: orgError, refetchOrganizations } = useActiveOrganization(currentUserId);
+
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
+  });
+  const capabilities = capabilitiesFor(normalizeSubscription(subscriptionQuery.data));
 
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [viewDate, setViewDate] = useState(() => startOfCurrentLocalMonth());
@@ -207,7 +216,24 @@ function CalendarioRoute() {
     setDialogOpen(true);
   }
 
-  if (!orgId) return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
+  if (!orgId || subscriptionQuery.isLoading) {
+    return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} />;
+  }
+
+  if (!capabilities.canUseCalendar) {
+    return (
+      <AppShell
+        activeSection="calendario"
+        title="Calendário"
+        subtitle="Contas a pagar e compromissos do grupo, no mesmo lugar"
+      >
+        <PremiumFeatureCard
+          title="Calendário fica disponível após o trial"
+          description="O calendário de contas e compromissos é liberado assim que você contrata o plano Individual ou Família. No trial, acompanhe suas metas em Planejamento."
+        />
+      </AppShell>
+    );
+  }
 
   const familyMembers = familyMembersQuery.data ?? [];
   const familyMemberById = new Map(familyMembers.map((m) => [m.id, m]));

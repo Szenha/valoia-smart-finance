@@ -70,11 +70,10 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
     (billingCycle === "monthly" ? monthlyPricing : annualPricing)?.price_cents ?? 0;
   const discountPercent = subscription.discount_percent ?? 0;
   const checkoutAmountCents = Math.round(basePriceCents * (1 - discountPercent / 100));
-  const canUpgrade =
-    subscription.plan_name === "trial" ||
-    subscription.status === "trial_expired" ||
-    subscription.status === "payment_overdue" ||
-    subscription.status === "cancelled";
+  // Mostra a seção de contratação sempre que ainda não há assinatura paga
+  // ativa — não trava numa lista fixa de status, porque aplicar um cupom já
+  // muda plan_name/status sem que nenhum pagamento tenha sido feito ainda.
+  const canUpgrade = subscription.status !== "active_paid";
 
   const promoMutation = useMutation({
     mutationFn: async () => {
@@ -144,7 +143,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
               >
                 <ToggleGroupItem
                   value="monthly"
-                  className="flex-col gap-0.5 rounded-xl border border-slate-200 py-3 data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                  className="h-auto flex-col gap-0.5 whitespace-normal rounded-xl border border-slate-200 py-3 data-[state=on]:border-primary data-[state=on]:bg-primary/5"
                 >
                   <span className="text-xs font-medium text-muted-foreground">Mensal</span>
                   <span className="font-semibold text-slate-950">
@@ -153,7 +152,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="annual"
-                  className="flex-col gap-0.5 rounded-xl border border-slate-200 py-3 data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                  className="h-auto flex-col gap-0.5 whitespace-normal rounded-xl border border-slate-200 py-3 data-[state=on]:border-primary data-[state=on]:bg-primary/5"
                 >
                   <span className="text-xs font-medium text-muted-foreground">Anual</span>
                   <span className="font-semibold text-slate-950">
@@ -212,7 +211,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                 >
                   <ToggleGroupItem
                     value="one_time"
-                    className="flex-col items-start gap-0.5 whitespace-normal rounded-xl border border-slate-200 p-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                    className="h-auto flex-col items-start gap-0.5 whitespace-normal rounded-xl border border-slate-200 p-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
                   >
                     <span className="font-medium text-slate-950">Pagamento avulso</span>
                     <span className="text-xs text-muted-foreground">
@@ -221,7 +220,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                   </ToggleGroupItem>
                   <ToggleGroupItem
                     value="recurring"
-                    className="flex-col items-start gap-0.5 whitespace-normal rounded-xl border border-slate-200 p-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                    className="h-auto flex-col items-start gap-0.5 whitespace-normal rounded-xl border border-slate-200 p-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
                   >
                     <span className="font-medium text-slate-950">Cobrança automática</span>
                     <span className="text-xs text-muted-foreground">

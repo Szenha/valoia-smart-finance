@@ -58,6 +58,11 @@ export type PlanCapabilities = {
   canUseImport: boolean;
   canUseExpenseSplit: boolean;
   canWriteFinancialData: boolean;
+  // Disponíveis em qualquer plano pago (individual ou família) — só ficam
+  // de fora durante o trial, que mostra uma prévia reduzida do produto.
+  canUseCalendar: boolean;
+  canUseBudgetPlanning: boolean;
+  canUseFixedBills: boolean;
 };
 
 export type PromoCode = {
@@ -155,6 +160,9 @@ export const PLAN_CAPABILITIES: Record<PlanName, PlanCapabilities> = {
     canUseImport: false,
     canUseExpenseSplit: false,
     canWriteFinancialData: true,
+    canUseCalendar: false,
+    canUseBudgetPlanning: false,
+    canUseFixedBills: false,
   },
   individual: {
     maxWorkspaces: 1,
@@ -166,6 +174,9 @@ export const PLAN_CAPABILITIES: Record<PlanName, PlanCapabilities> = {
     canUseImport: false,
     canUseExpenseSplit: false,
     canWriteFinancialData: true,
+    canUseCalendar: true,
+    canUseBudgetPlanning: true,
+    canUseFixedBills: true,
   },
   family: {
     maxWorkspaces: 3,
@@ -177,6 +188,9 @@ export const PLAN_CAPABILITIES: Record<PlanName, PlanCapabilities> = {
     canUseImport: true,
     canUseExpenseSplit: true,
     canWriteFinancialData: true,
+    canUseCalendar: true,
+    canUseBudgetPlanning: true,
+    canUseFixedBills: true,
   },
   internal: {
     maxWorkspaces: 10,
@@ -188,6 +202,9 @@ export const PLAN_CAPABILITIES: Record<PlanName, PlanCapabilities> = {
     canUseImport: true,
     canUseExpenseSplit: true,
     canWriteFinancialData: true,
+    canUseCalendar: true,
+    canUseBudgetPlanning: true,
+    canUseFixedBills: true,
   },
 };
 
@@ -262,6 +279,9 @@ export function capabilitiesFor(subscription: CommercialSubscription): PlanCapab
       canUseImport: false,
       canUseExpenseSplit: false,
       canWriteFinancialData: false,
+      canUseCalendar: false,
+      canUseBudgetPlanning: false,
+      canUseFixedBills: false,
     };
   }
   if (status === "awaiting_pix_confirmation") {

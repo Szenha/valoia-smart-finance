@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
+import { PremiumFeatureCard } from "@/components/finance/CommercialGate";
 import { PlanejamentoTabs } from "@/components/finance/PlanejamentoTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +43,11 @@ import {
   type CategoryRow,
 } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
 
@@ -150,6 +156,12 @@ function PlanningRoute() {
     },
   });
   const { orgId } = useActiveOrganization(currentUserQuery.data?.id ?? null);
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
+  });
+  const capabilities = capabilitiesFor(normalizeSubscription(subscriptionQuery.data));
   const categoriesQuery = useQuery({
     queryKey: ["categories", orgId],
     enabled: !!orgId,
@@ -409,6 +421,26 @@ function PlanningRoute() {
     const amount = parseAmount(rawValue);
     if (amount === amountFor(row, month)) return;
     saveCell.mutate({ row, month, amount });
+  }
+
+  if (orgId && subscriptionQuery.isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
+  }
+
+  if (orgId && !capabilities.canUseBudgetPlanning) {
+    return (
+      <AppShell
+        activeSection="planejamento"
+        title="Planejamento"
+        subtitle="Matriz anual construída sobre a mesma árvore de categorias de Cadastros"
+      >
+        <PlanejamentoTabs value="orcamento" />
+        <PremiumFeatureCard
+          title="Orçamento anual fica disponível após o trial"
+          description="A matriz de orçamento mês a mês é liberada assim que você contrata o plano Individual ou Família. No trial, acompanhe suas metas em Planejamento → Metas."
+        />
+      </AppShell>
+    );
   }
 
   const mobileReadOnly = isMobile && showFullMatrixOnMobile;

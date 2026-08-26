@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/finance/AppShell";
 import { ImportPanel } from "@/components/finance/ImportPanel";
+import { PremiumFeatureCard } from "@/components/finance/CommercialGate";
 import { ReconciliationBoard } from "@/components/finance/ReconciliationBoard";
 import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,11 @@ import {
   fetchStatementImports,
   fetchStatementItems,
 } from "@/lib/reconciliation/data";
+import {
+  capabilitiesFor,
+  fetchCommercialSubscription,
+  normalizeSubscription,
+} from "@/lib/commercial/access";
 import { Trash2 } from "lucide-react";
 import { suggestStatementMatches } from "@/lib/reconciliation/matching";
 import type {
@@ -99,11 +105,14 @@ function ReconciliationRoute() {
     init();
   }, [navigate]);
 
-  const {
-    orgId,
-    error: orgError,
-    refetchOrganizations,
-  } = useActiveOrganization(userId);
+  const { orgId, error: orgError, refetchOrganizations } = useActiveOrganization(userId);
+
+  const subscriptionQuery = useQuery({
+    queryKey: ["commercial-subscription", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCommercialSubscription(orgId!),
+  });
+  const capabilities = capabilitiesFor(normalizeSubscription(subscriptionQuery.data));
 
   const importsQuery = useQuery({
     queryKey: ["statement-imports", orgId],
@@ -532,9 +541,23 @@ function ReconciliationRoute() {
     },
   });
 
-  if (!orgId) {
+  if (!orgId || subscriptionQuery.isLoading) {
+    return <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} fullScreen />;
+  }
+
+  if (!capabilities.canUseImport) {
     return (
-      <WorkspaceGate error={orgError} onRetry={() => refetchOrganizations()} fullScreen />
+      <AppShell
+        activeSection="conciliacao"
+        title="Extratos e conciliação"
+        subtitle="Importe OFX/PDF e compare contra os lançamentos do dia a dia"
+        userEmail={userEmail}
+      >
+        <PremiumFeatureCard
+          title="Conciliação fica no plano Família"
+          description="Importar extratos e conciliar com os lançamentos do dia a dia é um recurso do plano Família. No trial e no plano Individual, use o lançamento manual ou por voz."
+        />
+      </AppShell>
     );
   }
 
