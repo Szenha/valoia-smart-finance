@@ -66,7 +66,7 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
 
     if (data.promoCode) {
       const { data: promoResult, error: promoError } = await admin.rpc(
-        "apply_promo_code_to_subscription",
+        "redeem_promo_code_for_checkout",
         {
           p_org_id: data.orgId,
           p_code: data.promoCode,
