@@ -11,6 +11,7 @@ type AsaasWebhookPayload = {
     id?: string;
     externalReference?: string;
     subscription?: string;
+    checkoutSession?: string;
     billingType?: string;
     value?: number;
     customer?: string;
@@ -21,15 +22,67 @@ type AsaasWebhookPayload = {
   };
 };
 
+type Reference = { orgId: string; billingCycle: string | null };
+
+// A Asaas não devolve o externalReference no payment gerado por um
+// checkout DETACHED (Pix/cartão avulso) — confirmado testando direto na
+// API deles. checkoutSession aponta pro checkout que criamos, então
+// buscamos ali o org/ciclo que a gente mesmo registrou ao criar o link.
+async function resolveByCheckoutSession(
+  admin: ReturnType<typeof supabaseAdmin>,
+  checkoutId: string,
+): Promise<Reference | null> {
+  const { data } = await admin
+    .from("asaas_checkout_sessions")
+    .select("organization_id, billing_cycle")
+    .eq("checkout_id", checkoutId)
+    .maybeSingle();
+  if (!data) return null;
+  return { orgId: data.organization_id, billingCycle: data.billing_cycle };
+}
+
+// Cobranças recorrentes geradas automaticamente a partir do 2º ciclo em
+// diante não têm mais checkoutSession (não vieram de um checkout novo) —
+// nessas, a assinatura recorrente (payment.subscription) já foi associada
+// ao workspace da primeira vez que essa mesma assinatura foi confirmada.
+async function resolveBySubscriptionId(
+  admin: ReturnType<typeof supabaseAdmin>,
+  subscriptionId: string,
+): Promise<Reference | null> {
+  const { data } = await admin
+    .from("commercial_subscriptions")
+    .select("organization_id, billing_cycle")
+    .eq("asaas_subscription_id", subscriptionId)
+    .maybeSingle();
+  if (!data) return null;
+  return { orgId: data.organization_id, billingCycle: data.billing_cycle };
+}
+
+async function resolveReference(
+  admin: ReturnType<typeof supabaseAdmin>,
+  payment: NonNullable<AsaasWebhookPayload["payment"]>,
+): Promise<Reference | null> {
+  if (payment.externalReference) {
+    const [orgId, billingCycle] = payment.externalReference.split(":");
+    if (orgId) return { orgId, billingCycle: billingCycle ?? null };
+  }
+  if (payment.checkoutSession) {
+    const byCheckout = await resolveByCheckoutSession(admin, payment.checkoutSession);
+    if (byCheckout) return byCheckout;
+  }
+  if (payment.subscription) {
+    const bySubscription = await resolveBySubscriptionId(admin, payment.subscription);
+    if (bySubscription) return bySubscription;
+  }
+  return null;
+}
+
 type AsaasSubscriptionInfo = {
-  externalReference?: string;
   nextDueDate?: string;
 };
 
-// Cobranças geradas automaticamente por uma assinatura recorrente (cartão)
-// nem sempre repetem o externalReference do checkout original no próprio
-// payment — buscamos na assinatura como rede de segurança. Também é daqui
-// que vem a próxima data de cobrança, pro painel Comercial.
+// Só pra saber a próxima data de cobrança, pro painel Comercial — a
+// resolução do workspace não depende mais desta chamada.
 async function fetchAsaasSubscription(
   subscriptionId: string,
 ): Promise<AsaasSubscriptionInfo | null> {
@@ -98,17 +151,16 @@ async function handlePaymentConfirmed(
   admin: ReturnType<typeof supabaseAdmin>,
   payment: NonNullable<AsaasWebhookPayload["payment"]>,
 ) {
-  let reference = payment.externalReference ?? null;
-  let subscriptionInfo: AsaasSubscriptionInfo | null = null;
-
-  if (!reference && payment.subscription) {
-    subscriptionInfo = await fetchAsaasSubscription(payment.subscription);
-    reference = subscriptionInfo?.externalReference ?? null;
+  const reference = await resolveReference(admin, payment);
+  if (!reference) {
+    console.error(
+      "Webhook Asaas: não foi possível identificar o workspace do pagamento",
+      payment.id,
+    );
+    return new Response(null, { status: 200 });
   }
-  if (!reference) return new Response(null, { status: 200 });
 
-  const [orgId, billingCycle] = reference.split(":");
-  if (!orgId) return new Response(null, { status: 200 });
+  const { orgId, billingCycle } = reference;
 
   const { data: existing, error: fetchError } = await admin
     .from("commercial_subscriptions")
@@ -131,11 +183,11 @@ async function handlePaymentConfirmed(
   const paidUntil = new Date();
   paidUntil.setMonth(paidUntil.getMonth() + paidMonths);
 
-  // Pra cobranças recorrentes buscamos a assinatura de novo (se ainda não
-  // buscamos acima) só pra saber a próxima data de vencimento.
-  if (payment.subscription && !subscriptionInfo) {
-    subscriptionInfo = await fetchAsaasSubscription(payment.subscription);
-  }
+  // Pra cobranças recorrentes buscamos a assinatura só pra saber a
+  // próxima data de vencimento.
+  const subscriptionInfo = payment.subscription
+    ? await fetchAsaasSubscription(payment.subscription)
+    : null;
 
   // Valor efetivamente contratado = o que a Asaas realmente cobrou, nunca
   // um número vindo do checkout ou do preço de tabela atual.

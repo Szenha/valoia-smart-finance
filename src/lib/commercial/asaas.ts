@@ -147,5 +147,18 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
 
     const parsed = (await response.json()) as AsaasCheckoutResponse;
     if (!parsed.link) throw new Error("A Asaas não retornou o link de checkout.");
+
+    // A Asaas não devolve o externalReference no pagamento gerado por um
+    // checkout DETACHED — guardamos essa relação aqui pra o webhook
+    // conseguir reconciliar o pagamento com o workspace certo depois.
+    const { error: mappingError } = await admin.from("asaas_checkout_sessions").insert({
+      checkout_id: parsed.id,
+      organization_id: data.orgId,
+      billing_cycle: data.billingCycle,
+    });
+    if (mappingError) {
+      throw new Error(`Falha ao registrar checkout: ${mappingError.message}`);
+    }
+
     return { link: parsed.link };
   });
