@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { asaasBaseUrl } from "@/lib/commercial/asaas";
+import { asaasBaseUrl, ASAAS_USER_AGENT } from "@/lib/commercial/asaas";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 const PAID_EVENTS = new Set(["PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"]);
@@ -37,7 +37,7 @@ async function fetchAsaasSubscription(
   if (!apiKey) return null;
 
   const response = await fetch(`${asaasBaseUrl()}/subscriptions/${subscriptionId}`, {
-    headers: { access_token: apiKey },
+    headers: { access_token: apiKey, "User-Agent": ASAAS_USER_AGENT },
   });
   if (!response.ok) return null;
 

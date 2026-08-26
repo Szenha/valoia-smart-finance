@@ -29,6 +29,10 @@ export function asaasBaseUrl(): string {
     : "https://api.asaas.com/v3";
 }
 
+// Obrigatório pela Asaas em toda chamada — o fetch do Worker não manda um
+// default, e sem isso toda requisição volta 400 (user_agent_not_informed).
+export const ASAAS_USER_AGENT = "Ticlio/1.0 (Cloudflare Workers)";
+
 function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -84,6 +88,7 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "User-Agent": ASAAS_USER_AGENT,
         access_token: apiKey,
       },
       body: JSON.stringify({
