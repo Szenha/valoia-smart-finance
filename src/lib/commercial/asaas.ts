@@ -121,8 +121,10 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
         },
         items: [
           {
-            name: `Ticlio Família — ${cycleLabel} (${modeLabel})`,
-            description: `Assinatura ${cycleLabel} Ticlio`,
+            // A Asaas limita este campo a 30 caracteres — detalhes maiores
+            // (ciclo/forma de pagamento) vão na description, sem esse limite.
+            name: `Ticlio Família ${cycleLabel}`,
+            description: `Assinatura ${cycleLabel} Ticlio — ${modeLabel}`,
             quantity: 1,
             value: Number((amountCents / 100).toFixed(2)),
           },
