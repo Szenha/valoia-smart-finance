@@ -12,6 +12,7 @@ import {
   ChevronsRight,
   ChevronsUpDown,
   ClipboardCheck,
+  CreditCard,
   Gauge,
   LayoutDashboard,
   ListChecks,
@@ -31,6 +32,8 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
 import { CommercialGate } from "@/components/finance/CommercialGate";
+import { InstallAppBanner } from "@/components/finance/InstallAppBanner";
+import { MyPlanDialog } from "@/components/finance/MyPlanDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -235,6 +238,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
     .filter((item) => !mobilePrimarySections.includes(item.section))
     .flatMap((item) => (item.children && item.children.length > 0 ? item.children : [item]));
 
+  const [myPlanOpen, setMyPlanOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [blockedFeature, setBlockedFeature] = useState<string | null>(null);
   const [createName, setCreateName] = useState("");
@@ -518,17 +522,23 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {isTrialPlan && shellStatus === "trial_active" ? (
-                <span className="hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 sm:inline-flex">
+                <button
+                  type="button"
+                  onClick={() => setMyPlanOpen(true)}
+                  className="hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 sm:inline-flex"
+                >
                   Teste grátis · {trialDaysLeft}d
-                </span>
+                </button>
               ) : null}
               {loggedInEmail ? (
-                <span
-                  className="hidden max-w-[220px] truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline-block"
-                  title={loggedInEmail}
+                <button
+                  type="button"
+                  onClick={() => setMyPlanOpen(true)}
+                  title={`${loggedInEmail} · Meu plano`}
+                  className="hidden max-w-[220px] truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 sm:inline-block"
                 >
                   {loggedInEmail}
-                </span>
+                </button>
               ) : null}
               {/* Desktop already has Sair pinned at the bottom of the sidebar
                   (always visible now, regardless of route) — showing it here
@@ -548,6 +558,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
           </div>
         </header>
         <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:px-8 lg:pb-6">
+          <InstallAppBanner />
           <CommercialGate userId={currentUserId} orgId={orgId}>
             {({ subscription }) => (
               <>
@@ -627,9 +638,29 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
                 </Link>
               );
             })}
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false);
+                setMyPlanOpen(true);
+              }}
+              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <CreditCard className="h-4 w-4" />
+              Meu plano
+            </button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {orgId ? (
+        <MyPlanDialog
+          open={myPlanOpen}
+          onOpenChange={setMyPlanOpen}
+          orgId={orgId}
+          subscription={shellSubscription}
+        />
+      ) : null}
 
       {/* FAB de registrar por voz — mobile only. Vai direto pro microfone
           (ação de maior impulso/velocidade); a escolha entre voz e manual

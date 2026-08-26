@@ -1,11 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Clock, LockKeyhole } from "lucide-react";
-import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   acceptRequiredLegalDocuments,
-  applyPromoCode,
   capabilitiesFor,
   effectiveStatus,
   fetchCommercialSubscription,
@@ -18,7 +16,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 
 type CommercialGateProps = {
   userId: string | null;
@@ -77,8 +74,6 @@ export function CommercialGate({ userId, orgId, children }: CommercialGateProps)
         <ReadonlyBanner subscription={subscription} />
       ) : status === "awaiting_pix_confirmation" ? (
         <AwaitingPaymentBanner subscription={subscription} />
-      ) : status === "trial_active" && subscription.plan_name === "trial" ? (
-        <TrialBanner orgId={orgId} subscription={subscription} />
       ) : null}
       {children({ subscription, capabilities })}
     </>
@@ -143,82 +138,6 @@ function AcceptanceRow({ href, label }: { href: string; label: string }) {
         </Link>
       </span>
     </label>
-  );
-}
-
-function TrialBanner({
-  orgId,
-  subscription,
-}: {
-  orgId: string;
-  subscription: CommercialSubscription;
-}) {
-  const queryClient = useQueryClient();
-  const [code, setCode] = useState("");
-  const [appliedMessage, setAppliedMessage] = useState("");
-  const daysLeft = Math.max(
-    0,
-    Math.ceil((new Date(subscription.trial_ends_at).getTime() - Date.now()) / 86_400_000),
-  );
-  const promoMutation = useMutation({
-    mutationFn: async () => {
-      if (!code.trim()) throw new Error("Informe o código promocional.");
-      return applyPromoCode(orgId, code);
-    },
-    onSuccess: async (result) => {
-      setAppliedMessage(
-        `${result.code} aplicado: ${formatCents(result.discount_amount_cents)} de desconto. Valor anual com desconto: ${formatCents(result.final_amount_cents)}.`,
-      );
-      await queryClient.invalidateQueries({ queryKey: ["commercial-subscription", orgId] });
-    },
-  });
-
-  return (
-    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-      <div className="flex items-start gap-2">
-        <Clock className="mt-0.5 h-4 w-4 shrink-0" />
-        <div className="space-y-3">
-          <p>
-            Trial individual ativo. Você ainda tem <strong>{daysLeft} dia(s)</strong>. Recursos
-            familiares e workspaces extras ficam disponíveis no plano Família.
-          </p>
-          {subscription.status === "awaiting_pix_confirmation" && subscription.promo_code ? (
-            <p className="rounded-lg bg-white/70 px-3 py-2 text-xs">
-              Código {subscription.promo_code} registrado. Aguarde a confirmação do Pix para liberar
-              o plano pago.
-            </p>
-          ) : (
-            <div className="grid gap-2 rounded-lg bg-white/70 p-3 sm:grid-cols-[1fr_auto] sm:items-end">
-              <div>
-                <label className="text-xs font-medium">Código promocional</label>
-                <Input
-                  value={code}
-                  onChange={(event) => setCode(event.target.value.toUpperCase())}
-                  placeholder="MARINA_VASCULAR"
-                  className="mt-1 bg-white"
-                />
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={promoMutation.isPending}
-                onClick={() => promoMutation.mutate()}
-              >
-                Aplicar
-              </Button>
-            </div>
-          )}
-          {appliedMessage ? <p className="text-xs font-medium">{appliedMessage}</p> : null}
-          {promoMutation.error ? (
-            <p className="text-xs text-red-700">
-              {promoMutation.error instanceof Error
-                ? promoMutation.error.message
-                : String(promoMutation.error)}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    </div>
   );
 }
 
