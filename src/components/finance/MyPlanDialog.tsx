@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, CreditCard, Gift, QrCode } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,6 +58,17 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
     setAppliedDiscountPercent(0);
     setAppliedMessage("");
   }
+
+  // O diálogo nunca desmonta (o AppShell só alterna a prop `open`), então
+  // sem isso um cupom aplicado numa visita ficaria na memória do
+  // componente até a página ser recarregada. Reabrir sempre começa do zero.
+  useEffect(() => {
+    if (!open) return;
+    setCode("");
+    setAppliedDiscountPercent(0);
+    setAppliedMessage("");
+    setCheckoutError("");
+  }, [open]);
 
   const pricingQuery = useQuery({
     queryKey: ["commercial-pricing"],
