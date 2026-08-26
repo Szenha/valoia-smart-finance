@@ -23,7 +23,10 @@ import { Route as ReportsRateioRouteImport } from './routes/reports/rateio'
 import { Route as PlanejamentoOrcamentoRouteImport } from './routes/planejamento/orcamento'
 import { Route as PlanejamentoMetasRouteImport } from './routes/planejamento/metas'
 import { Route as PlanejamentoContasFixasRouteImport } from './routes/planejamento/contas-fixas'
+import { Route as ComercialPrecosRouteImport } from './routes/comercial/precos'
+import { Route as ComercialDashboardRouteImport } from './routes/comercial/dashboard'
 import { Route as ComercialCodigosRouteImport } from './routes/comercial/codigos'
+import { Route as ComercialClientesRouteImport } from './routes/comercial/clientes'
 import { Route as CadastrosMembrosRouteImport } from './routes/cadastros/membros'
 import { Route as CadastrosContasECartoesRouteImport } from './routes/cadastros/contas-e-cartoes'
 import { Route as CadastrosCategoriasRouteImport } from './routes/cadastros/categorias'
@@ -99,9 +102,24 @@ const PlanejamentoContasFixasRoute = PlanejamentoContasFixasRouteImport.update({
   path: '/planejamento/contas-fixas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ComercialPrecosRoute = ComercialPrecosRouteImport.update({
+  id: '/comercial/precos',
+  path: '/comercial/precos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComercialDashboardRoute = ComercialDashboardRouteImport.update({
+  id: '/comercial/dashboard',
+  path: '/comercial/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ComercialCodigosRoute = ComercialCodigosRouteImport.update({
   id: '/comercial/codigos',
   path: '/comercial/codigos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComercialClientesRoute = ComercialClientesRouteImport.update({
+  id: '/comercial/clientes',
+  path: '/comercial/clientes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CadastrosMembrosRoute = CadastrosMembrosRouteImport.update({
@@ -138,7 +156,10 @@ export interface FileRoutesByFullPath {
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/comercial/clientes': typeof ComercialClientesRoute
   '/comercial/codigos': typeof ComercialCodigosRoute
+  '/comercial/dashboard': typeof ComercialDashboardRoute
+  '/comercial/precos': typeof ComercialPrecosRoute
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
@@ -159,7 +180,10 @@ export interface FileRoutesByTo {
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/comercial/clientes': typeof ComercialClientesRoute
   '/comercial/codigos': typeof ComercialCodigosRoute
+  '/comercial/dashboard': typeof ComercialDashboardRoute
+  '/comercial/precos': typeof ComercialPrecosRoute
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
@@ -181,7 +205,10 @@ export interface FileRoutesById {
   '/cadastros/categorias': typeof CadastrosCategoriasRoute
   '/cadastros/contas-e-cartoes': typeof CadastrosContasECartoesRoute
   '/cadastros/membros': typeof CadastrosMembrosRoute
+  '/comercial/clientes': typeof ComercialClientesRoute
   '/comercial/codigos': typeof ComercialCodigosRoute
+  '/comercial/dashboard': typeof ComercialDashboardRoute
+  '/comercial/precos': typeof ComercialPrecosRoute
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
@@ -204,7 +231,10 @@ export interface FileRouteTypes {
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/comercial/clientes'
     | '/comercial/codigos'
+    | '/comercial/dashboard'
+    | '/comercial/precos'
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
@@ -225,7 +255,10 @@ export interface FileRouteTypes {
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/comercial/clientes'
     | '/comercial/codigos'
+    | '/comercial/dashboard'
+    | '/comercial/precos'
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
@@ -246,7 +279,10 @@ export interface FileRouteTypes {
     | '/cadastros/categorias'
     | '/cadastros/contas-e-cartoes'
     | '/cadastros/membros'
+    | '/comercial/clientes'
     | '/comercial/codigos'
+    | '/comercial/dashboard'
+    | '/comercial/precos'
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
@@ -268,7 +304,10 @@ export interface RootRouteChildren {
   CadastrosCategoriasRoute: typeof CadastrosCategoriasRoute
   CadastrosContasECartoesRoute: typeof CadastrosContasECartoesRoute
   CadastrosMembrosRoute: typeof CadastrosMembrosRoute
+  ComercialClientesRoute: typeof ComercialClientesRoute
   ComercialCodigosRoute: typeof ComercialCodigosRoute
+  ComercialDashboardRoute: typeof ComercialDashboardRoute
+  ComercialPrecosRoute: typeof ComercialPrecosRoute
   PlanejamentoContasFixasRoute: typeof PlanejamentoContasFixasRoute
   PlanejamentoMetasRoute: typeof PlanejamentoMetasRoute
   PlanejamentoOrcamentoRoute: typeof PlanejamentoOrcamentoRoute
@@ -377,11 +416,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlanejamentoContasFixasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/comercial/precos': {
+      id: '/comercial/precos'
+      path: '/comercial/precos'
+      fullPath: '/comercial/precos'
+      preLoaderRoute: typeof ComercialPrecosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/comercial/dashboard': {
+      id: '/comercial/dashboard'
+      path: '/comercial/dashboard'
+      fullPath: '/comercial/dashboard'
+      preLoaderRoute: typeof ComercialDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/comercial/codigos': {
       id: '/comercial/codigos'
       path: '/comercial/codigos'
       fullPath: '/comercial/codigos'
       preLoaderRoute: typeof ComercialCodigosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/comercial/clientes': {
+      id: '/comercial/clientes'
+      path: '/comercial/clientes'
+      fullPath: '/comercial/clientes'
+      preLoaderRoute: typeof ComercialClientesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cadastros/membros': {
@@ -428,7 +488,10 @@ const rootRouteChildren: RootRouteChildren = {
   CadastrosCategoriasRoute: CadastrosCategoriasRoute,
   CadastrosContasECartoesRoute: CadastrosContasECartoesRoute,
   CadastrosMembrosRoute: CadastrosMembrosRoute,
+  ComercialClientesRoute: ComercialClientesRoute,
   ComercialCodigosRoute: ComercialCodigosRoute,
+  ComercialDashboardRoute: ComercialDashboardRoute,
+  ComercialPrecosRoute: ComercialPrecosRoute,
   PlanejamentoContasFixasRoute: PlanejamentoContasFixasRoute,
   PlanejamentoMetasRoute: PlanejamentoMetasRoute,
   PlanejamentoOrcamentoRoute: PlanejamentoOrcamentoRoute,

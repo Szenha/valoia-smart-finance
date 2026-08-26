@@ -32,6 +32,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { TiclioLogo } from "@/components/brand/ticlio-logo";
 import { CommercialGate } from "@/components/finance/CommercialGate";
+import { CheckoutReturnBanner } from "@/components/finance/CheckoutReturnBanner";
 import { InstallAppBanner } from "@/components/finance/InstallAppBanner";
 import { MyPlanDialog } from "@/components/finance/MyPlanDialog";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,7 @@ import {
   effectiveStatus,
   fetchCommercialSubscription,
   normalizeSubscription,
+  TICLIO_STAFF_EMAIL,
 } from "@/lib/commercial/access";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
@@ -143,7 +145,18 @@ const navItems: NavItem[] = [
       { label: "Relatórios", to: "/reports", icon: LayoutDashboard },
     ],
   },
-  { label: "Comercial", to: "/comercial/codigos", icon: BadgePercent, section: "comercial" },
+  {
+    label: "Comercial",
+    to: "/comercial/dashboard",
+    icon: BadgePercent,
+    section: "comercial",
+    children: [
+      { label: "Dashboard", to: "/comercial/dashboard", icon: BadgePercent },
+      { label: "Clientes", to: "/comercial/clientes", icon: Users },
+      { label: "Planos e preços", to: "/comercial/precos", icon: PiggyBank },
+      { label: "Códigos promocionais", to: "/comercial/codigos", icon: BadgePercent },
+    ],
+  },
 ];
 
 // Mobile é intencionalmente reduzido, não o desktop espremido: só as duas
@@ -229,7 +242,11 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
     0,
     Math.ceil((new Date(shellSubscription.trial_ends_at).getTime() - Date.now()) / 86_400_000),
   );
-  const visibleNavItems = isTrialPlan ? visibleNavItemsForTrial(navItems) : navItems;
+  const isTiclioStaff = loggedInEmail === TICLIO_STAFF_EMAIL;
+  const baseNavItems = isTiclioStaff
+    ? navItems
+    : navItems.filter((item) => item.section !== "comercial");
+  const visibleNavItems = isTrialPlan ? visibleNavItemsForTrial(baseNavItems) : baseNavItems;
   const mobilePrimarySections = MOBILE_PRIMARY_SECTIONS;
   const mobileNavItems = visibleNavItems.filter((item) =>
     mobilePrimarySections.includes(item.section),
@@ -559,6 +576,7 @@ export function AppShell({ activeSection, title, subtitle, userEmail, children }
         </header>
         <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:px-8 lg:pb-6">
           <InstallAppBanner />
+          <CheckoutReturnBanner />
           <CommercialGate userId={currentUserId} orgId={orgId}>
             {({ subscription }) => (
               <>

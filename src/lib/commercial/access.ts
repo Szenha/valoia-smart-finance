@@ -4,14 +4,22 @@ export const TERMS_VERSION = "2026-08-25";
 export const PRIVACY_VERSION = "2026-08-25";
 export const AI_NOTICE_VERSION = "2026-08-25";
 
+// Único e-mail com acesso ao backoffice Comercial. A proteção de verdade é
+// a RLS/RPC (is_ticlio_staff() no banco) — isto aqui só evita renderizar o
+// menu/telas pra quem nunca vai conseguir usá-las.
+export const TICLIO_STAFF_EMAIL = "szenha30@gmail.com";
+
 export type PlanName = "trial" | "individual" | "family" | "internal";
+export type BillingCycle = "monthly" | "annual";
+export type PaymentMethod = "pix" | "credit_card";
 export type SubscriptionStatus =
   | "trial_active"
   | "trial_expired"
   | "awaiting_pix_confirmation"
   | "active_paid"
   | "payment_overdue"
-  | "blocked_readonly";
+  | "blocked_readonly"
+  | "cancelled";
 
 export type CommercialSubscription = {
   organization_id: string;
@@ -26,6 +34,10 @@ export type CommercialSubscription = {
   discount_amount_cents?: number | null;
   promo_code?: string | null;
   discount_percent?: number | null;
+  billing_cycle?: BillingCycle | null;
+  payment_method?: PaymentMethod | null;
+  cancelled_at?: string | null;
+  next_due_date?: string | null;
 };
 
 export type LegalAcceptance = {
@@ -70,11 +82,38 @@ export type PromoCodeInput = {
   description: string | null;
   discountPercent: number;
   appliesToPlan: "individual" | "family";
-  annualPriceCents: number | null;
   active: boolean;
   validUntil: string | null;
   maxRedemptions: number | null;
   createdBy: string;
+};
+
+export type CommercialPricing = {
+  billing_cycle: BillingCycle;
+  price_cents: number;
+  active: boolean;
+  updated_at: string;
+};
+
+export type AdminCustomerRow = {
+  organization_id: string;
+  organization_name: string;
+  owner_email: string;
+  plan_name: PlanName;
+  status: SubscriptionStatus;
+  billing_cycle: BillingCycle | null;
+  payment_method: PaymentMethod | null;
+  trial_started_at: string;
+  trial_ends_at: string;
+  paid_until: string | null;
+  next_due_date: string | null;
+  amount_cents: number | null;
+  base_amount_cents: number | null;
+  discount_amount_cents: number | null;
+  promo_code: string | null;
+  discount_percent: number | null;
+  cancelled_at: string | null;
+  created_at: string;
 };
 
 export type AppliedPromoCode = {
@@ -83,6 +122,26 @@ export type AppliedPromoCode = {
   base_amount_cents: number;
   discount_amount_cents: number;
   final_amount_cents: number;
+};
+
+export const SUBSCRIPTION_STATUS_LABEL: Record<SubscriptionStatus, string> = {
+  trial_active: "Teste grátis",
+  trial_expired: "Teste expirado",
+  awaiting_pix_confirmation: "Aguardando confirmação de pagamento",
+  active_paid: "Assinatura ativa",
+  payment_overdue: "Pagamento atrasado",
+  blocked_readonly: "Acesso bloqueado (somente leitura)",
+  cancelled: "Cancelada",
+};
+
+export const BILLING_CYCLE_LABEL: Record<BillingCycle, string> = {
+  monthly: "Mensal",
+  annual: "Anual",
+};
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  pix: "Pix",
+  credit_card: "Cartão",
 };
 
 export const PLAN_CAPABILITIES: Record<PlanName, PlanCapabilities> = {
@@ -168,10 +227,32 @@ export function effectiveStatus(subscription: CommercialSubscription): Subscript
   return subscription.status;
 }
 
+// Mesma lógica de effectiveStatus(), mas pro formato de linha que vem de
+// admin_list_customers() — usada pelo painel Comercial pra não depender de
+// um "status" gravado que pode estar desatualizado (vencimento é por tempo).
+export function effectiveAdminStatus(row: {
+  status: SubscriptionStatus;
+  trial_ends_at: string;
+  paid_until: string | null;
+}): SubscriptionStatus {
+  if (row.status === "trial_active" && new Date(row.trial_ends_at) < new Date()) {
+    return "trial_expired";
+  }
+  if (row.status === "active_paid" && row.paid_until && new Date(row.paid_until) < new Date()) {
+    return "payment_overdue";
+  }
+  return row.status;
+}
+
 export function capabilitiesFor(subscription: CommercialSubscription): PlanCapabilities {
   const status = effectiveStatus(subscription);
   const base = PLAN_CAPABILITIES[subscription.plan_name] ?? PLAN_CAPABILITIES.trial;
-  if (status === "trial_expired" || status === "payment_overdue" || status === "blocked_readonly") {
+  if (
+    status === "trial_expired" ||
+    status === "payment_overdue" ||
+    status === "blocked_readonly" ||
+    status === "cancelled"
+  ) {
     return {
       ...base,
       canInviteMembers: false,
@@ -204,12 +285,95 @@ export async function fetchCommercialSubscription(
   const { data, error } = await supabase
     .from("commercial_subscriptions")
     .select(
-      "organization_id, owner_user_id, plan_name, status, trial_started_at, trial_ends_at, paid_until, amount_cents, base_amount_cents, discount_amount_cents, promo_code, discount_percent",
+      "organization_id, owner_user_id, plan_name, status, trial_started_at, trial_ends_at, paid_until, amount_cents, base_amount_cents, discount_amount_cents, promo_code, discount_percent, billing_cycle, payment_method, cancelled_at, next_due_date",
     )
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data as CommercialSubscription | null;
+}
+
+export async function fetchCommercialPricing(): Promise<CommercialPricing[]> {
+  const { data, error } = await supabase
+    .from("commercial_pricing")
+    .select("billing_cycle, price_cents, active, updated_at")
+    .order("billing_cycle", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CommercialPricing[];
+}
+
+export async function updateCommercialPricing(
+  billingCycle: BillingCycle,
+  priceCents: number,
+  active: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from("commercial_pricing")
+    .update({ price_cents: priceCents, active, updated_at: new Date().toISOString() })
+    .eq("billing_cycle", billingCycle);
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchAdminCustomers(): Promise<AdminCustomerRow[]> {
+  const { data, error } = await supabase.rpc("admin_list_customers");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AdminCustomerRow[];
+}
+
+export type AdminMetrics = {
+  trialsActive: number;
+  trialsEndingSoon: number;
+  trialsExpired: number;
+  customersActive: number;
+  conversionPercent: number;
+  mrrCents: number;
+  overdue: number;
+  cancelled: number;
+};
+
+export function computeAdminMetrics(rows: AdminCustomerRow[]): AdminMetrics {
+  const now = Date.now();
+  let trialsActive = 0;
+  let trialsEndingSoon = 0;
+  let trialsExpired = 0;
+  let customersActive = 0;
+  let overdue = 0;
+  let cancelled = 0;
+  let everConverted = 0;
+  let mrrCents = 0;
+
+  for (const row of rows) {
+    const status = effectiveAdminStatus(row);
+    if (row.billing_cycle) everConverted += 1;
+
+    if (status === "trial_active") {
+      trialsActive += 1;
+      const daysLeft = Math.ceil((new Date(row.trial_ends_at).getTime() - now) / 86_400_000);
+      if (daysLeft <= 7) trialsEndingSoon += 1;
+    } else if (status === "trial_expired") {
+      trialsExpired += 1;
+    } else if (status === "active_paid") {
+      customersActive += 1;
+      if (row.billing_cycle && row.amount_cents) {
+        mrrCents += row.billing_cycle === "monthly" ? row.amount_cents : row.amount_cents / 12;
+      }
+    } else if (status === "payment_overdue") {
+      overdue += 1;
+    } else if (status === "cancelled") {
+      cancelled += 1;
+    }
+  }
+
+  return {
+    trialsActive,
+    trialsEndingSoon,
+    trialsExpired,
+    customersActive,
+    conversionPercent: rows.length > 0 ? (everConverted / rows.length) * 100 : 0,
+    mrrCents: Math.round(mrrCents),
+    overdue,
+    cancelled,
+  };
 }
 
 export async function fetchLegalAcceptance(userId: string): Promise<LegalAcceptance | null> {
@@ -231,13 +395,12 @@ export async function acceptRequiredLegalDocuments(): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function fetchPromoCodes(orgId: string): Promise<PromoCode[]> {
+export async function fetchPromoCodes(): Promise<PromoCode[]> {
   const { data, error } = await supabase
     .from("promo_codes")
     .select(
       "id, organization_id, code, description, discount_percent, applies_to_plan, annual_price_cents, active, valid_until, max_redemptions, redemption_count, created_by",
     )
-    .eq("organization_id", orgId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as PromoCode[];
@@ -251,7 +414,6 @@ export async function savePromoCode(input: PromoCodeInput): Promise<void> {
     description: input.description,
     discount_percent: input.discountPercent,
     applies_to_plan: input.appliesToPlan,
-    annual_price_cents: input.annualPriceCents,
     active: input.active,
     valid_until: input.validUntil,
     max_redemptions: input.maxRedemptions,
@@ -276,12 +438,12 @@ export async function setPromoCodeActive(id: string, active: boolean): Promise<v
 export async function applyPromoCode(
   orgId: string,
   code: string,
-  baseAmountCents?: number | null,
+  billingCycle: BillingCycle,
 ): Promise<AppliedPromoCode> {
   const { data, error } = await supabase.rpc("apply_promo_code_to_subscription", {
     p_org_id: orgId,
     p_code: code.trim().toUpperCase(),
-    p_base_amount_cents: baseAmountCents ?? null,
+    p_billing_cycle: billingCycle,
   });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;

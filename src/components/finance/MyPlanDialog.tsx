@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, CreditCard, Gift, QrCode } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,29 +12,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { applyPromoCode, type CommercialSubscription } from "@/lib/commercial/access";
+import {
+  applyPromoCode,
+  fetchCommercialPricing,
+  BILLING_CYCLE_LABEL,
+  SUBSCRIPTION_STATUS_LABEL,
+  type BillingCycle,
+  type CommercialSubscription,
+} from "@/lib/commercial/access";
 import { createAsaasCheckoutFn } from "@/lib/commercial/asaas";
 
-type BillingCycle = "monthly" | "annual";
-
-const CYCLE_PRICE_CENTS: Record<BillingCycle, number> = {
-  monthly: 2290, // R$22,90/mês
-  annual: 23990, // R$239,90/ano
-};
-
-const CYCLE_LABEL: Record<BillingCycle, string> = {
-  monthly: "Mensal",
-  annual: "Anual",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  trial_active: "Teste grátis",
-  trial_expired: "Teste expirado",
-  awaiting_pix_confirmation: "Aguardando confirmação do Pix",
-  active_paid: "Assinatura ativa",
-  payment_overdue: "Pagamento atrasado",
-  blocked_readonly: "Acesso bloqueado (somente leitura)",
-};
+type ChargeMode = "one_time" | "recurring";
 
 const PLAN_LABEL: Record<string, string> = {
   trial: "Teste grátis",
@@ -60,23 +48,42 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
   const [appliedMessage, setAppliedMessage] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("annual");
+  const [chargeMode, setChargeMode] = useState<ChargeMode>("one_time");
+
+  const pricingQuery = useQuery({
+    queryKey: ["commercial-pricing"],
+    enabled: open,
+    queryFn: fetchCommercialPricing,
+  });
+  const monthlyPricing = pricingQuery.data?.find((row) => row.billing_cycle === "monthly");
+  const annualPricing = pricingQuery.data?.find((row) => row.billing_cycle === "annual");
+  const savingsCents =
+    monthlyPricing && annualPricing
+      ? Math.max(monthlyPricing.price_cents * 12 - annualPricing.price_cents, 0)
+      : 0;
 
   const daysLeft = Math.max(
     0,
     Math.ceil((new Date(subscription.trial_ends_at).getTime() - Date.now()) / 86_400_000),
   );
-  const basePriceCents = CYCLE_PRICE_CENTS[billingCycle];
-  const checkoutAmountCents = subscription.amount_cents ?? basePriceCents;
-  const canUpgrade = subscription.plan_name === "trial" || subscription.status === "trial_expired";
+  const basePriceCents =
+    (billingCycle === "monthly" ? monthlyPricing : annualPricing)?.price_cents ?? 0;
+  const discountPercent = subscription.discount_percent ?? 0;
+  const checkoutAmountCents = Math.round(basePriceCents * (1 - discountPercent / 100));
+  const canUpgrade =
+    subscription.plan_name === "trial" ||
+    subscription.status === "trial_expired" ||
+    subscription.status === "payment_overdue" ||
+    subscription.status === "cancelled";
 
   const promoMutation = useMutation({
     mutationFn: async () => {
       if (!code.trim()) throw new Error("Informe o código promocional.");
-      return applyPromoCode(orgId, code, basePriceCents);
+      return applyPromoCode(orgId, code, billingCycle);
     },
     onSuccess: async (result) => {
       setAppliedMessage(
-        `${result.code} aplicado: ${formatCents(result.discount_amount_cents)} de desconto. Valor anual com desconto: ${formatCents(result.final_amount_cents)}.`,
+        `${result.code} aplicado: ${formatCents(result.discount_amount_cents)} de desconto. Valor com desconto: ${formatCents(result.final_amount_cents)}.`,
       );
       await queryClient.invalidateQueries({ queryKey: ["commercial-subscription", orgId] });
     },
@@ -86,12 +93,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
     mutationFn: async () => {
       setCheckoutError("");
       return createAsaasCheckoutFn({
-        data: {
-          orgId,
-          amountCents: checkoutAmountCents,
-          planLabel: `Ticlio Família — ${CYCLE_LABEL[billingCycle].toLowerCase()}`,
-          billingCycle,
-        },
+        data: { orgId, billingCycle, chargeMode },
       });
     },
     onSuccess: (result) => {
@@ -114,7 +116,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
               {PLAN_LABEL[subscription.plan_name] ?? subscription.plan_name}
             </p>
             <p className="text-muted-foreground">
-              {STATUS_LABEL[subscription.status] ?? subscription.status}
+              {SUBSCRIPTION_STATUS_LABEL[subscription.status] ?? subscription.status}
             </p>
             {subscription.plan_name === "trial" ? (
               <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700">
@@ -146,7 +148,7 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                 >
                   <span className="text-xs font-medium text-muted-foreground">Mensal</span>
                   <span className="font-semibold text-slate-950">
-                    {formatCents(CYCLE_PRICE_CENTS.monthly)}/mês
+                    {monthlyPricing ? `${formatCents(monthlyPricing.price_cents)}/mês` : "…"}
                   </span>
                 </ToggleGroupItem>
                 <ToggleGroupItem
@@ -155,8 +157,13 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                 >
                   <span className="text-xs font-medium text-muted-foreground">Anual</span>
                   <span className="font-semibold text-slate-950">
-                    {formatCents(CYCLE_PRICE_CENTS.annual)}/ano
+                    {annualPricing ? `${formatCents(annualPricing.price_cents)}/ano` : "…"}
                   </span>
+                  {savingsCents > 0 ? (
+                    <span className="text-[11px] font-medium text-emerald-700">
+                      Economize {formatCents(savingsCents)}
+                    </span>
+                  ) : null}
                 </ToggleGroupItem>
               </ToggleGroup>
 
@@ -193,16 +200,45 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                 ) : null}
               </div>
 
+              <div>
+                <Label className="text-xs font-medium">Como prefere pagar?</Label>
+                <ToggleGroup
+                  type="single"
+                  value={chargeMode}
+                  onValueChange={(value) => {
+                    if (value) setChargeMode(value as ChargeMode);
+                  }}
+                  className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2"
+                >
+                  <ToggleGroupItem
+                    value="one_time"
+                    className="flex-col items-start gap-0.5 whitespace-normal rounded-xl border border-slate-200 p-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                  >
+                    <span className="font-medium text-slate-950">Pagamento avulso</span>
+                    <span className="text-xs text-muted-foreground">
+                      Pix ou cartão, você renova quando quiser
+                    </span>
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="recurring"
+                    className="flex-col items-start gap-0.5 whitespace-normal rounded-xl border border-slate-200 p-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+                  >
+                    <span className="font-medium text-slate-950">Cobrança automática</span>
+                    <span className="text-xs text-muted-foreground">
+                      No cartão, renova sozinho a cada período
+                    </span>
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+
               <div className="rounded-xl border border-slate-200 p-3">
                 <p className="font-medium text-slate-950">
-                  Plano Família {CYCLE_LABEL[billingCycle].toLowerCase()} ·{" "}
+                  Plano Família {BILLING_CYCLE_LABEL[billingCycle].toLowerCase()} ·{" "}
                   {formatCents(checkoutAmountCents)}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Libera membros, workspaces adicionais e os recursos premium do beta.{" "}
-                  {billingCycle === "monthly"
-                    ? "Cobrança recorrente no cartão, renovada automaticamente todo mês."
-                    : "Pagamento via Pix, direto na página segura da Asaas."}
+                  Libera membros, workspaces adicionais e os recursos premium do beta. Pix e cartão
+                  são processados numa página segura da Asaas.
                 </p>
                 {checkoutError ? (
                   <p className="mt-2 text-xs text-red-700">{checkoutError}</p>
@@ -210,15 +246,15 @@ export function MyPlanDialog({ open, onOpenChange, orgId, subscription }: MyPlan
                 <Button
                   type="button"
                   className="mt-3 w-full"
-                  disabled={checkoutMutation.isPending}
+                  disabled={checkoutMutation.isPending || !pricingQuery.data}
                   onClick={() => checkoutMutation.mutate()}
                 >
-                  {billingCycle === "monthly" ? (
+                  {chargeMode === "recurring" ? (
                     <CreditCard className="mr-2 h-4 w-4" />
                   ) : (
                     <QrCode className="mr-2 h-4 w-4" />
                   )}
-                  {checkoutMutation.isPending ? "Abrindo pagamento…" : "Assinar plano"}
+                  {checkoutMutation.isPending ? "Abrindo pagamento…" : "Continuar para pagamento"}
                 </Button>
               </div>
             </>

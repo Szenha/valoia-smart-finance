@@ -1,18 +1,26 @@
 import { createServerFn } from "@tanstack/react-start";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 const APP_URL = "https://ticlio.com.br";
 
+type BillingCycle = "monthly" | "annual";
+type ChargeMode = "recurring" | "one_time";
+
 type CreateCheckoutInput = {
   orgId: string;
-  amountCents: number;
-  planLabel: string;
-  billingCycle: "monthly" | "annual";
+  billingCycle: BillingCycle;
+  chargeMode: ChargeMode;
 };
 
 type AsaasCheckoutResponse = {
   id: string;
   link: string;
   status: string;
+};
+
+const CYCLE_LABEL: Record<BillingCycle, string> = {
+  monthly: "mensal",
+  annual: "anual",
 };
 
 export function asaasBaseUrl(): string {
@@ -31,11 +39,46 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
     const apiKey = process.env.ASAAS_API_KEY;
     if (!apiKey) throw new Error("ASAAS_API_KEY não configurada.");
     if (!data.orgId) throw new Error("Workspace inválido.");
-    if (!data.amountCents || data.amountCents <= 0) throw new Error("Valor inválido.");
+    if (data.billingCycle !== "monthly" && data.billingCycle !== "annual") {
+      throw new Error("Ciclo de cobrança inválido.");
+    }
+    if (data.chargeMode !== "recurring" && data.chargeMode !== "one_time") {
+      throw new Error("Forma de cobrança inválida.");
+    }
 
-    // Anual segue Pix à vista. Mensal vira assinatura recorrente no cartão —
-    // Pix não suporta cobrança recorrente automática na Asaas.
-    const isMonthly = data.billingCycle === "monthly";
+    // Preço vem sempre do servidor — nunca do valor que o cliente mandar.
+    // Isso é o que garante que ninguém contrate por um valor diferente do
+    // preço de tabela (ou do desconto já registrado na assinatura).
+    const admin = supabaseAdmin();
+
+    const { data: pricing, error: pricingError } = await admin
+      .from("commercial_pricing")
+      .select("price_cents, active")
+      .eq("billing_cycle", data.billingCycle)
+      .maybeSingle();
+    if (pricingError) throw new Error(`Falha ao buscar preço: ${pricingError.message}`);
+    if (!pricing || !pricing.active) {
+      throw new Error("Este ciclo de cobrança não está disponível no momento.");
+    }
+
+    const { data: subscription, error: subscriptionError } = await admin
+      .from("commercial_subscriptions")
+      .select("discount_percent")
+      .eq("organization_id", data.orgId)
+      .maybeSingle();
+    if (subscriptionError) {
+      throw new Error(`Falha ao buscar assinatura: ${subscriptionError.message}`);
+    }
+
+    const discountPercent = subscription?.discount_percent ?? 0;
+    const amountCents = Math.max(Math.round(pricing.price_cents * (1 - discountPercent / 100)), 0);
+    if (amountCents <= 0) throw new Error("Valor calculado inválido.");
+
+    // Pix não suporta cobrança recorrente na Asaas — "recorrente" só existe
+    // no cartão. "Avulso" oferece Pix e cartão juntos na mesma tela.
+    const isRecurring = data.chargeMode === "recurring";
+    const cycleLabel = CYCLE_LABEL[data.billingCycle];
+    const modeLabel = isRecurring ? "cobrança automática no cartão" : "pagamento avulso";
 
     const response = await fetch(`${asaasBaseUrl()}/checkouts`, {
       method: "POST",
@@ -44,8 +87,8 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
         access_token: apiKey,
       },
       body: JSON.stringify({
-        billingTypes: isMonthly ? ["CREDIT_CARD"] : ["PIX"],
-        chargeTypes: isMonthly ? ["RECURRENT"] : ["DETACHED"],
+        billingTypes: isRecurring ? ["CREDIT_CARD"] : ["PIX", "CREDIT_CARD"],
+        chargeTypes: isRecurring ? ["RECURRENT"] : ["DETACHED"],
         minutesToExpire: 60,
         // orgId e ciclo de cobrança viajam juntos aqui porque é o único dado
         // que a Asaas devolve inalterado no payload do webhook de confirmação.
@@ -57,16 +100,16 @@ export const createAsaasCheckoutFn = createServerFn({ method: "POST" })
         },
         items: [
           {
-            name: data.planLabel,
-            description: isMonthly ? "Assinatura mensal Ticlio" : "Assinatura anual Ticlio",
+            name: `Ticlio Família — ${cycleLabel} (${modeLabel})`,
+            description: `Assinatura ${cycleLabel} Ticlio`,
             quantity: 1,
-            value: Number((data.amountCents / 100).toFixed(2)),
+            value: Number((amountCents / 100).toFixed(2)),
           },
         ],
-        ...(isMonthly
+        ...(isRecurring
           ? {
               subscription: {
-                cycle: "MONTHLY",
+                cycle: data.billingCycle === "monthly" ? "MONTHLY" : "YEARLY",
                 nextDueDate: todayDateOnly(),
               },
             }

@@ -70,7 +70,8 @@ export function CommercialGate({ userId, orgId, children }: CommercialGateProps)
     <>
       {status === "trial_expired" ||
       status === "payment_overdue" ||
-      status === "blocked_readonly" ? (
+      status === "blocked_readonly" ||
+      status === "cancelled" ? (
         <ReadonlyBanner subscription={subscription} />
       ) : status === "awaiting_pix_confirmation" ? (
         <AwaitingPaymentBanner subscription={subscription} />
@@ -147,7 +148,7 @@ function AwaitingPaymentBanner({ subscription }: { subscription: CommercialSubsc
       <div className="flex items-start gap-2">
         <Clock className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          Adesão anual aguardando confirmação por Pix
+          Adesão aguardando confirmação de pagamento
           {subscription.promo_code ? (
             <>
               {" "}
@@ -166,17 +167,20 @@ function AwaitingPaymentBanner({ subscription }: { subscription: CommercialSubsc
 }
 
 function ReadonlyBanner({ subscription }: { subscription: CommercialSubscription }) {
+  const status = effectiveStatus(subscription);
   const overdue =
-    effectiveStatus(subscription) === "trial_expired"
+    status === "trial_expired"
       ? "Seu trial terminou."
-      : "Seu acesso pago precisa de regularização.";
+      : status === "cancelled"
+        ? "Sua assinatura foi cancelada."
+        : "Seu acesso pago precisa de regularização.";
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          <strong>{overdue}</strong> O app fica em modo leitura para preservar seus dados. Para
-          continuar lançando e usando IA, solicite a liberação anual por Pix.
+          <strong>{overdue}</strong> O app fica em modo leitura para preservar seus dados. Abra "Meu
+          plano" pra renovar e voltar a lançar e usar os recursos de IA.
         </p>
       </div>
     </div>
