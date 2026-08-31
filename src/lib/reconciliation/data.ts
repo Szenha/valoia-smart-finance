@@ -5,12 +5,32 @@ import type { StatementImportRow, StatementItemRow } from "./types";
 export async function fetchStatementImports(orgId: string): Promise<StatementImportRow[]> {
   const { data, error } = await supabase
     .from("statement_imports")
-    .select("id, filename, account_id, account_kind, source, transaction_count, status, created_at")
+    .select(
+      "id, filename, account_id, account_kind, content_hash, source, transaction_count, status, created_at",
+    )
     .eq("organization_id", orgId)
     .order("created_at", { ascending: false })
     .limit(20);
   if (error) throw new Error(error.message);
   return (data ?? []) as StatementImportRow[];
+}
+
+export async function fetchStatementImportByContentHash(
+  orgId: string,
+  contentHash: string,
+): Promise<StatementImportRow | null> {
+  const { data, error } = await supabase
+    .from("statement_imports")
+    .select(
+      "id, filename, account_id, account_kind, content_hash, source, transaction_count, status, created_at",
+    )
+    .eq("organization_id", orgId)
+    .eq("content_hash", contentHash)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data ?? null) as StatementImportRow | null;
 }
 
 export async function fetchStatementItems(
@@ -20,7 +40,7 @@ export async function fetchStatementItems(
   const { data, error } = await supabase
     .from("statement_items")
     .select(
-      "id, statement_import_id, matched_transaction_id, amount, description, posted_at, fit_id, type, account_id, account_kind, currency, status, match_confidence, extraction_confidence, extraction_source_excerpt",
+      "id, statement_import_id, matched_transaction_id, line_hash, amount, description, posted_at, fit_id, type, account_id, account_kind, currency, status, match_confidence, extraction_confidence, extraction_source_excerpt, installment_number, total_installments",
     )
     .eq("organization_id", orgId)
     .eq("statement_import_id", statementImportId)
@@ -30,11 +50,30 @@ export async function fetchStatementItems(
 }
 
 export async function deleteStatementImport(orgId: string, importId: string): Promise<void> {
+  const { data: items, error: itemErr } = await supabase
+    .from("statement_items")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("statement_import_id", importId);
+  if (itemErr) throw new Error(itemErr.message);
+
+  const itemIds = (items ?? []).map((item) => item.id as string);
+  if (itemIds.length > 0) {
+    const { error: unlinkErr } = await supabase
+      .from("transactions")
+      .update({ statement_import_id: null, reconciled_statement_item_id: null })
+      .eq("organization_id", orgId)
+      .in("reconciled_statement_item_id", itemIds)
+      .not("entry_source", "in", "(ofx_import,pdf_import)");
+    if (unlinkErr) throw new Error(unlinkErr.message);
+  }
+
   const { error: txErr } = await supabase
     .from("transactions")
     .delete()
     .eq("organization_id", orgId)
-    .eq("statement_import_id", importId);
+    .eq("statement_import_id", importId)
+    .in("entry_source", ["ofx_import", "pdf_import"]);
   if (txErr) throw new Error(txErr.message);
 
   const { error: impErr } = await supabase
@@ -56,10 +95,9 @@ export async function fetchManualTransactionsForPeriod(
   const { data, error } = await supabase
     .from("transactions")
     .select(
-      "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, statement_import_id, reconciled_statement_item_id, consolidation_status, period_closure_id",
+      "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, statement_import_id, reconciled_statement_item_id, recurring_bill_occurrence_id, consolidation_status, period_closure_id",
     )
     .eq("organization_id", orgId)
-    .is("statement_import_id", null)
     .gte("posted_at", start)
     .lte("posted_at", end)
     .order("posted_at", { ascending: false });

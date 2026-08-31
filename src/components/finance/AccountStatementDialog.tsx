@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeftRight } from "lucide-react";
+import { ArrowLeftRight, CheckCircle2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -108,6 +108,12 @@ export function AccountStatementDialog({ orgId, account, onClose }: Props) {
                       <span className="inline-flex items-center gap-1.5">
                         {t.type === "MANUAL_TRANSFER" ? (
                           <ArrowLeftRight className="h-3 w-3 shrink-0 text-slate-400" />
+                        ) : null}
+                        {t.reconciled_statement_item_id ? (
+                          <CheckCircle2
+                            className="h-3 w-3 shrink-0 text-emerald-600"
+                            aria-label="Conciliado com extrato"
+                          />
                         ) : null}
                         {t.description}
                       </span>

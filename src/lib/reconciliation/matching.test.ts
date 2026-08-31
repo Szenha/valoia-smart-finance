@@ -85,4 +85,25 @@ describe("suggestStatementMatches", () => {
       [null, null],
     );
   });
+
+  test("does not suggest imported, already reconciled, or future installment projection rows", () => {
+    const suggestions = suggestStatementMatches(
+      [item({ id: "imported" }), item({ id: "reconciled" }), item({ id: "projection" })],
+      [
+        txn({ id: "imported-tx", entry_source: "pdf_import", amount: -42 }),
+        txn({ id: "reconciled-tx", reconciled_statement_item_id: "other-item", amount: -42 }),
+        txn({
+          id: "projection-tx",
+          amount: -42,
+          installment_plan_id: "plan-1",
+          installment_number: 4,
+        }),
+      ],
+    );
+
+    assert.deepEqual(
+      suggestions.map((suggestion) => suggestion.transactionId),
+      [null, null, null],
+    );
+  });
 });

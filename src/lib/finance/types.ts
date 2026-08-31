@@ -78,6 +78,7 @@ export type TxnRow = {
   spent_by_member_id?: string | null;
   statement_import_id?: string | null;
   reconciled_statement_item_id?: string | null;
+  recurring_bill_occurrence_id?: string | null;
   installment_number: number | null;
   installment_plan_id: string | null;
   classification_method: string | null;

@@ -20,6 +20,7 @@ import { Route as AiNoticeRouteImport } from './routes/ai-notice'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportsIndexRouteImport } from './routes/reports/index'
 import { Route as ReportsRateioRouteImport } from './routes/reports/rateio'
+import { Route as ReportsExtratoRouteImport } from './routes/reports/extrato'
 import { Route as PlanejamentoOrcamentoRouteImport } from './routes/planejamento/orcamento'
 import { Route as PlanejamentoMetasRouteImport } from './routes/planejamento/metas'
 import { Route as PlanejamentoContasFixasRouteImport } from './routes/planejamento/contas-fixas'
@@ -85,6 +86,11 @@ const ReportsIndexRoute = ReportsIndexRouteImport.update({
 const ReportsRateioRoute = ReportsRateioRouteImport.update({
   id: '/reports/rateio',
   path: '/reports/rateio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsExtratoRoute = ReportsExtratoRouteImport.update({
+  id: '/reports/extrato',
+  path: '/reports/extrato',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlanejamentoOrcamentoRoute = PlanejamentoOrcamentoRouteImport.update({
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
+  '/reports/extrato': typeof ReportsExtratoRoute
   '/reports/rateio': typeof ReportsRateioRoute
   '/reports/': typeof ReportsIndexRoute
   '/api/webhooks/asaas': typeof ApiWebhooksAsaasRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByTo {
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
+  '/reports/extrato': typeof ReportsExtratoRoute
   '/reports/rateio': typeof ReportsRateioRoute
   '/reports': typeof ReportsIndexRoute
   '/api/webhooks/asaas': typeof ApiWebhooksAsaasRoute
@@ -212,6 +220,7 @@ export interface FileRoutesById {
   '/planejamento/contas-fixas': typeof PlanejamentoContasFixasRoute
   '/planejamento/metas': typeof PlanejamentoMetasRoute
   '/planejamento/orcamento': typeof PlanejamentoOrcamentoRoute
+  '/reports/extrato': typeof ReportsExtratoRoute
   '/reports/rateio': typeof ReportsRateioRoute
   '/reports/': typeof ReportsIndexRoute
   '/api/webhooks/asaas': typeof ApiWebhooksAsaasRoute
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
+    | '/reports/extrato'
     | '/reports/rateio'
     | '/reports/'
     | '/api/webhooks/asaas'
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
+    | '/reports/extrato'
     | '/reports/rateio'
     | '/reports'
     | '/api/webhooks/asaas'
@@ -286,6 +297,7 @@ export interface FileRouteTypes {
     | '/planejamento/contas-fixas'
     | '/planejamento/metas'
     | '/planejamento/orcamento'
+    | '/reports/extrato'
     | '/reports/rateio'
     | '/reports/'
     | '/api/webhooks/asaas'
@@ -311,6 +323,7 @@ export interface RootRouteChildren {
   PlanejamentoContasFixasRoute: typeof PlanejamentoContasFixasRoute
   PlanejamentoMetasRoute: typeof PlanejamentoMetasRoute
   PlanejamentoOrcamentoRoute: typeof PlanejamentoOrcamentoRoute
+  ReportsExtratoRoute: typeof ReportsExtratoRoute
   ReportsRateioRoute: typeof ReportsRateioRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   ApiWebhooksAsaasRoute: typeof ApiWebhooksAsaasRoute
@@ -393,6 +406,13 @@ declare module '@tanstack/react-router' {
       path: '/reports/rateio'
       fullPath: '/reports/rateio'
       preLoaderRoute: typeof ReportsRateioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/extrato': {
+      id: '/reports/extrato'
+      path: '/reports/extrato'
+      fullPath: '/reports/extrato'
+      preLoaderRoute: typeof ReportsExtratoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/planejamento/orcamento': {
@@ -495,6 +515,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlanejamentoContasFixasRoute: PlanejamentoContasFixasRoute,
   PlanejamentoMetasRoute: PlanejamentoMetasRoute,
   PlanejamentoOrcamentoRoute: PlanejamentoOrcamentoRoute,
+  ReportsExtratoRoute: ReportsExtratoRoute,
   ReportsRateioRoute: ReportsRateioRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   ApiWebhooksAsaasRoute: ApiWebhooksAsaasRoute,

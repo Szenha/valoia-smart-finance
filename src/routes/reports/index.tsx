@@ -337,6 +337,12 @@ function ReportsRoute() {
               description="Descubra quanto cada membro deve pagar ou receber"
               to="/reports/rateio"
             />
+            <ReportEntryCard
+              icon={Clipboard}
+              title="Extrato interno"
+              description="Filtre lançamentos, conciliação e exporte CSV"
+              to="/reports/extrato"
+            />
           </section>
 
           <Card id="report-monthly">

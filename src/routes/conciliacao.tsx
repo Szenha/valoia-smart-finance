@@ -6,10 +6,27 @@ import { ImportPanel } from "@/components/finance/ImportPanel";
 import { PremiumFeatureCard } from "@/components/finance/CommercialGate";
 import { ReconciliationBoard } from "@/components/finance/ReconciliationBoard";
 import { WorkspaceGate } from "@/components/finance/WorkspaceGate";
+import { CategoryPicker } from "@/components/finance/CategoryPicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   extractBatchFn,
   splitTextIntoBatches,
@@ -17,12 +34,37 @@ import {
 } from "@/lib/ai/extract-transactions";
 import { OfxParseError, parseOfx } from "@/lib/ofx";
 import { defaultPaymentMethod } from "@/lib/finance/transactionIcons";
+import { leafCategoryOptions } from "@/lib/finance/categories";
+import {
+  fetchAccounts,
+  fetchCategories,
+  fetchHouseholdMembers,
+  fetchMemberProfiles,
+} from "@/lib/finance/data";
+import { resolveMemberName } from "@/lib/finance/member-visuals";
+import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import {
   deleteStatementImport,
   fetchManualTransactionsForPeriod,
+  fetchStatementImportByContentHash,
   fetchStatementImports,
   fetchStatementItems,
 } from "@/lib/reconciliation/data";
+import {
+  buildFutureInstallmentFitId,
+  chooseDuplicateCandidate,
+  installmentConflictMessage,
+  isReconciliationComplete,
+  remainingInstallmentNumbers,
+  requireSingleUpdatedTransaction,
+} from "@/lib/reconciliation/acceptance";
+import {
+  assignOccurrences,
+  buildStatementLineHash,
+  dedupePdfTransactions,
+  hashArrayBuffer,
+  normalizeStatementDescription,
+} from "@/lib/reconciliation/dedup";
 import {
   capabilitiesFor,
   fetchCommercialSubscription,
@@ -30,6 +72,7 @@ import {
 } from "@/lib/commercial/access";
 import { Trash2 } from "lucide-react";
 import { suggestStatementMatches } from "@/lib/reconciliation/matching";
+import type { AccountRow, CategoryRow, TxnRow } from "@/lib/finance/types";
 import type {
   PeriodClosureRow,
   StatementImportRow,
@@ -74,6 +117,120 @@ function periodLabel(period: string) {
   });
 }
 
+function addMonthsClamped(dateLike: string, delta: number): string {
+  const date = new Date(dateLike);
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + delta;
+  const day = date.getUTCDate();
+  const daysInTargetMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(day, daysInTargetMonth)))
+    .toISOString()
+    .slice(0, 10);
+}
+
+type StatementItemDraft = {
+  organization_id: string;
+  statement_import_id?: string;
+  line_hash: string;
+  amount: number;
+  description: string;
+  posted_at: string;
+  fit_id: string | null;
+  type: string;
+  account_id: string;
+  account_kind: string;
+  bank_id?: string | null;
+  currency: string;
+  check_number?: string | null;
+  status: "pending";
+  extraction_confidence?: number | null;
+  extraction_source_excerpt?: string | null;
+  installment_number?: number | null;
+  total_installments?: number | null;
+};
+
+type ExistingStatementItem = Pick<
+  StatementItemRow,
+  "id" | "statement_import_id" | "line_hash" | "matched_transaction_id" | "status"
+>;
+
+function friendlyImportError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    message.includes("duplicate key") ||
+    message.includes("statement_items_organization_id_statement_import_id_fit_id_key") ||
+    message.includes("statement_items_org_line_hash_key")
+  ) {
+    return "Alguns lançamentos deste extrato já tinham sido importados. Atualize a lista e revise apenas os itens novos.";
+  }
+  return message;
+}
+
+async function fetchExistingItemsByLineHash(
+  orgId: string,
+  lineHashes: string[],
+): Promise<ExistingStatementItem[]> {
+  const uniqueHashes = Array.from(new Set(lineHashes)).filter(Boolean);
+  if (uniqueHashes.length === 0) return [];
+  const { data, error } = await supabase
+    .from("statement_items")
+    .select("id, statement_import_id, line_hash, matched_transaction_id, status")
+    .eq("organization_id", orgId)
+    .in("line_hash", uniqueHashes);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ExistingStatementItem[];
+}
+
+async function insertNewStatementItems(
+  orgId: string,
+  importId: string,
+  drafts: StatementItemDraft[],
+): Promise<{ inserted: number; skipped: number; firstExistingImportId: string | null }> {
+  const existing = await fetchExistingItemsByLineHash(
+    orgId,
+    drafts.map((row) => row.line_hash),
+  );
+  const existingByHash = new Map(existing.map((item) => [item.line_hash, item]));
+  for (const row of drafts) {
+    if (existingByHash.has(row.line_hash)) continue;
+    let query = supabase
+      .from("statement_items")
+      .select("id, statement_import_id, line_hash, matched_transaction_id, status")
+      .eq("organization_id", orgId)
+      .eq("account_id", row.account_id)
+      .eq("account_kind", row.account_kind)
+      .eq("posted_at", row.posted_at)
+      .eq("amount", row.amount)
+      .eq("description", row.description)
+      .limit(1);
+    query = row.fit_id ? query.eq("fit_id", row.fit_id) : query.is("fit_id", null);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    const legacy = data?.[0] as ExistingStatementItem | undefined;
+    if (!legacy) continue;
+    existingByHash.set(row.line_hash, { ...legacy, line_hash: row.line_hash });
+    await supabase
+      .from("statement_items")
+      .update({ line_hash: row.line_hash })
+      .eq("id", legacy.id)
+      .eq("organization_id", orgId);
+  }
+  const rowsToInsert = drafts
+    .filter((row) => !existingByHash.has(row.line_hash))
+    .map((row) => ({ ...row, statement_import_id: importId }));
+
+  if (rowsToInsert.length > 0) {
+    const { error } = await supabase.from("statement_items").insert(rowsToInsert);
+    if (error) throw new Error(friendlyImportError(error));
+  }
+
+  return {
+    inserted: rowsToInsert.length,
+    skipped: drafts.length - rowsToInsert.length,
+    firstExistingImportId: Array.from(existingByHash.values())[0]?.statement_import_id ?? null,
+  };
+}
+
 function ReconciliationRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -89,6 +246,15 @@ function ReconciliationRoute() {
     "idle" | "extracting" | "analyzing" | "saving" | "done" | "error"
   >("idle");
   const [pdfMessage, setPdfMessage] = useState("");
+  const [selectedPdfCardId, setSelectedPdfCardId] = useState("");
+  const [acceptingItem, setAcceptingItem] = useState<StatementItemRow | null>(null);
+  const [acceptForm, setAcceptForm] = useState({
+    description: "",
+    postedAt: "",
+    accountId: "",
+    categoryId: "none",
+    memberId: "",
+  });
 
   useEffect(() => {
     async function init() {
@@ -120,8 +286,47 @@ function ReconciliationRoute() {
     queryFn: () => fetchStatementImports(orgId!),
   });
 
+  const accountsQuery = useQuery({
+    queryKey: ["accounts", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchAccounts(orgId!),
+  });
+
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCategories(orgId!),
+  });
+
+  const membersQuery = useQuery({
+    queryKey: ["household-members", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchHouseholdMembers(orgId!),
+  });
+
+  const memberIds = (membersQuery.data ?? []).map((member) => member.user_id);
+  const profilesQuery = useQuery({
+    queryKey: ["member-profiles", orgId, memberIds],
+    enabled: !!orgId && memberIds.length > 0,
+    queryFn: () => fetchMemberProfiles(memberIds),
+  });
+
   const imports = importsQuery.data ?? [];
+  const accounts = accountsQuery.data ?? [];
+  const creditCards = accounts.filter((account) => account.kind === "credit_card");
+  const categories = categoriesQuery.data ?? [];
+  const categoryItems = leafCategoryOptions(categories);
+  const members = membersQuery.data ?? [];
+  const profiles = profilesQuery.data ?? [];
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const memberById = new Map(members.map((member) => [member.user_id, member]));
   const activeImportId = selectedImportId ?? imports[0]?.id ?? null;
+
+  useEffect(() => {
+    if (!selectedPdfCardId && creditCards[0]) {
+      setSelectedPdfCardId(creditCards[0].id);
+    }
+  }, [creditCards, selectedPdfCardId]);
 
   const itemsQuery = useQuery({
     queryKey: ["statement-items", orgId, activeImportId],
@@ -133,8 +338,7 @@ function ReconciliationRoute() {
   const activeImport = imports.find((statementImport) => statementImport.id === activeImportId);
   const competencePeriod = items[0] ? monthStartFromDate(items[0].posted_at) : null;
   const scopeType = activeImport?.account_kind === "credit_card" ? "card_invoice" : "account_month";
-  const reconciliationComplete =
-    items.length > 0 && items.every((item) => item.status !== "pending");
+  const reconciliationComplete = isReconciliationComplete(items);
 
   const manualTransactionsQuery = useQuery({
     queryKey: ["manual-transactions-for-reconciliation", orgId, activeImportId, items.length],
@@ -189,8 +393,20 @@ function ReconciliationRoute() {
     setOfxMessage("");
     setOfxStatus("parsing");
     let doc;
+    let buffer: ArrayBuffer;
+    let contentHash: string;
     try {
-      doc = parseOfx(await file.arrayBuffer());
+      buffer = await file.arrayBuffer();
+      contentHash = await hashArrayBuffer(buffer);
+      const existingImport = await fetchStatementImportByContentHash(orgId, contentHash);
+      if (existingImport) {
+        setSelectedImportId(existingImport.id);
+        setOfxMessage("✓ Este arquivo já foi importado anteriormente. Nenhum item foi recriado.");
+        setOfxStatus("done");
+        await refreshReconciliation(existingImport.id);
+        return;
+      }
+      doc = parseOfx(buffer);
     } catch (err) {
       setOfxMessage(err instanceof OfxParseError ? err.message : String(err));
       setOfxStatus("error");
@@ -200,31 +416,32 @@ function ReconciliationRoute() {
     setOfxStatus("saving");
     try {
       let importedItems = 0;
+      let skippedItems = 0;
       let lastImportId: string | null = null;
       for (const stmt of doc.statements) {
-        const { data: imp, error: impErr } = await supabase
-          .from("statement_imports")
-          .insert({
-            organization_id: orgId,
-            filename: file.name,
-            account_id: stmt.account.accountId,
-            account_kind: stmt.account.kind,
-            bank_id: stmt.account.bankId ?? null,
-            currency: stmt.account.currency,
-            period_start: stmt.periodStart?.toISOString() ?? null,
-            period_end: stmt.periodEnd?.toISOString() ?? null,
-            transaction_count: stmt.transactions.length,
-            status: "completed",
-            source: "ofx_manual",
-          })
-          .select("id")
-          .single();
-        if (impErr) throw new Error(`statement_imports: ${impErr.message}`);
-        lastImportId = imp.id;
-
-        const rows = stmt.transactions.map((t) => ({
+        const rows = assignOccurrences(
+          stmt.transactions.map((t) => ({
+            source: "ofx" as const,
+            accountId: stmt.account.accountId,
+            accountKind: stmt.account.kind,
+            postedAt: t.postedAt.toISOString(),
+            amount: t.amount,
+            description: t.description,
+            fitId: t.fitIdGenerated ? null : t.fitId,
+            transaction: t,
+          })),
+        ).map(({ transaction: t, occurrence }) => ({
           organization_id: orgId,
-          statement_import_id: imp.id,
+          line_hash: buildStatementLineHash({
+            source: "ofx",
+            accountId: stmt.account.accountId,
+            accountKind: stmt.account.kind,
+            postedAt: t.postedAt.toISOString(),
+            amount: t.amount,
+            description: t.description,
+            fitId: t.fitIdGenerated ? null : t.fitId,
+            occurrence,
+          }),
           amount: t.amount,
           description: t.description,
           posted_at: t.postedAt.toISOString(),
@@ -237,9 +454,42 @@ function ReconciliationRoute() {
           check_number: t.checkNumber ?? null,
           status: "pending",
         }));
-        const { error: itemErr } = await supabase.from("statement_items").insert(rows);
-        if (itemErr) throw new Error(`statement_items: ${itemErr.message}`);
-        importedItems += rows.length;
+        const existing = await fetchExistingItemsByLineHash(
+          orgId,
+          rows.map((row) => row.line_hash),
+        );
+        if (existing.length === rows.length) {
+          skippedItems += rows.length;
+          lastImportId = existing[0]?.statement_import_id ?? lastImportId;
+          continue;
+        }
+
+        const { data: imp, error: impErr } = await supabase
+          .from("statement_imports")
+          .insert({
+            organization_id: orgId,
+            filename: file.name,
+            content_hash: contentHash,
+            account_id: stmt.account.accountId,
+            account_kind: stmt.account.kind,
+            bank_id: stmt.account.bankId ?? null,
+            currency: stmt.account.currency,
+            period_start: stmt.periodStart?.toISOString() ?? null,
+            period_end: stmt.periodEnd?.toISOString() ?? null,
+            transaction_count: rows.length - existing.length,
+            status: "completed",
+            source: "ofx_manual",
+          })
+          .select("id")
+          .single();
+        if (impErr) throw new Error(`statement_imports: ${impErr.message}`);
+        lastImportId = imp.id;
+
+        const result = await insertNewStatementItems(orgId, imp.id, rows);
+        importedItems += result.inserted;
+        skippedItems += result.skipped;
+        if (!lastImportId && result.firstExistingImportId)
+          lastImportId = result.firstExistingImportId;
         await supabase.from("financial_accounts").upsert(
           {
             organization_id: orgId,
@@ -253,26 +503,45 @@ function ReconciliationRoute() {
       }
       setSelectedImportId(lastImportId);
       setOfxMessage(
-        `✓ ${doc.statements.length} extrato(s), ${importedItems} item(ns) para revisar.`,
+        `✓ ${doc.statements.length} extrato(s), ${importedItems} item(ns) novo(s), ${skippedItems} já conhecido(s).`,
       );
       setOfxStatus("done");
       await refreshReconciliation(lastImportId ?? undefined);
     } catch (err) {
-      setOfxMessage(err instanceof Error ? err.message : String(err));
+      setOfxMessage(friendlyImportError(err));
       setOfxStatus("error");
     }
   }
 
   async function handlePdfFile(event: React.ChangeEvent<HTMLInputElement>) {
     if (!orgId) return;
+    const selectedCard = creditCards.find((account) => account.id === selectedPdfCardId);
+    if (!selectedCard) {
+      setPdfMessage("Selecione um cartão de crédito cadastrado antes de importar a fatura.");
+      setPdfStatus("error");
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
     setPdfStatus("extracting");
     setPdfMessage("");
     try {
+      const buffer = await file.arrayBuffer();
+      const contentHash = await hashArrayBuffer(buffer);
+      const existingImport = await fetchStatementImportByContentHash(orgId, contentHash);
+      if (existingImport) {
+        setSelectedImportId(existingImport.id);
+        setPdfMessage("✓ Este arquivo já foi importado anteriormente. Nenhum item foi recriado.");
+        setPdfStatus("done");
+        await refreshReconciliation(existingImport.id);
+        return;
+      }
       const { extractPdfText } = await import("@/lib/pdf/extract-text");
-      const text = await extractPdfText(await file.arrayBuffer());
+      const text = await extractPdfText(buffer, ({ page, total }) => {
+        setPdfMessage(`Lendo página ${page} de ${total}…`);
+      });
       setPdfStatus("analyzing");
       const batches = splitTextIntoBatches(text);
       const transactions: AiTransaction[] = [];
@@ -288,12 +557,13 @@ function ReconciliationRoute() {
         });
         transactions.push(...result.transactions);
       }
-      const total = transactions
+      const uniqueTransactions = dedupePdfTransactions(transactions);
+      const total = uniqueTransactions
         .filter((transaction) => transaction.amount > 0)
         .reduce((sum, transaction) => sum + transaction.amount, 0);
       const ok = await confirm({
         title: "Enviar para conciliação",
-        description: `A IA encontrou ${transactions.length} item(ns) de extrato, totalizando ${new Intl.NumberFormat(
+        description: `A IA encontrou ${uniqueTransactions.length} item(ns) de extrato para ${selectedCard.name}, totalizando ${new Intl.NumberFormat(
           "pt-BR",
           {
             style: "currency",
@@ -309,15 +579,72 @@ function ReconciliationRoute() {
       }
 
       setPdfStatus("saving");
+      const rows = assignOccurrences(
+        uniqueTransactions.map((transaction) => {
+          const amount = signedPdfAmount(transaction);
+          const postedAt = new Date(transaction.date).toISOString();
+          return {
+            source: "pdf" as const,
+            accountId: selectedCard.account_key,
+            accountKind: "credit_card",
+            postedAt,
+            amount,
+            description: transaction.description,
+            fitId: null,
+            transaction,
+          };
+        }),
+      ).map(({ transaction, occurrence, amount, postedAt }) => {
+        const lineHash = buildStatementLineHash({
+          source: "pdf",
+          accountId: selectedCard.account_key,
+          accountKind: "credit_card",
+          postedAt,
+          amount,
+          description: transaction.description,
+          fitId: null,
+          occurrence,
+        });
+        return {
+          organization_id: orgId,
+          line_hash: lineHash,
+          amount,
+          description: transaction.description,
+          posted_at: postedAt,
+          fit_id: `PDF-${lineHash}`,
+          type: transaction.amount > 0 ? "DEBIT" : "CREDIT",
+          account_id: selectedCard.account_key,
+          account_kind: "credit_card",
+          currency: "BRL",
+          status: "pending",
+          extraction_confidence: transaction.confidence,
+          extraction_source_excerpt: transaction.source_excerpt ?? null,
+          installment_number: transaction.installment_number ?? null,
+          total_installments: transaction.total_installments ?? null,
+        };
+      });
+      const existing = await fetchExistingItemsByLineHash(
+        orgId,
+        rows.map((row) => row.line_hash),
+      );
+      if (existing.length === rows.length) {
+        setSelectedImportId(existing[0]?.statement_import_id ?? null);
+        setPdfMessage(`✓ Esta fatura já tinha sido importada. Nenhum item duplicado foi criado.`);
+        setPdfStatus("done");
+        await refreshReconciliation(existing[0]?.statement_import_id ?? undefined);
+        return;
+      }
+
       const { data: imp, error: impErr } = await supabase
         .from("statement_imports")
         .insert({
           organization_id: orgId,
           filename: file.name,
-          account_id: "pdf-manual",
+          content_hash: contentHash,
+          account_id: selectedCard.account_key,
           account_kind: "credit_card",
           currency: "BRL",
-          transaction_count: transactions.length,
+          transaction_count: rows.length - existing.length,
           status: "completed",
           source: "pdf_manual",
           extracted_total: total,
@@ -327,42 +654,15 @@ function ReconciliationRoute() {
         .single();
       if (impErr) throw new Error(impErr.message);
 
-      const rows = transactions.map((transaction) => ({
-        organization_id: orgId,
-        statement_import_id: imp.id,
-        amount: signedPdfAmount(transaction),
-        description: transaction.description,
-        posted_at: new Date(transaction.date).toISOString(),
-        fit_id:
-          `PDF-${file.name}-${transaction.date}-${transaction.amount}-${transaction.description}`.slice(
-            0,
-            255,
-          ),
-        type: transaction.amount > 0 ? "DEBIT" : "CREDIT",
-        account_id: "pdf-manual",
-        account_kind: "credit_card",
-        currency: "BRL",
-        status: "pending",
-        extraction_confidence: transaction.confidence,
-        extraction_source_excerpt: transaction.source_excerpt ?? null,
-      }));
-      const { error: itemErr } = await supabase.from("statement_items").insert(rows);
-      if (itemErr) throw new Error(itemErr.message);
-      await supabase.from("financial_accounts").upsert(
-        {
-          organization_id: orgId,
-          account_key: "pdf-manual",
-          name: "Cartão importado por PDF",
-          kind: "credit_card",
-        },
-        { onConflict: "organization_id,account_key" },
-      );
+      const result = await insertNewStatementItems(orgId, imp.id, rows);
       setSelectedImportId(imp.id);
-      setPdfMessage(`✓ ${transactions.length} item(ns) enviados para conciliação.`);
+      setPdfMessage(
+        `✓ ${result.inserted} item(ns) novo(s) enviados para conciliação; ${result.skipped} já conhecido(s).`,
+      );
       setPdfStatus("done");
       await refreshReconciliation(imp.id);
     } catch (err) {
-      setPdfMessage(err instanceof Error ? err.message : String(err));
+      setPdfMessage(friendlyImportError(err));
       setPdfStatus("error");
     }
   }
@@ -371,20 +671,31 @@ function ReconciliationRoute() {
     mutationFn: async (
       action:
         | { type: "match"; item: StatementItemRow; transactionId: string; confidence: number }
-        | { type: "accept"; item: StatementItemRow }
-        | { type: "review"; item: StatementItemRow },
+        | {
+            type: "accept";
+            item: StatementItemRow;
+            description: string;
+            postedAt: string;
+            account: AccountRow;
+            categoryId: string | null;
+            memberId: string | null;
+          }
+        | { type: "review"; item: StatementItemRow }
+        | { type: "ignore"; item: StatementItemRow },
     ) => {
       if (!orgId) return;
       if (action.type === "match") {
-        const { error: txErr } = await supabase
+        const { data: updatedRows, error: txErr } = await supabase
           .from("transactions")
           .update({
-            statement_import_id: action.item.statement_import_id,
             reconciled_statement_item_id: action.item.id,
           })
           .eq("id", action.transactionId)
-          .eq("organization_id", orgId);
+          .eq("organization_id", orgId)
+          .is("reconciled_statement_item_id", null)
+          .select("id");
         if (txErr) throw new Error(txErr.message);
+        requireSingleUpdatedTransaction(updatedRows);
         const { error: itemErr } = await supabase
           .from("statement_items")
           .update({
@@ -403,43 +714,299 @@ function ReconciliationRoute() {
         if (!user) throw new Error("Usuário não autenticado.");
         const parentImport = imports.find((imp) => imp.id === action.item.statement_import_id);
         const entrySource = parentImport?.source === "pdf_manual" ? "pdf_import" : "ofx_import";
-        const { data: tx, error: txErr } = await supabase
-          .from("transactions")
-          .insert({
-            organization_id: orgId,
-            statement_import_id: action.item.statement_import_id,
-            reconciled_statement_item_id: action.item.id,
-            amount: action.item.amount,
-            description: action.item.description,
-            posted_at: action.item.posted_at,
-            fit_id: action.item.fit_id ?? `ACCEPTED-${action.item.id}`,
-            type: action.item.type,
-            account_id: action.item.account_id,
-            account_kind: action.item.account_kind,
-            payment_method: defaultPaymentMethod(action.item.account_kind),
-            entry_source: entrySource,
-            currency: action.item.currency,
-            created_by: user.id,
-            category_id: null,
-            needs_review: true,
-            extraction_confidence: action.item.extraction_confidence,
-            extraction_source_excerpt: action.item.extraction_source_excerpt,
-            original_text: action.item.extraction_source_excerpt,
-          })
-          .select("id")
-          .single();
-        if (txErr) throw new Error(txErr.message);
+        const isInstallmentItem =
+          !!action.item.installment_number &&
+          !!action.item.total_installments &&
+          action.item.total_installments > 1 &&
+          action.account.kind === "credit_card";
+
+        if (!isInstallmentItem) {
+          const duplicateQuery = await supabase
+            .from("transactions")
+            .select(
+              "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, recurring_bill_occurrence_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id, transfer_group_id",
+            )
+            .eq("organization_id", orgId)
+            .eq("account_id", action.account.account_key)
+            .eq("account_kind", action.account.kind)
+            .eq("amount", action.item.amount)
+            .eq("posted_at", new Date(action.postedAt).toISOString())
+            .is("reconciled_statement_item_id", null);
+          if (duplicateQuery.error) throw new Error(duplicateQuery.error.message);
+          const duplicateDecision = chooseDuplicateCandidate(
+            (duplicateQuery.data ?? []) as TxnRow[],
+            action.description,
+          );
+          if (duplicateDecision.kind === "ambiguous") {
+            throw new Error(installmentConflictMessage(duplicateDecision.transactions.length));
+          }
+          if (duplicateDecision.kind === "unique") {
+            const duplicateId = duplicateDecision.transaction.id;
+            const { data: updatedRows, error: txErr } = await supabase
+              .from("transactions")
+              .update({
+                reconciled_statement_item_id: action.item.id,
+              })
+              .eq("id", duplicateId)
+              .eq("organization_id", orgId)
+              .is("reconciled_statement_item_id", null)
+              .select("id");
+            if (txErr) throw new Error(txErr.message);
+            requireSingleUpdatedTransaction(updatedRows);
+            const { error: itemErr } = await supabase
+              .from("statement_items")
+              .update({
+                matched_transaction_id: duplicateId,
+                status: "matched",
+                match_confidence: 1,
+              })
+              .eq("id", action.item.id)
+              .eq("organization_id", orgId);
+            if (itemErr) throw new Error(itemErr.message);
+            return;
+          }
+        }
+
+        let installmentPlanId: string | null = null;
+        if (isInstallmentItem) {
+          const descriptionNormalized = normalizeStatementDescription(action.description);
+          const installmentAmount = Math.abs(Number(action.item.amount));
+          const { data: existingPlans, error: existingPlanErr } = await supabase
+            .from("installment_plans")
+            .select("id, current_installment_paid")
+            .eq("organization_id", orgId)
+            .eq("account_id", action.account.account_key)
+            .eq("description_normalized", descriptionNormalized)
+            .eq("total_installments", action.item.total_installments)
+            .eq("installment_amount", installmentAmount)
+            .neq("status", "cancelado")
+            .limit(1);
+          if (existingPlanErr) throw new Error(existingPlanErr.message);
+          installmentPlanId = (existingPlans?.[0]?.id as string | undefined) ?? null;
+          if (!installmentPlanId) {
+            const { data: plan, error: planErr } = await supabase
+              .from("installment_plans")
+              .insert({
+                organization_id: orgId,
+                account_id: action.account.account_key,
+                description_normalized: descriptionNormalized,
+                total_installments: action.item.total_installments,
+                installment_amount: installmentAmount,
+                first_seen_statement_import_id: action.item.statement_import_id,
+                current_installment_paid: action.item.installment_number,
+                confirmed_by: user.id,
+              })
+              .select("id")
+              .single();
+            if (planErr) throw new Error(planErr.message);
+            installmentPlanId = plan.id as string;
+          } else {
+            const currentPaid = Number(existingPlans?.[0]?.current_installment_paid ?? 0);
+            if (action.item.installment_number > currentPaid) {
+              const { error: updatePlanErr } = await supabase
+                .from("installment_plans")
+                .update({
+                  current_installment_paid: action.item.installment_number,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", installmentPlanId);
+              if (updatePlanErr) throw new Error(updatePlanErr.message);
+            }
+          }
+        }
+
+        let reconciledTransactionId: string | null = null;
+        if (installmentPlanId && action.item.installment_number) {
+          const { data: projectedRows, error: projectionErr } = await supabase
+            .from("transactions")
+            .select(
+              "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, recurring_bill_occurrence_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id, transfer_group_id",
+            )
+            .eq("organization_id", orgId)
+            .eq("installment_plan_id", installmentPlanId)
+            .eq("installment_number", action.item.installment_number)
+            .is("reconciled_statement_item_id", null)
+            .limit(2);
+          if (projectionErr) throw new Error(projectionErr.message);
+          const projected = (projectedRows ?? []) as TxnRow[];
+          if (projected.length > 1) {
+            throw new Error(installmentConflictMessage(projected.length));
+          }
+          if (projected[0]) {
+            const { data: updatedRows, error: updateProjectionErr } = await supabase
+              .from("transactions")
+              .update({
+                reconciled_statement_item_id: action.item.id,
+                amount: action.item.amount,
+                description: action.description,
+                posted_at: new Date(action.postedAt).toISOString(),
+                fit_id: action.item.fit_id ?? projected[0].id,
+                type: action.item.type,
+                account_id: action.account.account_key,
+                account_kind: action.account.kind,
+                payment_method: defaultPaymentMethod(action.account.kind),
+                currency: action.item.currency,
+                spent_by_member_id: action.memberId,
+                category_id: action.categoryId,
+                classification_method: action.categoryId ? "manual" : null,
+                classification_confidence: action.categoryId ? 1 : null,
+                needs_review: !action.categoryId,
+                extraction_confidence: action.item.extraction_confidence,
+                extraction_source_excerpt: action.item.extraction_source_excerpt,
+                original_text: action.item.extraction_source_excerpt,
+              })
+              .eq("id", projected[0].id)
+              .eq("organization_id", orgId)
+              .is("reconciled_statement_item_id", null)
+              .select("id");
+            if (updateProjectionErr) throw new Error(updateProjectionErr.message);
+            const updatedTx = requireSingleUpdatedTransaction(updatedRows);
+            reconciledTransactionId = updatedTx.id as string;
+          }
+        }
+
+        if (!reconciledTransactionId && isInstallmentItem && installmentPlanId) {
+          const duplicateQuery = await supabase
+            .from("transactions")
+            .select(
+              "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, recurring_bill_occurrence_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id, transfer_group_id",
+            )
+            .eq("organization_id", orgId)
+            .eq("account_id", action.account.account_key)
+            .eq("account_kind", action.account.kind)
+            .eq("amount", action.item.amount)
+            .eq("posted_at", new Date(action.postedAt).toISOString())
+            .is("installment_plan_id", null)
+            .is("reconciled_statement_item_id", null);
+          if (duplicateQuery.error) throw new Error(duplicateQuery.error.message);
+          const duplicateDecision = chooseDuplicateCandidate(
+            (duplicateQuery.data ?? []) as TxnRow[],
+            action.description,
+          );
+          if (duplicateDecision.kind === "ambiguous") {
+            throw new Error(installmentConflictMessage(duplicateDecision.transactions.length));
+          }
+          if (duplicateDecision.kind === "unique") {
+            const { data: updatedRows, error: txErr } = await supabase
+              .from("transactions")
+              .update({
+                reconciled_statement_item_id: action.item.id,
+                installment_plan_id: installmentPlanId,
+                installment_number: action.item.installment_number,
+                description: action.description,
+                category_id: action.categoryId,
+                spent_by_member_id: action.memberId,
+                classification_method: action.categoryId ? "manual" : null,
+                classification_confidence: action.categoryId ? 1 : null,
+                needs_review: !action.categoryId,
+              })
+              .eq("id", duplicateDecision.transaction.id)
+              .eq("organization_id", orgId)
+              .is("installment_plan_id", null)
+              .is("reconciled_statement_item_id", null)
+              .select("id");
+            if (txErr) throw new Error(txErr.message);
+            const updatedTx = requireSingleUpdatedTransaction(updatedRows);
+            reconciledTransactionId = updatedTx.id as string;
+          }
+        }
+
+        if (!reconciledTransactionId) {
+          const { data: tx, error: txErr } = await supabase
+            .from("transactions")
+            .insert({
+              organization_id: orgId,
+              statement_import_id: action.item.statement_import_id,
+              reconciled_statement_item_id: action.item.id,
+              amount: action.item.amount,
+              description: action.description,
+              posted_at: new Date(action.postedAt).toISOString(),
+              fit_id: action.item.fit_id ?? `ACCEPTED-${action.item.id}`,
+              type: action.item.type,
+              account_id: action.account.account_key,
+              account_kind: action.account.kind,
+              payment_method: defaultPaymentMethod(action.account.kind),
+              entry_source: entrySource,
+              currency: action.item.currency,
+              created_by: user.id,
+              spent_by_member_id: action.memberId,
+              category_id: action.categoryId,
+              installment_plan_id: installmentPlanId,
+              installment_number: action.item.installment_number,
+              classification_method: action.categoryId ? "manual" : null,
+              classification_confidence: action.categoryId ? 1 : null,
+              needs_review: !action.categoryId,
+              extraction_confidence: action.item.extraction_confidence,
+              extraction_source_excerpt: action.item.extraction_source_excerpt,
+              original_text: action.item.extraction_source_excerpt,
+            })
+            .select("id")
+            .single();
+          if (txErr) throw new Error(txErr.message);
+          reconciledTransactionId = tx.id as string;
+        }
+
         const { error: itemErr } = await supabase
           .from("statement_items")
-          .update({ matched_transaction_id: tx.id, status: "accepted", match_confidence: 1 })
+          .update({
+            matched_transaction_id: reconciledTransactionId,
+            status: "accepted",
+            match_confidence: 1,
+          })
           .eq("id", action.item.id)
           .eq("organization_id", orgId);
         if (itemErr) throw new Error(itemErr.message);
+
+        if (
+          installmentPlanId &&
+          action.item.installment_number &&
+          action.item.total_installments &&
+          action.item.installment_number < action.item.total_installments
+        ) {
+          const futureRows = [];
+          for (const number of remainingInstallmentNumbers(action.item)) {
+            futureRows.push({
+              organization_id: orgId,
+              description: action.description,
+              type: action.item.type,
+              account_id: action.account.account_key,
+              account_kind: action.account.kind,
+              payment_method: defaultPaymentMethod(action.account.kind),
+              entry_source: "manual",
+              currency: action.item.currency,
+              created_by: user.id,
+              spent_by_member_id: action.memberId,
+              category_id: action.categoryId,
+              amount: action.item.amount,
+              posted_at: new Date(
+                addMonthsClamped(action.postedAt, number - action.item.installment_number),
+              ).toISOString(),
+              fit_id: buildFutureInstallmentFitId(installmentPlanId, number),
+              installment_plan_id: installmentPlanId,
+              installment_number: number,
+              classification_method: action.categoryId ? "manual" : null,
+              classification_confidence: action.categoryId ? 1 : null,
+              needs_review: !action.categoryId,
+            });
+          }
+          const { error: futureErr } = await supabase.from("transactions").upsert(futureRows, {
+            onConflict: "organization_id,installment_plan_id,installment_number",
+          });
+          if (futureErr) throw new Error(futureErr.message);
+        }
       }
       if (action.type === "review") {
         const { error } = await supabase
           .from("statement_items")
           .update({ status: "review", match_confidence: null })
+          .eq("id", action.item.id)
+          .eq("organization_id", orgId);
+        if (error) throw new Error(error.message);
+      }
+      if (action.type === "ignore") {
+        const { error } = await supabase
+          .from("statement_items")
+          .update({ status: "ignored", match_confidence: null })
           .eq("id", action.item.id)
           .eq("organization_id", orgId);
         if (error) throw new Error(error.message);
@@ -462,6 +1029,56 @@ function ReconciliationRoute() {
       await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
     },
   });
+
+  async function openAcceptDialog(item: StatementItemRow) {
+    const account =
+      accounts.find(
+        (candidate) =>
+          candidate.account_key === item.account_id && candidate.kind === item.account_kind,
+      ) ?? accounts[0];
+    setAcceptingItem(item);
+    setAcceptForm({
+      description: item.description,
+      postedAt: item.posted_at.slice(0, 10),
+      accountId: account?.id ?? "",
+      categoryId: "none",
+      memberId: userId ?? "",
+    });
+    try {
+      const suggestion = await suggestCategoryForDescription(
+        orgId!,
+        item.description,
+        Number(item.amount),
+        String(item.account_kind),
+        categories,
+      );
+      if (suggestion.category_id) {
+        setAcceptForm((current) =>
+          acceptingItem?.id === item.id || current.description === item.description
+            ? { ...current, categoryId: suggestion.category_id! }
+            : current,
+        );
+      }
+    } catch {
+      // Sugestão é auxiliar; falha nela não bloqueia a criação classificada manualmente.
+    }
+  }
+
+  function submitAcceptDialog() {
+    if (!acceptingItem) return;
+    const account = accounts.find((candidate) => candidate.id === acceptForm.accountId);
+    if (!account) return;
+    actionMutation.mutate({
+      type: "accept",
+      item: acceptingItem,
+      description: acceptForm.description,
+      postedAt: acceptForm.postedAt,
+      account,
+      categoryId: acceptForm.categoryId === "none" ? null : acceptForm.categoryId,
+      memberId: acceptForm.memberId || null,
+    });
+    setAcceptingItem(null);
+  }
 
   async function handleDeleteImport(statementImport: StatementImportRow) {
     const ok = await confirm({
@@ -576,6 +1193,9 @@ function ReconciliationRoute() {
         pdfBusy={pdfStatus === "extracting" || pdfStatus === "analyzing" || pdfStatus === "saving"}
         pdfMessage={pdfMessage}
         pdfError={pdfStatus === "error"}
+        creditCards={creditCards}
+        selectedPdfCardId={selectedPdfCardId}
+        onPdfCardChange={setSelectedPdfCardId}
         onOfxFile={handleOfxFile}
         onPdfFile={handlePdfFile}
       />
@@ -637,10 +1257,117 @@ function ReconciliationRoute() {
               confidence,
             })
           }
-          onAccept={(item) => actionMutation.mutate({ type: "accept", item })}
+          onAccept={openAcceptDialog}
           onReview={(item) => actionMutation.mutate({ type: "review", item })}
+          onIgnore={(item) => actionMutation.mutate({ type: "ignore", item })}
         />
       </section>
+      <Dialog open={!!acceptingItem} onOpenChange={(open) => !open && setAcceptingItem(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Aceitar e classificar</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div>
+              <Label>Descrição</Label>
+              <Input
+                value={acceptForm.description}
+                onChange={(event) =>
+                  setAcceptForm((current) => ({ ...current, description: event.target.value }))
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Data</Label>
+                <Input
+                  type="date"
+                  value={acceptForm.postedAt}
+                  onChange={(event) =>
+                    setAcceptForm((current) => ({ ...current, postedAt: event.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Conta/cartão</Label>
+                <Select
+                  value={acceptForm.accountId}
+                  onValueChange={(value) =>
+                    setAcceptForm((current) => ({ ...current, accountId: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Categoria</Label>
+                <CategoryPicker
+                  options={categoryItems}
+                  value={acceptForm.categoryId === "none" ? null : acceptForm.categoryId}
+                  onChange={(value) =>
+                    setAcceptForm((current) => ({ ...current, categoryId: value || "none" }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Membro</Label>
+                <Select
+                  value={acceptForm.memberId}
+                  onValueChange={(value) =>
+                    setAcceptForm((current) => ({ ...current, memberId: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Responsável" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.map((member) => (
+                      <SelectItem key={member.user_id} value={member.user_id}>
+                        {member.user_id === userId
+                          ? "Eu"
+                          : resolveMemberName(
+                              memberById.get(member.user_id),
+                              profileById.get(member.user_id),
+                              member.user_id,
+                            )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {acceptingItem?.installment_number && acceptingItem.total_installments ? (
+              <p className="rounded-md bg-amber-50 p-2 text-sm text-amber-800">
+                Parcela {acceptingItem.installment_number}/{acceptingItem.total_installments}. Ao
+                salvar, as parcelas futuras faltantes serão criadas no cartão.
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setAcceptingItem(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={!acceptForm.description || !acceptForm.postedAt || !acceptForm.accountId}
+              onClick={submitAcceptDialog}
+            >
+              Salvar conciliado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {activeImport && competencePeriod ? (
         <Card>
           <CardHeader>

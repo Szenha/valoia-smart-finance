@@ -31,7 +31,7 @@ export async function fetchTransactions(orgId: string): Promise<TxnRow[]> {
   const { data, error } = await supabase
     .from("transactions")
     .select(
-      "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id, transfer_group_id",
+      "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, recurring_bill_occurrence_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id, transfer_group_id",
     )
     .eq("organization_id", orgId)
     .order("posted_at", { ascending: false })
@@ -149,6 +149,7 @@ export type AccountStatementRow = Pick<
   | "amount"
   | "posted_at"
   | "type"
+  | "reconciled_statement_item_id"
   | "installment_plan_id"
   | "installment_number"
 >;
@@ -160,7 +161,9 @@ export async function fetchAccountStatement(
 ): Promise<AccountStatementRow[]> {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id, description, amount, posted_at, type, installment_plan_id, installment_number")
+    .select(
+      "id, description, amount, posted_at, type, reconciled_statement_item_id, installment_plan_id, installment_number",
+    )
     .eq("organization_id", orgId)
     .eq("account_id", accountKey)
     .eq("account_kind", accountKind)
@@ -713,6 +716,7 @@ export async function settleRecurringBillOccurrence(
         currency: "BRL",
         created_by: input.paidBy,
         category_id: input.categoryId,
+        recurring_bill_occurrence_id: occurrenceId,
         amount: -Math.abs(input.paidAmount),
         posted_at: new Date(input.paidAt).toISOString(),
         classification_method: input.categoryId ? "manual" : null,
@@ -724,6 +728,13 @@ export async function settleRecurringBillOccurrence(
       .single();
     if (error) throw new Error(error.message);
     transactionId = data.id as string;
+  } else {
+    const { error } = await supabase
+      .from("transactions")
+      .update({ recurring_bill_occurrence_id: occurrenceId })
+      .eq("id", transactionId)
+      .eq("organization_id", orgId);
+    if (error) throw new Error(error.message);
   }
   await markOccurrencePaid(occurrenceId, {
     paidAmount: input.paidAmount,

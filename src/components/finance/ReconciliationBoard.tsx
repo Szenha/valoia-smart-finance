@@ -1,11 +1,19 @@
-import { CheckCircle2, CircleAlert, FileText, PlusCircle, Receipt } from "lucide-react";
+import { CheckCircle2, CircleAlert, FileText, PlusCircle, Receipt, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatDateBR } from "@/lib/finance/date-utils";
 import { accountLabel, formatCurrency, type TxnRow } from "@/lib/finance/types";
+import { computeReconciliationTotals } from "@/lib/reconciliation/totals";
 import type { MatchSuggestion, StatementItemRow } from "@/lib/reconciliation/types";
 
 type Props = {
@@ -17,20 +25,25 @@ type Props = {
   onMatch: (item: StatementItemRow, transaction: TxnRow, confidence: number) => void;
   onAccept: (item: StatementItemRow) => void;
   onReview: (item: StatementItemRow) => void;
+  onIgnore: (item: StatementItemRow) => void;
 };
 
 function statusLabel(status: StatementItemRow["status"]) {
   if (status === "matched") return "Conciliado";
   if (status === "accepted") return "Aceito como novo";
   if (status === "review") return "Pendente de revisão";
+  if (status === "ignored") return "Ignorado";
   return "Pendente";
 }
 
 function sideBarClass(status: StatementItemRow["status"]) {
   if (status === "matched" || status === "accepted") return "bg-emerald-500";
   if (status === "review") return "bg-amber-500";
+  if (status === "ignored") return "bg-slate-500";
   return "bg-slate-300";
 }
+
+type StatusFilter = "all" | StatementItemRow["status"];
 
 export function ReconciliationBoard({
   items,
@@ -41,15 +54,30 @@ export function ReconciliationBoard({
   onMatch,
   onAccept,
   onReview,
+  onIgnore,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const suggestionsByItem = new Map(
     suggestions.map((suggestion) => [suggestion.itemId, suggestion]),
   );
   const transactionsById = new Map(
     transactions.map((transaction) => [transaction.id, transaction]),
   );
-  const pending = items.filter((item) => item.status === "pending").length;
+  const {
+    pendingCount,
+    reviewCount,
+    ignoredCount,
+    statementIncome,
+    statementExpense,
+    systemIncome,
+    systemExpense,
+    difference,
+    totalsMatch,
+  } = computeReconciliationTotals(items, transactions);
+  const filteredItems = items.filter(
+    (item) => statusFilter === "all" || item.status === statusFilter,
+  );
   const batchable = items.filter(
     (item) => item.status === "pending" && suggestionsByItem.get(item.id)?.transactionId,
   );
@@ -93,27 +121,83 @@ export function ReconciliationBoard({
             ) : null}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            {items.length} item(ns) de extrato · {pending} pendente(s)
+            {items.length} item(ns) de extrato · {pendingCount} pendente(s)
           </p>
         </div>
-        {batchable.length > 0 ? (
-          <Button
-            type="button"
-            disabled={busy || selectedBatchable.length === 0}
-            onClick={confirmBatch}
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
           >
-            Conciliar ({selectedBatchable.length})
-          </Button>
-        ) : null}
+            <SelectTrigger className="w-[170px]" aria-label="Filtrar por status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="pending">Pendentes</SelectItem>
+              <SelectItem value="matched">Conciliados</SelectItem>
+              <SelectItem value="accepted">Aceitos</SelectItem>
+              <SelectItem value="review">Revisão</SelectItem>
+              <SelectItem value="ignored">Ignorados</SelectItem>
+            </SelectContent>
+          </Select>
+          {batchable.length > 0 ? (
+            <Button
+              type="button"
+              disabled={busy || selectedBatchable.length === 0}
+              onClick={confirmBatch}
+            >
+              Conciliar ({selectedBatchable.length})
+            </Button>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {items.length > 0 ? (
+          <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
+            <div>
+              <p className="text-xs text-muted-foreground">Entradas extrato</p>
+              <strong className="text-emerald-700">{formatCurrency(statementIncome)}</strong>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Saídas extrato</p>
+              <strong className="text-red-700">{formatCurrency(statementExpense)}</strong>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Entradas sistema</p>
+              <strong className="text-emerald-700">{formatCurrency(systemIncome)}</strong>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Saídas sistema</p>
+              <strong className="text-red-700">{formatCurrency(systemExpense)}</strong>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Diferença</p>
+              <strong className={totalsMatch ? "text-emerald-700" : "text-amber-700"}>
+                {formatCurrency(difference)}
+              </strong>
+              {totalsMatch ? <p className="text-xs text-emerald-700">Totais batem</p> : null}
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Pendências</p>
+              <strong
+                className={pendingCount + reviewCount === 0 ? "text-emerald-700" : "text-amber-700"}
+              >
+                {pendingCount} abertas · {reviewCount} revisão
+              </strong>
+              {ignoredCount > 0 ? (
+                <p className="text-xs text-slate-500">{ignoredCount} ignorado(s) fora dos totais</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Importe um OFX ou PDF para revisar os itens do extrato contra os lançamentos do dia a
             dia.
           </p>
         ) : null}
-        {items.map((item) => {
+        {filteredItems.map((item) => {
           const suggestion = suggestionsByItem.get(item.id);
           const suggestedTransaction = suggestion?.transactionId
             ? transactionsById.get(suggestion.transactionId)
@@ -153,6 +237,8 @@ export function ReconciliationBoard({
                   >
                     {item.status === "matched" || item.status === "accepted" ? (
                       <CheckCircle2 className="mr-1 h-3 w-3" />
+                    ) : item.status === "ignored" ? (
+                      <XCircle className="mr-1 h-3 w-3" />
                     ) : (
                       <CircleAlert className="mr-1 h-3 w-3" />
                     )}
@@ -176,6 +262,11 @@ export function ReconciliationBoard({
                         {formatDateBR(suggestedTransaction.posted_at)} ·{" "}
                         {formatCurrency(Number(suggestedTransaction.amount))}
                       </p>
+                      {suggestedTransaction.recurring_bill_occurrence_id ? (
+                        <p className="mt-1 text-amber-700">
+                          Parece uma conta fixa já paga. Conciliar evita duplicidade.
+                        </p>
+                      ) : null}
                     </>
                   ) : matchedTransaction ? (
                     <>
@@ -221,6 +312,15 @@ export function ReconciliationBoard({
                         onClick={() => onReview(item)}
                       >
                         Marcar revisão
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => onIgnore(item)}
+                      >
+                        Ignorar
                       </Button>
                     </>
                   ) : null}

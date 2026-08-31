@@ -165,6 +165,7 @@ export function TransactionList({
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedEntrySource, setSelectedEntrySource] = useState("all");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedReconciliation, setSelectedReconciliation] = useState("all");
   const [editingCategoryFor, setEditingCategoryFor] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<TxnRow | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
@@ -206,6 +207,7 @@ export function TransactionList({
     selectedAccount !== "all",
     selectedPaymentMethod !== "all",
     selectedEntrySource !== "all",
+    selectedReconciliation !== "all",
   ].filter(Boolean).length;
   const bounds = periodBounds(selectedPeriod);
   const displayed = transactions.filter((transaction) => {
@@ -216,6 +218,10 @@ export function TransactionList({
       (selectedCreator === "all" || transaction.created_by === selectedCreator) &&
       (selectedPaymentMethod === "all" || transaction.payment_method === selectedPaymentMethod) &&
       (selectedEntrySource === "all" || transaction.entry_source === selectedEntrySource) &&
+      (selectedReconciliation === "all" ||
+        (selectedReconciliation === "reconciled"
+          ? !!transaction.reconciled_statement_item_id
+          : !transaction.reconciled_statement_item_id)) &&
       (selectedCategory === "all" || transaction.category_id === selectedCategory)
     );
   });
@@ -373,6 +379,24 @@ export function TransactionList({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Conciliação
+                    </label>
+                    <Select
+                      value={selectedReconciliation}
+                      onValueChange={setSelectedReconciliation}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="reconciled">Conciliados</SelectItem>
+                        <SelectItem value="unreconciled">Não conciliados</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
                       Origem
                     </label>
                     <Select value={selectedEntrySource} onValueChange={setSelectedEntrySource}>
@@ -447,6 +471,16 @@ export function TransactionList({
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={selectedReconciliation} onValueChange={setSelectedReconciliation}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Conciliação</SelectItem>
+                  <SelectItem value="reconciled">Conciliados</SelectItem>
+                  <SelectItem value="unreconciled">Não conciliados</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                 <SelectTrigger className="w-[170px]">
                   <SelectValue />
@@ -507,6 +541,7 @@ export function TransactionList({
               );
               const isEditing = editingCategoryFor === transaction.id;
               const consolidated = transaction.consolidation_status === "consolidado";
+              const reconciled = !!transaction.reconciled_statement_item_id;
               const canManage = transaction.created_by
                 ? transaction.created_by === currentUserId
                 : isAdmin;
@@ -608,6 +643,15 @@ export function TransactionList({
                     <Badge variant="secondary" className="rounded-full">
                       <Lock className="mr-1 h-3 w-3" />
                       Consolidado
+                    </Badge>
+                  ) : null}
+                  {reconciled ? (
+                    <Badge
+                      variant="outline"
+                      className="rounded-full border-emerald-200 text-emerald-700"
+                    >
+                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                      Conciliado
                     </Badge>
                   ) : null}
                 </>
@@ -795,6 +839,14 @@ export function TransactionList({
                             <Lock className="h-3 w-3" />
                           </TooltipTrigger>
                           <TooltipContent>Consolidado · período fechado</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                      {reconciled ? (
+                        <Tooltip>
+                          <TooltipTrigger type="button" aria-label="Conciliado com extrato">
+                            <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                          </TooltipTrigger>
+                          <TooltipContent>Conciliado com extrato</TooltipContent>
                         </Tooltip>
                       ) : null}
                     </div>

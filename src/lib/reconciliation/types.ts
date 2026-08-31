@@ -5,6 +5,7 @@ export type StatementImportRow = {
   filename: string;
   account_id: string;
   account_kind: AccountKind | string;
+  content_hash: string | null;
   source: string | null;
   transaction_count: number;
   status: string;
@@ -24,12 +25,13 @@ export type PeriodClosureRow = {
   reopened_at: string | null;
 };
 
-export type StatementItemStatus = "pending" | "matched" | "accepted" | "review";
+export type StatementItemStatus = "pending" | "matched" | "accepted" | "review" | "ignored";
 
 export type StatementItemRow = {
   id: string;
   statement_import_id: string;
   matched_transaction_id: string | null;
+  line_hash: string | null;
   amount: number;
   description: string;
   posted_at: string;
@@ -42,6 +44,8 @@ export type StatementItemRow = {
   match_confidence: number | null;
   extraction_confidence: number | null;
   extraction_source_excerpt: string | null;
+  installment_number: number | null;
+  total_installments: number | null;
 };
 
 export type MatchSuggestion = {

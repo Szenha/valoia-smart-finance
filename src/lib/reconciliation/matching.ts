@@ -16,6 +16,16 @@ function sameMoney(a: number, b: number) {
   return Math.abs(Number(a) - Number(b)) < 0.005;
 }
 
+export function isEligibleReconciliationCandidate(txn: TxnRow): boolean {
+  if (txn.reconciled_statement_item_id) return false;
+  if (txn.entry_source === "ofx_import" || txn.entry_source === "pdf_import") return false;
+  if (txn.statement_import_id) return false;
+  if (txn.installment_plan_id && txn.installment_number && !txn.reconciled_statement_item_id) {
+    return false;
+  }
+  return true;
+}
+
 export function suggestStatementMatches(
   items: StatementItemRow[],
   transactions: TxnRow[],
@@ -26,7 +36,7 @@ export function suggestStatementMatches(
   const pendingItems = items.filter((item) => item.status === "pending");
   for (const item of pendingItems) {
     const candidates = transactions
-      .filter((txn) => !txn.reconciled_statement_item_id)
+      .filter(isEligibleReconciliationCandidate)
       .filter((txn) => !usedTransactions.has(txn.id))
       .filter((txn) => sameMoney(Number(txn.amount), Number(item.amount)))
       .map((txn) => ({

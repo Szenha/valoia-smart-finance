@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Layers } from "lucide-react";
+import { CheckCircle2, Layers } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -117,6 +117,12 @@ export function CardStatementDialog({ orgId, account, onClose }: Props) {
                             <span className="inline-flex items-center gap-1.5">
                               {t.installment_plan_id ? (
                                 <Layers className="h-3 w-3 shrink-0 text-slate-400" />
+                              ) : null}
+                              {t.reconciled_statement_item_id ? (
+                                <CheckCircle2
+                                  className="h-3 w-3 shrink-0 text-emerald-600"
+                                  aria-label="Conciliado com extrato"
+                                />
                               ) : null}
                               {t.description}
                               {t.installment_plan_id && t.installment_number

@@ -1,6 +1,14 @@
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { AccountRow } from "@/lib/finance/types";
 
 type Props = {
   title?: string;
@@ -10,8 +18,11 @@ type Props = {
   pdfBusy: boolean;
   pdfMessage: string;
   pdfError: boolean;
+  creditCards?: AccountRow[];
+  selectedPdfCardId?: string;
   classifying?: boolean;
   classifyStatus?: string;
+  onPdfCardChange?: (accountId: string) => void;
   onOfxFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onPdfFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onClassify?: () => void;
@@ -25,8 +36,11 @@ export function ImportPanel({
   pdfBusy,
   pdfMessage,
   pdfError,
+  creditCards = [],
+  selectedPdfCardId = "",
   classifying,
   classifyStatus,
+  onPdfCardChange,
   onOfxFile,
   onPdfFile,
   onClassify,
@@ -49,6 +63,20 @@ export function ImportPanel({
             />
           </label>
         </Button>
+        {onPdfCardChange ? (
+          <Select value={selectedPdfCardId} onValueChange={onPdfCardChange}>
+            <SelectTrigger className="w-[220px]" aria-label="Cartão para fatura PDF">
+              <SelectValue placeholder="Cartão da fatura" />
+            </SelectTrigger>
+            <SelectContent>
+              {creditCards.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {account.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <Button asChild variant="secondary" disabled={pdfBusy}>
           <label>
             {pdfBusy ? "Processando PDF…" : "Importar fatura PDF"}
@@ -57,7 +85,7 @@ export function ImportPanel({
               accept=".pdf,.PDF"
               className="hidden"
               onChange={onPdfFile}
-              disabled={pdfBusy}
+              disabled={pdfBusy || (onPdfCardChange && creditCards.length === 0)}
             />
           </label>
         </Button>

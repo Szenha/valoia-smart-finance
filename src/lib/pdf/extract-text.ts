@@ -14,11 +14,15 @@ function ensureWorker() {
   }
 }
 
-export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+export async function extractPdfText(
+  buffer: ArrayBuffer,
+  onProgress?: (progress: { page: number; total: number }) => void,
+): Promise<string> {
   ensureWorker();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const pageTexts: string[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
+    onProgress?.({ page: i, total: pdf.numPages });
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const lineText = content.items
