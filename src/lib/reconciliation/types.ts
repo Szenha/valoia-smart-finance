@@ -27,6 +27,58 @@ export type PeriodClosureRow = {
 
 export type StatementItemStatus = "pending" | "matched" | "accepted" | "review" | "ignored";
 
+export type ReconciliationPeriodRow = {
+  id: string;
+  organization_id: string;
+  scope_type: "account_statement" | "card_invoice";
+  account_id: string;
+  account_kind: AccountKind | string;
+  period_start: string;
+  period_end: string;
+  competence_period: string;
+  status: "open" | "ready_to_close" | "closed" | "reopened";
+  expected_total: number | null;
+  system_total: number | null;
+  difference: number | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  reopened_at: string | null;
+  reopened_by: string | null;
+};
+
+export type ExternalStatementItemRow = {
+  id: string;
+  organization_id: string;
+  reconciliation_period_id: string;
+  statement_import_id: string | null;
+  source_type: "ofx_checking" | "ofx_credit_card" | "pdf_card_invoice";
+  source_fingerprint: string;
+  reconciliation_fingerprint: string;
+  raw_description: string;
+  normalized_description: string;
+  amount: number;
+  posted_at: string;
+  account_id: string;
+  account_kind: AccountKind | string;
+  fit_id: string | null;
+  line_hash: string | null;
+  installment_number: number | null;
+  total_installments: number | null;
+  status: StatementItemStatus;
+};
+
+export type ReconciliationLinkRow = {
+  id: string;
+  organization_id: string;
+  external_statement_item_id: string;
+  transaction_id: string | null;
+  status: "matched" | "accepted_new" | "edited_existing" | "ignored" | "review";
+  confidence: number | null;
+  match_reason: string | null;
+  matched_by: string | null;
+  matched_at: string | null;
+};
+
 export type StatementItemRow = {
   id: string;
   statement_import_id: string;

@@ -45,10 +45,16 @@ import { resolveMemberName } from "@/lib/finance/member-visuals";
 import { suggestCategoryForDescription } from "@/lib/classification/suggest";
 import {
   deleteStatementImport,
+  type ExternalStatementItemDraft,
+  fetchActiveReconciliationLinkTransactionIds,
   fetchManualTransactionsForPeriod,
   fetchStatementImportByContentHash,
   fetchStatementImports,
   fetchStatementItems,
+  recordPersistentReconciliationLink,
+  type PersistedExternalStatementItem,
+  upsertExternalStatementItems,
+  upsertReconciliationPeriod,
 } from "@/lib/reconciliation/data";
 import {
   buildFutureInstallmentFitId,
@@ -66,6 +72,13 @@ import {
   normalizeStatementDescription,
 } from "@/lib/reconciliation/dedup";
 import {
+  buildReconciliationFingerprint,
+  buildSourceFingerprint,
+  legacyStatusFromLinkStatus,
+  periodFromLines,
+  sourceTypeForImport,
+} from "@/lib/reconciliation/persistent";
+import {
   capabilitiesFor,
   fetchCommercialSubscription,
   normalizeSubscription,
@@ -77,6 +90,7 @@ import type {
   PeriodClosureRow,
   StatementImportRow,
   StatementItemRow,
+  StatementItemStatus,
 } from "@/lib/reconciliation/types";
 import { useActiveOrganization } from "@/lib/supabase/organization";
 import { supabase } from "@/lib/supabase/client";
@@ -142,7 +156,7 @@ type StatementItemDraft = {
   bank_id?: string | null;
   currency: string;
   check_number?: string | null;
-  status: "pending";
+  status: StatementItemStatus;
   extraction_confidence?: number | null;
   extraction_source_excerpt?: string | null;
   installment_number?: number | null;
@@ -185,6 +199,7 @@ async function insertNewStatementItems(
   orgId: string,
   importId: string,
   drafts: StatementItemDraft[],
+  persistedExternalItems: PersistedExternalStatementItem[] = [],
 ): Promise<{ inserted: number; skipped: number; firstExistingImportId: string | null }> {
   const existing = await fetchExistingItemsByLineHash(
     orgId,
@@ -217,17 +232,79 @@ async function insertNewStatementItems(
   }
   const rowsToInsert = drafts
     .filter((row) => !existingByHash.has(row.line_hash))
-    .map((row) => ({ ...row, statement_import_id: importId }));
+    .map((row) => {
+      const externalItem = persistedExternalItems.find((item) => item.line_hash === row.line_hash);
+      const restoredStatus = legacyStatusFromPersistentItem(externalItem);
+      return {
+        ...row,
+        statement_import_id: importId,
+        status: restoredStatus ?? row.status,
+        matched_transaction_id: externalItem?.link_transaction_id ?? null,
+        match_confidence: externalItem?.link_transaction_id ? 1 : null,
+      };
+    });
 
   if (rowsToInsert.length > 0) {
-    const { error } = await supabase.from("statement_items").insert(rowsToInsert);
+    const { data: insertedRows, error } = await supabase
+      .from("statement_items")
+      .insert(rowsToInsert)
+      .select("id, matched_transaction_id");
     if (error) throw new Error(friendlyImportError(error));
+    for (const insertedRow of insertedRows ?? []) {
+      if (!insertedRow.matched_transaction_id) continue;
+      await supabase
+        .from("transactions")
+        .update({ reconciled_statement_item_id: insertedRow.id })
+        .eq("id", insertedRow.matched_transaction_id)
+        .eq("organization_id", orgId)
+        .is("reconciled_statement_item_id", null);
+    }
   }
 
   return {
     inserted: rowsToInsert.length,
     skipped: drafts.length - rowsToInsert.length,
     firstExistingImportId: Array.from(existingByHash.values())[0]?.statement_import_id ?? null,
+  };
+}
+
+function legacyStatusFromPersistentItem(
+  item: PersistedExternalStatementItem | undefined,
+): StatementItemStatus | null {
+  if (!item?.link_status && (!item?.status || item.status === "pending")) return null;
+  return legacyStatusFromLinkStatus("pending", item.link_status, item.status);
+}
+
+function externalDraftFromStatementItem(
+  row: StatementItemDraft,
+  sourceType: ExternalStatementItemDraft["source_type"],
+): ExternalStatementItemDraft {
+  const line = {
+    sourceType,
+    accountId: row.account_id,
+    accountKind: row.account_kind,
+    postedAt: row.posted_at,
+    amount: row.amount,
+    description: row.description,
+    fitId: row.fit_id,
+    lineHash: row.line_hash,
+    installmentNumber: row.installment_number ?? null,
+    totalInstallments: row.total_installments ?? null,
+  };
+  return {
+    source_type: sourceType,
+    source_fingerprint: buildSourceFingerprint(line),
+    reconciliation_fingerprint: buildReconciliationFingerprint(line),
+    raw_description: row.description,
+    amount: row.amount,
+    posted_at: row.posted_at,
+    account_id: row.account_id,
+    account_kind: row.account_kind,
+    fit_id: row.fit_id,
+    line_hash: row.line_hash,
+    installment_number: row.installment_number ?? null,
+    total_installments: row.total_installments ?? null,
+    status: row.status,
   };
 }
 
@@ -346,9 +423,28 @@ function ReconciliationRoute() {
     queryFn: () => fetchManualTransactionsForPeriod(orgId!, items),
   });
 
+  const linkedTransactionIdsQuery = useQuery({
+    queryKey: [
+      "active-reconciliation-link-transaction-ids",
+      orgId,
+      manualTransactionsQuery.data?.map((transaction) => transaction.id).join(",") ?? "",
+    ],
+    enabled: !!orgId && !!manualTransactionsQuery.data?.length,
+    queryFn: () =>
+      fetchActiveReconciliationLinkTransactionIds(
+        orgId!,
+        (manualTransactionsQuery.data ?? []).map((transaction) => transaction.id),
+      ),
+  });
+
   const suggestions = useMemo(
-    () => suggestStatementMatches(items, manualTransactionsQuery.data ?? []),
-    [items, manualTransactionsQuery.data],
+    () =>
+      suggestStatementMatches(
+        items,
+        manualTransactionsQuery.data ?? [],
+        linkedTransactionIdsQuery.data ?? [],
+      ),
+    [items, manualTransactionsQuery.data, linkedTransactionIdsQuery.data],
   );
 
   const closureQuery = useQuery({
@@ -485,7 +581,33 @@ function ReconciliationRoute() {
         if (impErr) throw new Error(`statement_imports: ${impErr.message}`);
         lastImportId = imp.id;
 
-        const result = await insertNewStatementItems(orgId, imp.id, rows);
+        const sourceType = sourceTypeForImport("ofx", stmt.account.kind);
+        const period = await upsertReconciliationPeriod(
+          orgId,
+          periodFromLines(
+            rows.map((row) => ({
+              postedAt: row.posted_at,
+              accountId: row.account_id,
+              accountKind: row.account_kind,
+            })),
+            stmt.account.kind === "credit_card" ? "card_invoice" : "account_statement",
+            {
+              periodStart: stmt.periodStart?.toISOString() ?? null,
+              periodEnd: stmt.periodEnd?.toISOString() ?? null,
+            },
+          ),
+          {
+            expectedTotal: rows.reduce((sum, row) => sum + Number(row.amount), 0),
+          },
+        );
+        const persistedExternalItems = await upsertExternalStatementItems(
+          orgId,
+          period.id,
+          imp.id,
+          rows.map((row) => externalDraftFromStatementItem(row, sourceType)),
+        );
+
+        const result = await insertNewStatementItems(orgId, imp.id, rows, persistedExternalItems);
         importedItems += result.inserted;
         skippedItems += result.skipped;
         if (!lastImportId && result.firstExistingImportId)
@@ -654,7 +776,28 @@ function ReconciliationRoute() {
         .single();
       if (impErr) throw new Error(impErr.message);
 
-      const result = await insertNewStatementItems(orgId, imp.id, rows);
+      const period = await upsertReconciliationPeriod(
+        orgId,
+        periodFromLines(
+          rows.map((row) => ({
+            postedAt: row.posted_at,
+            accountId: row.account_id,
+            accountKind: row.account_kind,
+          })),
+          "card_invoice",
+        ),
+        {
+          expectedTotal: rows.reduce((sum, row) => sum + Number(row.amount), 0),
+        },
+      );
+      const persistedExternalItems = await upsertExternalStatementItems(
+        orgId,
+        period.id,
+        imp.id,
+        rows.map((row) => externalDraftFromStatementItem(row, "pdf_card_invoice")),
+      );
+
+      const result = await insertNewStatementItems(orgId, imp.id, rows, persistedExternalItems);
       setSelectedImportId(imp.id);
       setPdfMessage(
         `✓ ${result.inserted} item(ns) novo(s) enviados para conciliação; ${result.skipped} já conhecido(s).`,
@@ -685,6 +828,9 @@ function ReconciliationRoute() {
     ) => {
       if (!orgId) return;
       if (action.type === "match") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         const { data: updatedRows, error: txErr } = await supabase
           .from("transactions")
           .update({
@@ -696,6 +842,13 @@ function ReconciliationRoute() {
           .select("id");
         if (txErr) throw new Error(txErr.message);
         requireSingleUpdatedTransaction(updatedRows);
+        await recordPersistentReconciliationLink(orgId, action.item, {
+          status: "matched",
+          transactionId: action.transactionId,
+          confidence: action.confidence,
+          matchReason: "manual_match",
+          matchedBy: user?.id ?? null,
+        });
         const { error: itemErr } = await supabase
           .from("statement_items")
           .update({
@@ -753,6 +906,13 @@ function ReconciliationRoute() {
               .select("id");
             if (txErr) throw new Error(txErr.message);
             requireSingleUpdatedTransaction(updatedRows);
+            await recordPersistentReconciliationLink(orgId, action.item, {
+              status: "matched",
+              transactionId: duplicateId,
+              confidence: 1,
+              matchReason: "manual_duplicate_reuse",
+              matchedBy: user.id,
+            });
             const { error: itemErr } = await supabase
               .from("statement_items")
               .update({
@@ -816,6 +976,7 @@ function ReconciliationRoute() {
         }
 
         let reconciledTransactionId: string | null = null;
+        let persistentLinkRecorded = false;
         if (installmentPlanId && action.item.installment_number) {
           const { data: projectedRows, error: projectionErr } = await supabase
             .from("transactions")
@@ -862,6 +1023,14 @@ function ReconciliationRoute() {
             if (updateProjectionErr) throw new Error(updateProjectionErr.message);
             const updatedTx = requireSingleUpdatedTransaction(updatedRows);
             reconciledTransactionId = updatedTx.id as string;
+            await recordPersistentReconciliationLink(orgId, action.item, {
+              status: "edited_existing",
+              transactionId: reconciledTransactionId,
+              confidence: 1,
+              matchReason: "installment_projection_reuse",
+              matchedBy: user.id,
+            });
+            persistentLinkRecorded = true;
           }
         }
 
@@ -908,9 +1077,18 @@ function ReconciliationRoute() {
             if (txErr) throw new Error(txErr.message);
             const updatedTx = requireSingleUpdatedTransaction(updatedRows);
             reconciledTransactionId = updatedTx.id as string;
+            await recordPersistentReconciliationLink(orgId, action.item, {
+              status: "matched",
+              transactionId: reconciledTransactionId,
+              confidence: 1,
+              matchReason: "manual_installment_reuse",
+              matchedBy: user.id,
+            });
+            persistentLinkRecorded = true;
           }
         }
 
+        let createdAcceptedTransaction = false;
         if (!reconciledTransactionId) {
           const { data: tx, error: txErr } = await supabase
             .from("transactions")
@@ -944,8 +1122,20 @@ function ReconciliationRoute() {
             .single();
           if (txErr) throw new Error(txErr.message);
           reconciledTransactionId = tx.id as string;
+          createdAcceptedTransaction = true;
         }
 
+        if (!persistentLinkRecorded) {
+          await recordPersistentReconciliationLink(orgId, action.item, {
+            status: createdAcceptedTransaction ? "accepted_new" : "matched",
+            transactionId: reconciledTransactionId,
+            confidence: 1,
+            matchReason: createdAcceptedTransaction
+              ? "accepted_new_transaction"
+              : "accepted_existing_transaction",
+            matchedBy: user.id,
+          });
+        }
         const { error: itemErr } = await supabase
           .from("statement_items")
           .update({
@@ -996,6 +1186,14 @@ function ReconciliationRoute() {
         }
       }
       if (action.type === "review") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        await recordPersistentReconciliationLink(orgId, action.item, {
+          status: "review",
+          matchReason: "marked_for_review",
+          matchedBy: user?.id ?? null,
+        });
         const { error } = await supabase
           .from("statement_items")
           .update({ status: "review", match_confidence: null })
@@ -1004,6 +1202,14 @@ function ReconciliationRoute() {
         if (error) throw new Error(error.message);
       }
       if (action.type === "ignore") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        await recordPersistentReconciliationLink(orgId, action.item, {
+          status: "ignored",
+          matchReason: "ignored_by_user",
+          matchedBy: user?.id ?? null,
+        });
         const { error } = await supabase
           .from("statement_items")
           .update({ status: "ignored", match_confidence: null })

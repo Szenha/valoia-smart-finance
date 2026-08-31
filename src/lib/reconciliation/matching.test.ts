@@ -33,7 +33,7 @@ function txn(overrides: Partial<TxnRow>): TxnRow {
     posted_at: "2026-07-10T12:00:00.000Z",
     type: "MANUAL_DEBIT",
     account_id: "manual-cash",
-    account_kind: "checking",
+    account_kind: "credit_card",
     payment_method: "debit",
     entry_source: "manual",
     currency: "BRL",
@@ -55,7 +55,7 @@ function txn(overrides: Partial<TxnRow>): TxnRow {
 
 describe("suggestStatementMatches", () => {
   test("matches exact amount and same date with high confidence", () => {
-    const [suggestion] = suggestStatementMatches([item({})], [txn({})]);
+    const [suggestion] = suggestStatementMatches([item({})], [txn({ account_id: "card" })]);
     assert.equal(suggestion.transactionId, "txn-1");
     assert.equal(suggestion.confidence, 1);
   });
@@ -64,8 +64,8 @@ describe("suggestStatementMatches", () => {
     const [suggestion] = suggestStatementMatches(
       [item({ posted_at: "2026-07-10T12:00:00.000Z" })],
       [
-        txn({ id: "far", posted_at: "2026-07-12T12:00:00.000Z" }),
-        txn({ id: "near", posted_at: "2026-07-11T12:00:00.000Z" }),
+        txn({ id: "far", account_id: "card", posted_at: "2026-07-12T12:00:00.000Z" }),
+        txn({ id: "near", account_id: "card", posted_at: "2026-07-11T12:00:00.000Z" }),
       ],
     );
     assert.equal(suggestion.transactionId, "near");
@@ -76,8 +76,8 @@ describe("suggestStatementMatches", () => {
     const suggestions = suggestStatementMatches(
       [item({ id: "different-amount" }), item({ id: "far-date" })],
       [
-        txn({ id: "amount", amount: -41 }),
-        txn({ id: "date", posted_at: "2026-07-20T12:00:00.000Z" }),
+        txn({ id: "amount", account_id: "card", amount: -41 }),
+        txn({ id: "date", account_id: "card", posted_at: "2026-07-20T12:00:00.000Z" }),
       ],
     );
     assert.deepEqual(
@@ -94,6 +94,7 @@ describe("suggestStatementMatches", () => {
         txn({ id: "reconciled-tx", reconciled_statement_item_id: "other-item", amount: -42 }),
         txn({
           id: "projection-tx",
+          account_id: "card",
           amount: -42,
           installment_plan_id: "plan-1",
           installment_number: 4,
@@ -105,5 +106,40 @@ describe("suggestStatementMatches", () => {
       suggestions.map((suggestion) => suggestion.transactionId),
       [null, null, null],
     );
+  });
+
+  test("does not suggest transactions from another account or card", () => {
+    const suggestions = suggestStatementMatches(
+      [item({ id: "checking", account_id: "checking-1", account_kind: "checking" })],
+      [txn({ id: "card-tx", account_id: "card-1", account_kind: "credit_card" })],
+    );
+
+    assert.equal(suggestions[0].transactionId, null);
+  });
+
+  test("does not suggest transactions with unrelated description", () => {
+    const suggestions = suggestStatementMatches(
+      [item({ description: "Mercado", account_id: "card" })],
+      [txn({ id: "same-money-date", account_id: "card", description: "Farmacia" })],
+    );
+
+    assert.equal(suggestions[0].transactionId, null);
+  });
+
+  test("does not suggest transactions already present in active reconciliation links", () => {
+    const suggestions = suggestStatementMatches(
+      [item({ description: "Mercado", account_id: "card" })],
+      [
+        txn({
+          id: "persistently-linked",
+          account_id: "card",
+          reconciled_statement_item_id: null,
+          statement_import_id: null,
+        }),
+      ],
+      ["persistently-linked"],
+    );
+
+    assert.equal(suggestions[0].transactionId, null);
   });
 });
