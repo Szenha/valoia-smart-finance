@@ -79,6 +79,11 @@ import {
   type InstallmentProjectionSourceType,
 } from "@/lib/reconciliation/installment-projections";
 import {
+  anchorPdfTransactionDateToClosingDate,
+  inferPdfInvoiceClosingDate,
+} from "@/lib/reconciliation/pdf-date-normalization";
+import { resolveConfirmedImportAccount } from "@/lib/reconciliation/import-account";
+import {
   buildReconciliationFingerprint,
   buildSourceFingerprint,
   legacyStatusFromLinkStatus,
@@ -352,10 +357,12 @@ function ReconciliationRoute() {
     "idle",
   );
   const [ofxMessage, setOfxMessage] = useState("");
+  const [selectedOfxAccountId, setSelectedOfxAccountId] = useState("");
   const [pdfStatus, setPdfStatus] = useState<
     "idle" | "extracting" | "analyzing" | "saving" | "done" | "error"
   >("idle");
   const [pdfMessage, setPdfMessage] = useState("");
+  const [pdfProgress, setPdfProgress] = useState<number | null>(null);
   const [selectedPdfCardId, setSelectedPdfCardId] = useState("");
   const [acceptingItem, setAcceptingItem] = useState<StatementItemRow | null>(null);
   const [acceptForm, setAcceptForm] = useState({
@@ -431,12 +438,6 @@ function ReconciliationRoute() {
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const memberById = new Map(members.map((member) => [member.user_id, member]));
   const activeImportId = selectedImportId ?? imports[0]?.id ?? null;
-
-  useEffect(() => {
-    if (!selectedPdfCardId && creditCards[0]) {
-      setSelectedPdfCardId(creditCards[0].id);
-    }
-  }, [creditCards, selectedPdfCardId]);
 
   const itemsQuery = useQuery({
     queryKey: ["statement-items", orgId, activeImportId],
@@ -518,6 +519,13 @@ function ReconciliationRoute() {
 
   async function handleOfxFile(event: React.ChangeEvent<HTMLInputElement>) {
     if (!orgId) return;
+    const selectedAccount = resolveConfirmedImportAccount(accounts, selectedOfxAccountId);
+    if (!selectedAccount) {
+      setOfxMessage("Selecione a conta ou cartão correspondente antes de importar o OFX.");
+      setOfxStatus("error");
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -550,11 +558,13 @@ function ReconciliationRoute() {
       let skippedItems = 0;
       let lastImportId: string | null = null;
       for (const stmt of doc.statements) {
+        const confirmedAccountId = selectedAccount.account_key;
+        const confirmedAccountKind = selectedAccount.kind;
         const rows = assignOccurrences(
           stmt.transactions.map((t) => ({
             source: "ofx" as const,
-            accountId: stmt.account.accountId,
-            accountKind: stmt.account.kind,
+            accountId: confirmedAccountId,
+            accountKind: confirmedAccountKind,
             postedAt: t.postedAt.toISOString(),
             amount: t.amount,
             description: t.description,
@@ -563,13 +573,15 @@ function ReconciliationRoute() {
           })),
         ).map(({ transaction: t, occurrence }) => {
           const installment =
-            stmt.account.kind === "credit_card" ? detectOfxInstallmentInText(t.description) : null;
+            confirmedAccountKind === "credit_card"
+              ? detectOfxInstallmentInText(t.description)
+              : null;
           return {
             organization_id: orgId,
             line_hash: buildStatementLineHash({
               source: "ofx",
-              accountId: stmt.account.accountId,
-              accountKind: stmt.account.kind,
+              accountId: confirmedAccountId,
+              accountKind: confirmedAccountKind,
               postedAt: t.postedAt.toISOString(),
               amount: t.amount,
               description: t.description,
@@ -581,12 +593,12 @@ function ReconciliationRoute() {
             posted_at: t.postedAt.toISOString(),
             fit_id: t.fitId,
             type: t.type,
-            account_id: stmt.account.accountId,
-            account_kind: stmt.account.kind,
+            account_id: confirmedAccountId,
+            account_kind: confirmedAccountKind,
             bank_id: stmt.account.bankId ?? null,
             currency: t.currency,
             check_number: t.checkNumber ?? null,
-            status: "pending",
+            status: "pending" as const,
             installment_number: installment?.installmentNumber ?? null,
             total_installments: installment?.totalInstallments ?? null,
           };
@@ -607,8 +619,8 @@ function ReconciliationRoute() {
             organization_id: orgId,
             filename: file.name,
             content_hash: contentHash,
-            account_id: stmt.account.accountId,
-            account_kind: stmt.account.kind,
+            account_id: confirmedAccountId,
+            account_kind: confirmedAccountKind,
             bank_id: stmt.account.bankId ?? null,
             currency: stmt.account.currency,
             period_start: stmt.periodStart?.toISOString() ?? null,
@@ -622,7 +634,7 @@ function ReconciliationRoute() {
         if (impErr) throw new Error(`statement_imports: ${impErr.message}`);
         lastImportId = imp.id;
 
-        const sourceType = sourceTypeForImport("ofx", stmt.account.kind);
+        const sourceType = sourceTypeForImport("ofx", confirmedAccountKind);
         const period = await upsertReconciliationPeriod(
           orgId,
           periodFromLines(
@@ -631,7 +643,7 @@ function ReconciliationRoute() {
               accountId: row.account_id,
               accountKind: row.account_kind,
             })),
-            stmt.account.kind === "credit_card" ? "card_invoice" : "account_statement",
+            confirmedAccountKind === "credit_card" ? "card_invoice" : "account_statement",
             {
               periodStart: stmt.periodStart?.toISOString() ?? null,
               periodEnd: stmt.periodEnd?.toISOString() ?? null,
@@ -647,15 +659,10 @@ function ReconciliationRoute() {
           imp.id,
           rows.map((row) => externalDraftFromStatementItem(row, sourceType)),
         );
-        const accountClosingDay =
-          accounts.find(
-            (account) =>
-              account.account_key === stmt.account.accountId && account.kind === stmt.account.kind,
-          )?.closing_day ?? null;
         await persistFutureInstallmentProjections({
           orgId,
           items: persistedExternalItems,
-          closingDay: accountClosingDay,
+          closingDay: selectedAccount.closing_day,
         });
 
         const result = await insertNewStatementItems(orgId, imp.id, rows, persistedExternalItems);
@@ -663,16 +670,6 @@ function ReconciliationRoute() {
         skippedItems += result.skipped;
         if (!lastImportId && result.firstExistingImportId)
           lastImportId = result.firstExistingImportId;
-        await supabase.from("financial_accounts").upsert(
-          {
-            organization_id: orgId,
-            account_key: stmt.account.accountId,
-            name: stmt.account.accountId,
-            institution: stmt.account.bankId ?? null,
-            kind: stmt.account.kind,
-          },
-          { onConflict: "organization_id,account_key" },
-        );
       }
       setSelectedImportId(lastImportId);
       setOfxMessage(
@@ -688,7 +685,7 @@ function ReconciliationRoute() {
 
   async function handlePdfFile(event: React.ChangeEvent<HTMLInputElement>) {
     if (!orgId) return;
-    const selectedCard = creditCards.find((account) => account.id === selectedPdfCardId);
+    const selectedCard = resolveConfirmedImportAccount(creditCards, selectedPdfCardId);
     if (!selectedCard) {
       setPdfMessage("Selecione um cartão de crédito cadastrado antes de importar a fatura.");
       setPdfStatus("error");
@@ -700,6 +697,7 @@ function ReconciliationRoute() {
     if (!file) return;
     setPdfStatus("extracting");
     setPdfMessage("");
+    setPdfProgress(2);
     try {
       const buffer = await file.arrayBuffer();
       const contentHash = await hashArrayBuffer(buffer);
@@ -707,18 +705,24 @@ function ReconciliationRoute() {
       if (existingImport) {
         setSelectedImportId(existingImport.id);
         setPdfMessage("✓ Este arquivo já foi importado anteriormente. Nenhum item foi recriado.");
+        setPdfProgress(null);
         setPdfStatus("done");
         await refreshReconciliation(existingImport.id);
         return;
       }
       const { extractPdfText } = await import("@/lib/pdf/extract-text");
       const text = await extractPdfText(buffer, ({ page, total }) => {
+        const pageProgress = total > 0 ? (page / total) * 30 : 15;
+        setPdfProgress(Math.min(30, Math.max(5, pageProgress)));
         setPdfMessage(`Lendo página ${page} de ${total}…`);
       });
+      const invoiceClosingDate = inferPdfInvoiceClosingDate(text);
       setPdfStatus("analyzing");
       const batches = splitTextIntoBatches(text);
       const transactions: AiTransaction[] = [];
       for (let i = 0; i < batches.length; i++) {
+        const analysisProgress = 30 + (i / Math.max(1, batches.length)) * 60;
+        setPdfProgress(Math.min(90, Math.max(30, analysisProgress)));
         setPdfMessage(`Analisando seção ${i + 1} de ${batches.length}…`);
         const result = await extractBatchFn({
           data: {
@@ -729,8 +733,14 @@ function ReconciliationRoute() {
           },
         });
         transactions.push(...result.transactions);
+        setPdfProgress(30 + ((i + 1) / Math.max(1, batches.length)) * 60);
       }
-      const uniqueTransactions = dedupePdfTransactions(transactions);
+      const uniqueTransactions = dedupePdfTransactions(
+        transactions.map((transaction) => ({
+          ...transaction,
+          date: anchorPdfTransactionDateToClosingDate(transaction.date, invoiceClosingDate),
+        })),
+      );
       const total = uniqueTransactions
         .filter((transaction) => transaction.amount > 0)
         .reduce((sum, transaction) => sum + transaction.amount, 0);
@@ -747,11 +757,13 @@ function ReconciliationRoute() {
       });
       if (!ok) {
         setPdfMessage("Importação cancelada.");
+        setPdfProgress(null);
         setPdfStatus("idle");
         return;
       }
 
       setPdfStatus("saving");
+      setPdfProgress(94);
       const rows = assignOccurrences(
         uniqueTransactions.map((transaction) => {
           const amount = signedPdfAmount(transaction);
@@ -789,7 +801,7 @@ function ReconciliationRoute() {
           account_id: selectedCard.account_key,
           account_kind: "credit_card",
           currency: "BRL",
-          status: "pending",
+          status: "pending" as const,
           extraction_confidence: transaction.confidence,
           extraction_source_excerpt: transaction.source_excerpt ?? null,
           installment_number: transaction.installment_number ?? null,
@@ -803,6 +815,7 @@ function ReconciliationRoute() {
       if (existing.length === rows.length) {
         setSelectedImportId(existing[0]?.statement_import_id ?? null);
         setPdfMessage(`✓ Esta fatura já tinha sido importada. Nenhum item duplicado foi criado.`);
+        setPdfProgress(null);
         setPdfStatus("done");
         await refreshReconciliation(existing[0]?.statement_import_id ?? undefined);
         return;
@@ -858,9 +871,11 @@ function ReconciliationRoute() {
       setPdfMessage(
         `✓ ${result.inserted} item(ns) novo(s) enviados para conciliação; ${result.skipped} já conhecido(s).`,
       );
+      setPdfProgress(null);
       setPdfStatus("done");
       await refreshReconciliation(imp.id);
     } catch (err) {
+      setPdfProgress(null);
       setPdfMessage(friendlyImportError(err));
       setPdfStatus("error");
     }
@@ -1018,7 +1033,7 @@ function ReconciliationRoute() {
             installmentPlanId = plan.id as string;
           } else {
             const currentPaid = Number(existingPlans?.[0]?.current_installment_paid ?? 0);
-            if (action.item.installment_number > currentPaid) {
+            if ((action.item.installment_number ?? 0) > currentPaid) {
               const { error: updatePlanErr } = await supabase
                 .from("installment_plans")
                 .update({
@@ -1485,9 +1500,13 @@ function ReconciliationRoute() {
         ofxBusy={ofxStatus === "parsing" || ofxStatus === "saving"}
         ofxMessage={ofxMessage}
         ofxError={ofxStatus === "error"}
+        accounts={accounts}
+        selectedOfxAccountId={selectedOfxAccountId}
+        onOfxAccountChange={setSelectedOfxAccountId}
         pdfBusy={pdfStatus === "extracting" || pdfStatus === "analyzing" || pdfStatus === "saving"}
         pdfMessage={pdfMessage}
         pdfError={pdfStatus === "error"}
+        pdfProgress={pdfProgress}
         creditCards={creditCards}
         selectedPdfCardId={selectedPdfCardId}
         onPdfCardChange={setSelectedPdfCardId}

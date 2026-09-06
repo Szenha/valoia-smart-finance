@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   ChevronRight,
+  Clipboard,
   Coins,
   Layers,
   List,

@@ -9,6 +9,9 @@ function item(overrides: Partial<StatementItemRow>): StatementItemRow {
     id: "item-1",
     statement_import_id: "import-1",
     matched_transaction_id: null,
+    line_hash: null,
+    installment_number: null,
+    total_installments: null,
     amount: -42,
     description: "Mercado",
     posted_at: "2026-07-10T12:00:00.000Z",
@@ -143,13 +146,84 @@ describe("suggestStatementMatches", () => {
     assert.equal(suggestions[0].transactionId, null);
   });
 
-  test("does not suggest transactions with unrelated description", () => {
+  test("card: suggests the single same amount/date candidate with a different description at reduced confidence", () => {
+    const [suggestion] = suggestStatementMatches(
+      [item({ description: "Mercado", account_id: "card", account_kind: "credit_card" })],
+      [
+        txn({
+          id: "same-money-date",
+          account_id: "card",
+          account_kind: "credit_card",
+          description: "Farmacia",
+        }),
+      ],
+    );
+
+    assert.equal(suggestion.transactionId, "same-money-date");
+    assert.ok(suggestion.confidence > 0 && suggestion.confidence <= 0.65);
+    assert.match(suggestion.reason, /descri/i);
+  });
+
+  test("card: does not pick arbitrarily when several same amount/date candidates have different descriptions", () => {
     const suggestions = suggestStatementMatches(
-      [item({ description: "Mercado", account_id: "card" })],
-      [txn({ id: "same-money-date", account_id: "card", description: "Farmacia" })],
+      [item({ description: "Mercado", account_id: "card", account_kind: "credit_card" })],
+      [
+        txn({
+          id: "candidate-a",
+          account_id: "card",
+          account_kind: "credit_card",
+          description: "Farmacia",
+        }),
+        txn({
+          id: "candidate-b",
+          account_id: "card",
+          account_kind: "credit_card",
+          description: "Posto",
+        }),
+      ],
     );
 
     assert.equal(suggestions[0].transactionId, null);
+    assert.equal(suggestions[0].confidence, 0);
+  });
+
+  test("checking (OFX): never suggests a different-description candidate even when it is the only one", () => {
+    const suggestions = suggestStatementMatches(
+      [item({ description: "Mercado", account_id: "checking-1", account_kind: "checking" })],
+      [
+        txn({
+          id: "same-money-date",
+          account_id: "checking-1",
+          account_kind: "checking",
+          description: "Farmacia",
+        }),
+      ],
+    );
+
+    assert.equal(suggestions[0].transactionId, null);
+  });
+
+  test("checking (OFX): still matches when the description is similar (no regression)", () => {
+    const [suggestion] = suggestStatementMatches(
+      [
+        item({
+          description: "Mercado Central",
+          account_id: "checking-1",
+          account_kind: "checking",
+        }),
+      ],
+      [
+        txn({
+          id: "checking-tx",
+          account_id: "checking-1",
+          account_kind: "checking",
+          description: "Mercado",
+        }),
+      ],
+    );
+
+    assert.equal(suggestion.transactionId, "checking-tx");
+    assert.equal(suggestion.confidence, 1);
   });
 
   test("does not suggest transactions already present in active reconciliation links", () => {

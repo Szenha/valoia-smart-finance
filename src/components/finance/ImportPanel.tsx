@@ -1,6 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -18,10 +19,14 @@ type Props = {
   pdfBusy: boolean;
   pdfMessage: string;
   pdfError: boolean;
+  pdfProgress?: number | null;
+  accounts?: AccountRow[];
+  selectedOfxAccountId?: string;
   creditCards?: AccountRow[];
   selectedPdfCardId?: string;
   classifying?: boolean;
   classifyStatus?: string;
+  onOfxAccountChange?: (accountId: string) => void;
   onPdfCardChange?: (accountId: string) => void;
   onOfxFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onPdfFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -36,22 +41,43 @@ export function ImportPanel({
   pdfBusy,
   pdfMessage,
   pdfError,
+  pdfProgress = null,
+  accounts = [],
+  selectedOfxAccountId = "",
   creditCards = [],
   selectedPdfCardId = "",
   classifying,
   classifyStatus,
+  onOfxAccountChange,
   onPdfCardChange,
   onOfxFile,
   onPdfFile,
   onClassify,
 }: Props) {
+  const ofxRequiresAccount = !!onOfxAccountChange;
+  const ofxDisabled = ofxBusy || (ofxRequiresAccount && !selectedOfxAccountId);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-3">
-        <Button asChild disabled={ofxBusy}>
+        {onOfxAccountChange ? (
+          <Select value={selectedOfxAccountId} onValueChange={onOfxAccountChange}>
+            <SelectTrigger className="w-[240px]" aria-label="Conta ou cartão para OFX">
+              <SelectValue placeholder="Conta/cartão do OFX" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {account.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+        <Button asChild disabled={ofxDisabled}>
           <label>
             {ofxBusy ? "Processando OFX…" : "Importar OFX"}
             <input
@@ -59,7 +85,7 @@ export function ImportPanel({
               accept=".ofx,.OFX"
               className="hidden"
               onChange={onOfxFile}
-              disabled={ofxBusy}
+              disabled={ofxDisabled}
             />
           </label>
         </Button>
@@ -105,6 +131,15 @@ export function ImportPanel({
             {pdfMessage}
           </span>
         )}
+        {pdfBusy && pdfProgress != null ? (
+          <div className="basis-full space-y-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Processando fatura</span>
+              <span className="tabular-nums">{Math.round(pdfProgress)}%</span>
+            </div>
+            <Progress value={pdfProgress} className="h-2" />
+          </div>
+        ) : null}
         {classifyStatus && <span className="text-sm text-muted-foreground">{classifyStatus}</span>}
       </CardContent>
     </Card>

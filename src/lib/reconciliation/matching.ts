@@ -55,23 +55,29 @@ export function suggestStatementMatches(
 
   const pendingItems = items.filter((item) => item.status === "pending");
   for (const item of pendingItems) {
-    const candidates = transactions
+    const dateAmountCandidates = transactions
       .filter(isEligibleReconciliationCandidate)
       .filter((txn) => !usedTransactions.has(txn.id))
       .filter((txn) => !alreadyLinkedTransactions.has(txn.id))
       .filter((txn) => compatibleInstallmentProjection(txn, item))
       .filter((txn) => sameAccount(txn, item))
       .filter((txn) => sameMoney(Number(txn.amount), Number(item.amount)))
-      .filter((txn) => similarDescription(txn.description, item.description))
       .map((txn) => ({
         txn,
         dateDistance: dateDistanceDays(txn.posted_at, item.posted_at),
       }))
       .filter((candidate) => candidate.dateDistance <= MAX_DATE_DISTANCE_DAYS)
       .sort((a, b) => a.dateDistance - b.dateDistance);
+    const candidates = dateAmountCandidates.filter((candidate) =>
+      similarDescription(candidate.txn.description, item.description),
+    );
 
     const best = candidates[0];
-    if (!best) {
+    const cardDateAmountFallback =
+      item.account_kind === "credit_card" && dateAmountCandidates.length === 1
+        ? dateAmountCandidates[0]
+        : null;
+    if (!best && !cardDateAmountFallback) {
       suggestions.push({
         itemId: item.id,
         transactionId: null,
@@ -82,16 +88,29 @@ export function suggestStatementMatches(
       continue;
     }
 
-    const confidence = best.dateDistance === 0 ? 1 : best.dateDistance === 1 ? 0.9 : 0.75;
-    usedTransactions.add(best.txn.id);
+    if (!best && cardDateAmountFallback) {
+      const confidence = cardDateAmountFallback.dateDistance === 0 ? 0.65 : 0.55;
+      usedTransactions.add(cardDateAmountFallback.txn.id);
+      suggestions.push({
+        itemId: item.id,
+        transactionId: cardDateAmountFallback.txn.id,
+        confidence,
+        reason:
+          "Mesmo valor e data próxima no cartão, mas descrição diferente. Revise antes de conciliar.",
+      });
+      continue;
+    }
+
+    const confidence = best!.dateDistance === 0 ? 1 : best!.dateDistance === 1 ? 0.9 : 0.75;
+    usedTransactions.add(best!.txn.id);
     suggestions.push({
       itemId: item.id,
-      transactionId: best.txn.id,
+      transactionId: best!.txn.id,
       confidence,
       reason:
-        best.dateDistance === 0
+        best!.dateDistance === 0
           ? "Mesmo valor e mesma data."
-          : `Mesmo valor com diferença de ${best.dateDistance} dia(s).`,
+          : `Mesmo valor com diferença de ${best!.dateDistance} dia(s).`,
     });
   }
 
