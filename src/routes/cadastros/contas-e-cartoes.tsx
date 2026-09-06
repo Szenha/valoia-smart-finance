@@ -53,6 +53,7 @@ import {
   fetchAccountBalances,
   fetchAccounts,
   fetchAdditionalCards,
+  fetchCardFutureCommitments,
   fetchCardSummary,
   fetchHouseholdMembers,
   fetchMemberProfiles,
@@ -110,11 +111,7 @@ function ContasECartoesRoute() {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
   }, []);
 
-  const {
-    orgId,
-    error: orgError,
-    refetchOrganizations,
-  } = useActiveOrganization(currentUserId);
+  const { orgId, error: orgError, refetchOrganizations } = useActiveOrganization(currentUserId);
 
   const accountsQuery = useQuery({
     queryKey: ["accounts", orgId],
@@ -141,6 +138,11 @@ function ContasECartoesRoute() {
     queryKey: ["card-summary", orgId],
     enabled: !!orgId,
     queryFn: () => fetchCardSummary(orgId!),
+  });
+  const cardFutureCommitmentsQuery = useQuery({
+    queryKey: ["card-future-commitments", orgId],
+    enabled: !!orgId,
+    queryFn: () => fetchCardFutureCommitments(orgId!),
   });
   const additionalCardsQuery = useQuery({
     queryKey: ["additional-cards", orgId],
@@ -266,6 +268,7 @@ function ContasECartoesRoute() {
     await queryClient.invalidateQueries({ queryKey: ["accounts", orgId] });
     await queryClient.invalidateQueries({ queryKey: ["account-balances", orgId] });
     await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
+    await queryClient.invalidateQueries({ queryKey: ["card-future-commitments", orgId] });
   }
 
   const [deleteError, setDeleteError] = useState("");
@@ -339,6 +342,14 @@ function ContasECartoesRoute() {
   const cardSummaryByAccountId = new Map(
     (cardSummaryQuery.data ?? []).map((row) => [row.account_id, row]),
   );
+  const futureCommitmentByAccountKey = new Map<string, number>();
+  for (const row of cardFutureCommitmentsQuery.data ?? []) {
+    futureCommitmentByAccountKey.set(
+      row.account_key,
+      (futureCommitmentByAccountKey.get(row.account_key) ?? 0) +
+        row.total_commitment_without_double_count,
+    );
+  }
   const checkingBalances = balancesQuery.data ?? [];
   const consolidatedBalance = checkingBalances.reduce((sum, row) => sum + row.current_balance, 0);
   const profileById = new Map((profilesQuery.data ?? []).map((profile) => [profile.id, profile]));
@@ -748,6 +759,8 @@ function ContasECartoesRoute() {
                         ? "bg-amber-500"
                         : "bg-violet-600";
                 const futureInstallments = cardSummary?.future_installments_total ?? 0;
+                const projectedFutureCommitment =
+                  futureCommitmentByAccountKey.get(account.account_key) ?? 0;
                 const holders = additionalCardsByAccountId.get(account.id) ?? [];
                 return (
                   <div
@@ -785,6 +798,12 @@ function ContasECartoesRoute() {
                         <strong className="text-lg font-semibold tabular-nums text-slate-600">
                           {formatCurrency(futureInstallments)}
                         </strong>
+                        {projectedFutureCommitment > futureInstallments ? (
+                          <p className="text-[11px] text-amber-700">
+                            {formatCurrency(projectedFutureCommitment - futureInstallments)}{" "}
+                            previsto por fatura
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 

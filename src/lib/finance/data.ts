@@ -8,6 +8,8 @@ import type {
   AdditionalCardRow,
   CalendarEventOccurrence,
   CalendarEventRow,
+  CardFutureCommitmentRow,
+  CardInstallmentProjectionRow,
   FamilyMemberRow,
   CardSummaryRow,
   CategoryRow,
@@ -176,6 +178,33 @@ export async function fetchCardSummary(orgId: string): Promise<CardSummaryRow[]>
   const { data, error } = await supabase.rpc("card_summary", { p_org_id: orgId });
   if (error) throw new Error(error.message);
   return (data ?? []) as CardSummaryRow[];
+}
+
+export async function fetchCardFutureCommitments(
+  orgId: string,
+): Promise<CardFutureCommitmentRow[]> {
+  const { data, error } = await supabase.rpc("card_future_commitments", { p_org_id: orgId });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CardFutureCommitmentRow[];
+}
+
+export async function fetchCardInstallmentProjections(
+  orgId: string,
+  accountKey: string,
+): Promise<CardInstallmentProjectionRow[]> {
+  const { data, error } = await supabase
+    .from("installment_projections")
+    .select(
+      "id, account_id, account_kind, linked_transaction_id, installment_plan_id, description, installment_number, total_installments, expected_amount, expected_posted_at, expected_competence_month, status, source_type",
+    )
+    .eq("organization_id", orgId)
+    .eq("account_id", accountKey)
+    .eq("account_kind", "credit_card")
+    .neq("status", "ignored")
+    .order("expected_competence_month", { ascending: true })
+    .order("expected_posted_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CardInstallmentProjectionRow[];
 }
 
 export async function fetchHouseholdMembers(orgId: string): Promise<HouseholdMemberRow[]> {

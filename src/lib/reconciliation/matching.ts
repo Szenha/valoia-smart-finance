@@ -32,10 +32,16 @@ export function isEligibleReconciliationCandidate(txn: TxnRow): boolean {
   if (txn.reconciled_statement_item_id) return false;
   if (txn.entry_source === "ofx_import" || txn.entry_source === "pdf_import") return false;
   if (txn.statement_import_id) return false;
-  if (txn.installment_plan_id && txn.installment_number && !txn.reconciled_statement_item_id) {
-    return false;
-  }
   return true;
+}
+
+function compatibleInstallmentProjection(txn: TxnRow, item: StatementItemRow): boolean {
+  if (!txn.installment_plan_id || !txn.installment_number) return true;
+  return (
+    !!item.installment_number &&
+    !!item.total_installments &&
+    txn.installment_number === item.installment_number
+  );
 }
 
 export function suggestStatementMatches(
@@ -53,6 +59,7 @@ export function suggestStatementMatches(
       .filter(isEligibleReconciliationCandidate)
       .filter((txn) => !usedTransactions.has(txn.id))
       .filter((txn) => !alreadyLinkedTransactions.has(txn.id))
+      .filter((txn) => compatibleInstallmentProjection(txn, item))
       .filter((txn) => sameAccount(txn, item))
       .filter((txn) => sameMoney(Number(txn.amount), Number(item.amount)))
       .filter((txn) => similarDescription(txn.description, item.description))

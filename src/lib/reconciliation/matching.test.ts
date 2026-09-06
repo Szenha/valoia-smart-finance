@@ -108,6 +108,32 @@ describe("suggestStatementMatches", () => {
     );
   });
 
+  test("suggests a planned installment transaction when the next invoice brings the same parcel", () => {
+    const [suggestion] = suggestStatementMatches(
+      [
+        item({
+          description: "Loja PARC 04/05",
+          account_id: "card",
+          installment_number: 4,
+          total_installments: 5,
+        }),
+      ],
+      [
+        txn({
+          id: "projection-tx",
+          description: "Loja PARC 04/05",
+          account_id: "card",
+          amount: -42,
+          installment_plan_id: "plan-1",
+          installment_number: 4,
+        }),
+      ],
+    );
+
+    assert.equal(suggestion.transactionId, "projection-tx");
+    assert.equal(suggestion.confidence, 1);
+  });
+
   test("does not suggest transactions from another account or card", () => {
     const suggestions = suggestStatementMatches(
       [item({ id: "checking", account_id: "checking-1", account_kind: "checking" })],

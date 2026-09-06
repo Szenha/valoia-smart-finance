@@ -316,13 +316,17 @@ link_candidates as (
     on t.organization_id = si.organization_id
    and t.reconciled_statement_item_id = si.id
 ),
+distinct_link_candidates as (
+  select distinct statement_item_id, transaction_id
+  from link_candidates
+),
 link_resolution as (
   select
     statement_item_id,
-    count(distinct transaction_id) as transaction_count,
-    min(transaction_id) as transaction_id,
-    array_agg(distinct transaction_id order by transaction_id) as transaction_ids
-  from link_candidates
+    count(*) as transaction_count,
+    (array_agg(transaction_id order by transaction_id::text))[1] as transaction_id,
+    array_agg(transaction_id order by transaction_id::text) as transaction_ids
+  from distinct_link_candidates
   group by statement_item_id
 ),
 link_diagnostics as (

@@ -1,14 +1,21 @@
 import { supabase } from "@/lib/supabase/client";
 import type { TxnRow } from "@/lib/finance/types";
+import { addMonthsToDateOnly, competenceMonthDateOnly } from "@/lib/finance/date-utils";
 import { normalizeStatementDescription } from "./dedup";
 import type {
   ExternalStatementItemRow,
+  InstallmentProjectionRow,
   ReconciliationLinkRow,
   ReconciliationPeriodRow,
   StatementImportRow,
   StatementItemRow,
   StatementItemStatus,
 } from "./types";
+import type { InstallmentProjectionDraft } from "./installment-projections";
+import {
+  buildProjectionFingerprint,
+  chooseProjectionTransactionMatch,
+} from "./installment-projections";
 import type {
   ExternalSourceType,
   PersistentPeriodInput,
@@ -537,4 +544,217 @@ export async function recordPersistentReconciliationLink(
     { onConflict: "organization_id,external_statement_item_id" },
   );
   if (linkErr) throw new Error(linkErr.message);
+}
+
+const INSTALLMENT_PROJECTION_SELECT =
+  "id, organization_id, account_id, account_kind, source_external_item_id, reconciliation_period_id, installment_plan_id, linked_transaction_id, description, normalized_description, installment_number, total_installments, expected_amount, expected_posted_at, expected_competence_month, status, source_type, projection_fingerprint";
+
+async function fetchInstallmentProjectionsByFingerprints(
+  orgId: string,
+  fingerprints: string[],
+): Promise<InstallmentProjectionRow[]> {
+  const values = Array.from(new Set(fingerprints)).filter(Boolean);
+  if (values.length === 0) return [];
+  const { data, error } = await supabase
+    .from("installment_projections")
+    .select(INSTALLMENT_PROJECTION_SELECT)
+    .eq("organization_id", orgId)
+    .in("projection_fingerprint", values);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as InstallmentProjectionRow[];
+}
+
+async function fetchProjectionCandidateTransactions(
+  orgId: string,
+  drafts: InstallmentProjectionDraft[],
+): Promise<TxnRow[]> {
+  if (drafts.length === 0) return [];
+  const accountIds = Array.from(new Set(drafts.map((draft) => draft.account_id)));
+  const months = drafts.map((draft) => draft.expected_competence_month).sort();
+  const start = `${months[0]}T00:00:00.000Z`;
+  const end = `${addMonthsToDateOnly(months[months.length - 1], 1)}T00:00:00.000Z`;
+  const { data, error } = await supabase
+    .from("transactions")
+    .select(
+      "id, description, amount, posted_at, type, account_id, account_kind, payment_method, entry_source, currency, category_id, created_by, spent_by_member_id, statement_import_id, reconciled_statement_item_id, recurring_bill_occurrence_id, installment_number, installment_plan_id, classification_method, classification_confidence, needs_review, original_text, consolidation_status, period_closure_id, transfer_group_id",
+    )
+    .eq("organization_id", orgId)
+    .eq("account_kind", "credit_card")
+    .in("account_id", accountIds)
+    .gte("posted_at", start)
+    .lt("posted_at", end);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TxnRow[];
+}
+
+function statusForProjectionInsert(
+  draft: InstallmentProjectionDraft,
+  candidates: TxnRow[],
+  closingDay: number | null | undefined,
+): Pick<InstallmentProjectionDraft, "status" | "linked_transaction_id"> {
+  const match = chooseProjectionTransactionMatch(draft, candidates, closingDay);
+  if (match.kind === "unique")
+    return { status: "linked", linked_transaction_id: match.transaction.id };
+  if (match.kind === "ambiguous") return { status: "divergent", linked_transaction_id: null };
+  return { status: draft.status, linked_transaction_id: draft.linked_transaction_id ?? null };
+}
+
+function nextProjectionStatus(
+  current: InstallmentProjectionRow,
+  incoming: Pick<InstallmentProjectionDraft, "status" | "linked_transaction_id">,
+): InstallmentProjectionRow["status"] {
+  if (current.status === "ignored" || current.status === "reconciled") return current.status;
+  if (incoming.status === "linked") return "linked";
+  if (incoming.status === "divergent" && current.status === "detected") return "divergent";
+  if (current.status === "linked" && !current.linked_transaction_id) return incoming.status;
+  return current.status;
+}
+
+export async function upsertInstallmentProjections(
+  orgId: string,
+  drafts: InstallmentProjectionDraft[],
+  closingDay: number | null | undefined,
+): Promise<InstallmentProjectionRow[]> {
+  if (drafts.length === 0) return [];
+  const candidates = await fetchProjectionCandidateTransactions(orgId, drafts);
+  const prepared = drafts.map((draft) => ({
+    ...draft,
+    ...statusForProjectionInsert(draft, candidates, closingDay),
+  }));
+  const existing = await fetchInstallmentProjectionsByFingerprints(
+    orgId,
+    prepared.map((draft) => draft.projection_fingerprint),
+  );
+  const existingByFingerprint = new Map(existing.map((row) => [row.projection_fingerprint, row]));
+  const rowsToInsert = prepared
+    .filter((draft) => !existingByFingerprint.has(draft.projection_fingerprint))
+    .map((draft) => ({
+      organization_id: orgId,
+      account_id: draft.account_id,
+      account_kind: draft.account_kind,
+      source_external_item_id: draft.source_external_item_id ?? null,
+      reconciliation_period_id: draft.reconciliation_period_id ?? null,
+      installment_plan_id: draft.installment_plan_id ?? null,
+      linked_transaction_id: draft.linked_transaction_id ?? null,
+      description: draft.description,
+      normalized_description: draft.normalized_description,
+      installment_number: draft.installment_number,
+      total_installments: draft.total_installments,
+      expected_amount: draft.expected_amount,
+      expected_posted_at: draft.expected_posted_at,
+      expected_competence_month: draft.expected_competence_month,
+      status: draft.status,
+      source_type: draft.source_type,
+      projection_fingerprint: draft.projection_fingerprint,
+    }));
+
+  let inserted: InstallmentProjectionRow[] = [];
+  if (rowsToInsert.length > 0) {
+    const { data, error } = await supabase
+      .from("installment_projections")
+      .insert(rowsToInsert)
+      .select(INSTALLMENT_PROJECTION_SELECT);
+    if (error) throw new Error(error.message);
+    inserted = (data ?? []) as InstallmentProjectionRow[];
+  }
+
+  const updated: InstallmentProjectionRow[] = [];
+  for (const draft of prepared) {
+    const current = existingByFingerprint.get(draft.projection_fingerprint);
+    if (!current) continue;
+    const nextStatus = nextProjectionStatus(current, draft);
+    const { data, error } = await supabase
+      .from("installment_projections")
+      .update({
+        source_external_item_id:
+          current.source_external_item_id ?? draft.source_external_item_id ?? null,
+        reconciliation_period_id:
+          current.reconciliation_period_id ?? draft.reconciliation_period_id ?? null,
+        installment_plan_id: current.installment_plan_id ?? draft.installment_plan_id ?? null,
+        linked_transaction_id: current.linked_transaction_id ?? draft.linked_transaction_id ?? null,
+        description: draft.description,
+        normalized_description: draft.normalized_description,
+        expected_amount: draft.expected_amount,
+        expected_posted_at: draft.expected_posted_at,
+        expected_competence_month: draft.expected_competence_month,
+        status: nextStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", current.id)
+      .eq("organization_id", orgId)
+      .select(INSTALLMENT_PROJECTION_SELECT)
+      .single();
+    if (error) throw new Error(error.message);
+    updated.push(data as InstallmentProjectionRow);
+  }
+
+  return [...inserted, ...updated];
+}
+
+export async function findInstallmentProjectionForStatementItem(
+  orgId: string,
+  input: {
+    accountId: string;
+    accountKind: string;
+    description: string;
+    amount: number;
+    postedAt: string;
+    installmentNumber: number | null | undefined;
+    totalInstallments: number | null | undefined;
+    closingDay: number | null | undefined;
+  },
+): Promise<InstallmentProjectionRow | null> {
+  if (!input.installmentNumber || !input.totalInstallments) return null;
+  const expectedCompetenceMonth = competenceMonthDateOnly(
+    input.postedAt.slice(0, 10),
+    input.closingDay ?? null,
+  );
+  const fingerprint = buildProjectionFingerprint({
+    accountId: input.accountId,
+    accountKind: input.accountKind,
+    normalizedDescription: normalizeStatementDescription(input.description),
+    installmentNumber: input.installmentNumber,
+    totalInstallments: input.totalInstallments,
+    expectedAmount: input.amount,
+    expectedCompetenceMonth,
+  });
+  const { data, error } = await supabase
+    .from("installment_projections")
+    .select(INSTALLMENT_PROJECTION_SELECT)
+    .eq("organization_id", orgId)
+    .eq("projection_fingerprint", fingerprint)
+    .neq("status", "ignored")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data ?? null) as InstallmentProjectionRow | null;
+}
+
+export async function markInstallmentProjectionReconciled(
+  orgId: string,
+  input: {
+    accountId: string;
+    accountKind: string;
+    description: string;
+    amount: number;
+    postedAt: string;
+    installmentNumber: number | null | undefined;
+    totalInstallments: number | null | undefined;
+    closingDay: number | null | undefined;
+    transactionId: string;
+    installmentPlanId: string | null;
+  },
+): Promise<void> {
+  const projection = await findInstallmentProjectionForStatementItem(orgId, input);
+  if (!projection) return;
+  const { error } = await supabase
+    .from("installment_projections")
+    .update({
+      linked_transaction_id: input.transactionId,
+      installment_plan_id: input.installmentPlanId,
+      status: "reconciled",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", projection.id)
+    .eq("organization_id", orgId);
+  if (error) throw new Error(error.message);
 }

@@ -51,9 +51,11 @@ import {
   fetchStatementImportByContentHash,
   fetchStatementImports,
   fetchStatementItems,
+  markInstallmentProjectionReconciled,
   recordPersistentReconciliationLink,
   type PersistedExternalStatementItem,
   upsertExternalStatementItems,
+  upsertInstallmentProjections,
   upsertReconciliationPeriod,
 } from "@/lib/reconciliation/data";
 import {
@@ -71,6 +73,11 @@ import {
   hashArrayBuffer,
   normalizeStatementDescription,
 } from "@/lib/reconciliation/dedup";
+import {
+  buildInstallmentProjectionDrafts,
+  detectOfxInstallmentInText,
+  type InstallmentProjectionSourceType,
+} from "@/lib/reconciliation/installment-projections";
 import {
   buildReconciliationFingerprint,
   buildSourceFingerprint,
@@ -308,6 +315,32 @@ function externalDraftFromStatementItem(
   };
 }
 
+async function persistFutureInstallmentProjections(input: {
+  orgId: string;
+  items: PersistedExternalStatementItem[];
+  closingDay: number | null | undefined;
+}) {
+  const drafts = input.items.flatMap((item) => {
+    if (item.account_kind !== "credit_card") return [];
+    if (item.source_type !== "pdf_card_invoice" && item.source_type !== "ofx_credit_card")
+      return [];
+    return buildInstallmentProjectionDrafts({
+      accountId: item.account_id,
+      accountKind: String(item.account_kind),
+      description: item.raw_description,
+      amount: Number(item.amount),
+      postedAt: item.posted_at,
+      installmentNumber: item.installment_number,
+      totalInstallments: item.total_installments,
+      closingDay: input.closingDay,
+      sourceType: item.source_type as InstallmentProjectionSourceType,
+      sourceExternalItemId: item.id,
+      reconciliationPeriodId: item.reconciliation_period_id,
+    });
+  });
+  await upsertInstallmentProjections(input.orgId, drafts, input.closingDay);
+}
+
 function ReconciliationRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -479,6 +512,8 @@ function ReconciliationRoute() {
     await queryClient.invalidateQueries({
       queryKey: ["manual-transactions-for-reconciliation", orgId],
     });
+    await queryClient.invalidateQueries({ queryKey: ["card-future-commitments", orgId] });
+    await queryClient.invalidateQueries({ queryKey: ["card-installment-projections", orgId] });
   }
 
   async function handleOfxFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -526,30 +561,36 @@ function ReconciliationRoute() {
             fitId: t.fitIdGenerated ? null : t.fitId,
             transaction: t,
           })),
-        ).map(({ transaction: t, occurrence }) => ({
-          organization_id: orgId,
-          line_hash: buildStatementLineHash({
-            source: "ofx",
-            accountId: stmt.account.accountId,
-            accountKind: stmt.account.kind,
-            postedAt: t.postedAt.toISOString(),
+        ).map(({ transaction: t, occurrence }) => {
+          const installment =
+            stmt.account.kind === "credit_card" ? detectOfxInstallmentInText(t.description) : null;
+          return {
+            organization_id: orgId,
+            line_hash: buildStatementLineHash({
+              source: "ofx",
+              accountId: stmt.account.accountId,
+              accountKind: stmt.account.kind,
+              postedAt: t.postedAt.toISOString(),
+              amount: t.amount,
+              description: t.description,
+              fitId: t.fitIdGenerated ? null : t.fitId,
+              occurrence,
+            }),
             amount: t.amount,
             description: t.description,
-            fitId: t.fitIdGenerated ? null : t.fitId,
-            occurrence,
-          }),
-          amount: t.amount,
-          description: t.description,
-          posted_at: t.postedAt.toISOString(),
-          fit_id: t.fitId,
-          type: t.type,
-          account_id: stmt.account.accountId,
-          account_kind: stmt.account.kind,
-          bank_id: stmt.account.bankId ?? null,
-          currency: t.currency,
-          check_number: t.checkNumber ?? null,
-          status: "pending",
-        }));
+            posted_at: t.postedAt.toISOString(),
+            fit_id: t.fitId,
+            type: t.type,
+            account_id: stmt.account.accountId,
+            account_kind: stmt.account.kind,
+            bank_id: stmt.account.bankId ?? null,
+            currency: t.currency,
+            check_number: t.checkNumber ?? null,
+            status: "pending",
+            installment_number: installment?.installmentNumber ?? null,
+            total_installments: installment?.totalInstallments ?? null,
+          };
+        });
         const existing = await fetchExistingItemsByLineHash(
           orgId,
           rows.map((row) => row.line_hash),
@@ -606,6 +647,16 @@ function ReconciliationRoute() {
           imp.id,
           rows.map((row) => externalDraftFromStatementItem(row, sourceType)),
         );
+        const accountClosingDay =
+          accounts.find(
+            (account) =>
+              account.account_key === stmt.account.accountId && account.kind === stmt.account.kind,
+          )?.closing_day ?? null;
+        await persistFutureInstallmentProjections({
+          orgId,
+          items: persistedExternalItems,
+          closingDay: accountClosingDay,
+        });
 
         const result = await insertNewStatementItems(orgId, imp.id, rows, persistedExternalItems);
         importedItems += result.inserted;
@@ -796,6 +847,11 @@ function ReconciliationRoute() {
         imp.id,
         rows.map((row) => externalDraftFromStatementItem(row, "pdf_card_invoice")),
       );
+      await persistFutureInstallmentProjections({
+        orgId,
+        items: persistedExternalItems,
+        closingDay: selectedCard.closing_day,
+      });
 
       const result = await insertNewStatementItems(orgId, imp.id, rows, persistedExternalItems);
       setSelectedImportId(imp.id);
@@ -1147,6 +1203,19 @@ function ReconciliationRoute() {
           .eq("organization_id", orgId);
         if (itemErr) throw new Error(itemErr.message);
 
+        await markInstallmentProjectionReconciled(orgId, {
+          accountId: action.account.account_key,
+          accountKind: action.account.kind,
+          description: action.description,
+          amount: Number(action.item.amount),
+          postedAt: action.postedAt,
+          installmentNumber: action.item.installment_number,
+          totalInstallments: action.item.total_installments,
+          closingDay: action.account.closing_day,
+          transactionId: reconciledTransactionId,
+          installmentPlanId,
+        });
+
         if (
           installmentPlanId &&
           action.item.installment_number &&
@@ -1183,6 +1252,24 @@ function ReconciliationRoute() {
             onConflict: "organization_id,installment_plan_id,installment_number",
           });
           if (futureErr) throw new Error(futureErr.message);
+          const projectionSourceType: InstallmentProjectionSourceType =
+            entrySource === "pdf_import" ? "pdf_card_invoice" : "ofx_credit_card";
+          await upsertInstallmentProjections(
+            orgId,
+            buildInstallmentProjectionDrafts({
+              accountId: action.account.account_key,
+              accountKind: action.account.kind,
+              description: action.description,
+              amount: Number(action.item.amount),
+              postedAt: action.postedAt,
+              installmentNumber: action.item.installment_number,
+              totalInstallments: action.item.total_installments,
+              closingDay: action.account.closing_day,
+              sourceType: projectionSourceType,
+              installmentPlanId,
+            }),
+            action.account.closing_day,
+          );
         }
       }
       if (action.type === "review") {
@@ -1221,6 +1308,7 @@ function ReconciliationRoute() {
     onSuccess: async () => {
       await refreshReconciliation(activeImportId ?? undefined);
       await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
     },
   });
 
@@ -1233,6 +1321,7 @@ function ReconciliationRoute() {
       if (selectedImportId === importId) setSelectedImportId(null);
       await refreshReconciliation();
       await queryClient.invalidateQueries({ queryKey: ["transactions", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["card-summary", orgId] });
     },
   });
 

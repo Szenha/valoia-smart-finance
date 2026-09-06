@@ -62,6 +62,42 @@ export type CardSummaryRow = {
   limit_available: number | null;
 };
 
+export type CardFutureCommitmentRow = {
+  account_id: string;
+  account_key: string;
+  name: string;
+  competence_month: string;
+  total_internal_transactions: number;
+  total_detected_projections: number;
+  total_confirmed: number;
+  total_reconciled: number;
+  total_divergent: number;
+  total_commitment_without_double_count: number;
+  detected_count: number;
+  confirmed_count: number;
+  linked_count: number;
+  reconciled_count: number;
+  divergent_count: number;
+  ignored_count: number;
+  item_count: number;
+};
+
+export type CardInstallmentProjectionRow = {
+  id: string;
+  account_id: string;
+  account_kind: AccountKind | string;
+  linked_transaction_id: string | null;
+  installment_plan_id: string | null;
+  description: string;
+  installment_number: number;
+  total_installments: number;
+  expected_amount: number;
+  expected_posted_at: string;
+  expected_competence_month: string;
+  status: "detected" | "confirmed" | "linked" | "reconciled" | "divergent" | "ignored";
+  source_type: "pdf_card_invoice" | "ofx_credit_card" | "manual_projection";
+};
+
 export type TxnRow = {
   id: string;
   description: string;

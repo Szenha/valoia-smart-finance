@@ -79,6 +79,35 @@ export type ReconciliationLinkRow = {
   matched_at: string | null;
 };
 
+export type InstallmentProjectionStatus =
+  | "detected"
+  | "confirmed"
+  | "linked"
+  | "reconciled"
+  | "divergent"
+  | "ignored";
+
+export type InstallmentProjectionRow = {
+  id: string;
+  organization_id: string;
+  account_id: string;
+  account_kind: AccountKind | string;
+  source_external_item_id: string | null;
+  reconciliation_period_id: string | null;
+  installment_plan_id: string | null;
+  linked_transaction_id: string | null;
+  description: string;
+  normalized_description: string;
+  installment_number: number;
+  total_installments: number;
+  expected_amount: number;
+  expected_posted_at: string;
+  expected_competence_month: string;
+  status: InstallmentProjectionStatus;
+  source_type: "pdf_card_invoice" | "ofx_credit_card" | "manual_projection";
+  projection_fingerprint: string;
+};
+
 export type StatementItemRow = {
   id: string;
   statement_import_id: string;

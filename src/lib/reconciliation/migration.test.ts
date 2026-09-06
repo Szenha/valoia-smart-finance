@@ -64,6 +64,9 @@ describe("reconciliation migration", () => {
     assert.match(sql, /ambiguous_legacy_transaction_link/);
     assert.match(sql, /duplicate_external_source_fingerprint/);
     assert.match(sql, /coalesce\(lr\.transaction_count, 0\) <= 1/);
+    assert.doesNotMatch(sql, /min\(transaction_id\)/);
+    assert.match(sql, /distinct_link_candidates as/);
+    assert.match(sql, /order by transaction_id::text/);
   });
 
   test("persistent reconciliation backfill does not mutate financial rows", () => {
