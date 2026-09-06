@@ -14,6 +14,11 @@ create table if not exists public.reconciliation_backfill_diagnostics (
 
 alter table public.reconciliation_backfill_diagnostics enable row level security;
 
+drop policy if exists "reconciliation_backfill_diagnostics_select"
+  on public.reconciliation_backfill_diagnostics;
+drop policy if exists "reconciliation_backfill_diagnostics_insert"
+  on public.reconciliation_backfill_diagnostics;
+
 create policy "reconciliation_backfill_diagnostics_select"
   on public.reconciliation_backfill_diagnostics for select
   using (public.is_org_member(organization_id));

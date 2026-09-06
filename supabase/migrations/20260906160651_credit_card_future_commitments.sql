@@ -30,6 +30,11 @@ create table if not exists public.installment_projections (
 
 alter table public.installment_projections enable row level security;
 
+drop policy if exists "installment_projections_select" on public.installment_projections;
+drop policy if exists "installment_projections_insert" on public.installment_projections;
+drop policy if exists "installment_projections_update" on public.installment_projections;
+drop policy if exists "installment_projections_delete" on public.installment_projections;
+
 create policy "installment_projections_select" on public.installment_projections for select
   using (public.is_org_member(organization_id));
 create policy "installment_projections_insert" on public.installment_projections for insert
